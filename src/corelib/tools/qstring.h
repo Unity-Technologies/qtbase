@@ -440,8 +440,7 @@ public:
     // note - this are all inline so we can benefit from strlen() compile time optimizations
     static inline QString fromAscii(const char *str, int size = -1)
     {
-        QStringDataPtr dataPtr = { fromAscii_helper(str, (str && size == -1) ? int(strlen(str)) : size) };
-        return QString(dataPtr);
+        return fromUtf8(str, size);
     }
     static inline QString fromLatin1(const char *str, int size = -1)
     {

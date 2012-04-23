@@ -3964,7 +3964,7 @@ QByteArray QString::toLatin1() const
 */
 QByteArray QString::toAscii() const
 {
-    return toLatin1();
+    return toUtf8();
 }
 
 #if !defined(Q_OS_MAC) && defined(Q_OS_UNIX)
@@ -4097,7 +4097,9 @@ QString::Data *QString::fromLatin1_helper(const char *str, int size)
 
 QString::Data *QString::fromAscii_helper(const char *str, int size)
 {
-    return fromLatin1_helper(str, size);
+    QString s = fromUtf8(str, size);
+    s.d->ref.ref();
+    return s.d;
 }
 
 /*! \fn QString QString::fromLatin1(const char *str, int size)
