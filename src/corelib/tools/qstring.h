@@ -69,6 +69,11 @@ class QLatin1String;
 class QStringRef;
 template <typename T> class QVector;
 
+Q_CORE_EXPORT bool qStringComparisonHelper(const QString &s1, const char *s2);
+Q_CORE_EXPORT bool qStringComparisonHelper(const QString &s1, const QByteArray &s2);
+Q_CORE_EXPORT bool qStringComparisonHelper(const QStringRef &s1, const char *s2);
+Q_CORE_EXPORT bool qStringComparisonHelper(const QStringRef &s1, const QByteArray &s2);
+
 struct QStringData {
     QtPrivate::RefCount ref;
     int size;
@@ -666,8 +671,10 @@ private:
     friend class QTextCodec;
     friend class QStringRef;
     friend struct QAbstractConcatenable;
-    friend inline bool qStringComparisonHelper(const QString &s1, const char *s2);
-    friend inline bool qStringComparisonHelper(const QStringRef &s1, const char *s2);
+    friend bool qStringComparisonHelper(const QString &s1, const char *s2);
+    friend bool qStringComparisonHelper(const QString &s1, const QByteArray &s2);
+    friend bool qStringComparisonHelper(const QStringRef &s1, const char *s2);
+    friend bool qStringComparisonHelper(const QStringRef &s1, const QByteArray &s2);
 public:
     typedef Data * DataPtr;
     inline DataPtr &data_ptr() { return d; }
@@ -717,7 +724,6 @@ private:
 
 // Qt 4.x compatibility
 typedef QLatin1String QLatin1Literal;
-
 
 inline QString::QString(const QLatin1String &aLatin1) : d(fromLatin1_helper(aLatin1.latin1(), aLatin1.size()))
 { }
@@ -964,10 +970,6 @@ inline bool operator!=(QString::Null, const QString &s) { return !s.isNull(); }
 inline bool operator!=(const QString &s, QString::Null) { return !s.isNull(); }
 
 #ifndef QT_NO_CAST_FROM_ASCII
-inline bool qStringComparisonHelper(const QString &s1, const char *s2)
-{
-    return (s1 == QLatin1String(s2));
-}
 inline bool QString::operator==(const char *s) const
 { return qStringComparisonHelper(*this, s); }
 inline bool QString::operator!=(const char *s) const
@@ -1248,11 +1250,6 @@ inline bool operator<=(const QStringRef &s1, const QStringRef &s2)
 { return !(s1 > s2); }
 inline bool operator>=(const QStringRef &s1, const QStringRef &s2)
 { return !(s1 < s2); }
-
-inline bool qStringComparisonHelper(const QStringRef &s1, const char *s2)
-{
-    return (s1 == QLatin1String(s2));
-}
 
 inline QT_ASCII_CAST_WARN bool operator==(const char *s1, const QStringRef &s2)
 { return qStringComparisonHelper(s2, s1); }

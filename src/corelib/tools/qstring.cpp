@@ -369,6 +369,42 @@ inline char qToLower(char ch)
         return ch;
 }
 
+/*!
+   \internal
+*/
+bool qStringComparisonHelper(const QString &s1, const char *s2)
+{
+    // ### optimize me
+    return s1 == QString::fromAscii(s2);
+}
+
+/*!
+   \internal
+*/
+bool qStringComparisonHelper(const QString &s1, const QByteArray &s2)
+{
+    // ### optimize me
+    return s1 == QString::fromAscii(s2);
+}
+
+/*!
+   \internal
+*/
+bool qStringComparisonHelper(const QStringRef &s1, const char *s2)
+{
+    // ### optimize me
+    return s1 == QString::fromAscii(s2);
+}
+
+/*!
+   \internal
+*/
+bool qStringComparisonHelper(const QStringRef &s1, const QByteArray &s2)
+{
+    // ### optimize me
+    return s1 == QString::fromAscii(s2);
+}
+
 const QString::Null QString::null = { };
 
 /*!
