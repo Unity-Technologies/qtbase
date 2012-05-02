@@ -47,4 +47,8 @@ isEmpty(CMAKE_VERSION) {
     }
 }
 
+insignificant_test:!isEmpty(check.commands) {
+    check.commands = -$${check.commands}
+}
+
 QMAKE_EXTRA_TARGETS *= check

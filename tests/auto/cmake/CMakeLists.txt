@@ -78,11 +78,11 @@ macro(expect_fail _dir)
   )
 endmacro()
 
-if(${CMAKE_VERSION} VERSION_EQUAL 2.8.7 OR ${CMAKE_VERSION} VERSION_GREATER 2.8.7)
+if(NOT ${CMAKE_VERSION} VERSION_LESS 2.8.7)
     # Requires CMAKE_AUTOMOC function in CMake 2.8.7
     expect_pass(pass1)
 else()
-    message("CMake version older than 2.8.7. Not running test \"pass1\"")
+    message("CMake version older than 2.8.7 (Found ${CMAKE_VERSION}). Not running test \"pass1\"")
 endif()
 expect_pass(pass2)
 # Modules do not currently find their own dependencies.
@@ -92,6 +92,9 @@ expect_fail(fail5)
 expect_pass("pass(needsquoting)6")
 expect_pass(pass7)
 expect_pass(pass8)
-if (UNIX)
+
+# If QtDBus has been installed then run the tests for its macros.
+find_package(Qt5DBus QUIET)
+if (Qt5DBus_FOUND AND NOT APPLE)
     expect_pass(pass9)
 endif()
