@@ -114,7 +114,18 @@ void QBasicFontDatabase::populateFontDatabase()
     for (int i = 0; i < int(dir.count()); ++i) {
         const QByteArray file = QFile::encodeName(dir.absoluteFilePath(dir[i]));
 //        qDebug() << "looking at" << file;
-        addTTFile(QByteArray(), file);
+        if (file.startsWith(':')) {
+            QByteArray data;
+            QFile dataFile(dir.absoluteFilePath(dir[i]));
+            if (dataFile.open(QFile::ReadOnly)) {
+                data = dataFile.readAll();
+                dataFile.close();
+            }
+            if (!data.isEmpty())
+                addTTFile(data, file);
+        } else {
+            addTTFile(QByteArray(), file);
+        }
     }
 }
 
