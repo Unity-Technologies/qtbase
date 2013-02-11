@@ -63,6 +63,7 @@ const char _GUIDLexYaccFiles[]         = "{E12AE0D2-192F-4d59-BD23-7D3FA58D3183}
 const char _GUIDTranslationFiles[]     = "{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}";
 const char _GUIDFormFiles[]            = "{99349809-55BA-4b9d-BF79-8FDBB0286EB3}";
 const char _GUIDExtraCompilerFiles[]   = "{E0D8C965-CC5F-43d7-AD63-FAEF0BBC0F85}";
+const char _GUIDDeploymentFiles[]      = "{D9D6E243-F8AF-46E4-B9FD-80ECBC20BA3E}";
 QT_END_NAMESPACE
 
 #ifdef Q_OS_WIN32
@@ -878,6 +879,8 @@ void VcprojGenerator::initProject()
     initFormFiles();
     initResourceFiles();
     initExtraCompilerOutputs();
+    if (project->isActiveConfig("winrt"))
+        initDeploymentFiles();
 
     // Own elements -----------------------------
     vcProject.Name = unescapeFilePath(project->first("QMAKE_ORIG_TARGET").toQString());
@@ -1452,6 +1455,84 @@ void VcprojGenerator::initResourceFiles()
     vcProject.ResourceFiles.Project = this;
     vcProject.ResourceFiles.Config = &(vcProject.Configuration);
     vcProject.ResourceFiles.CustomBuild = none;
+}
+
+void VcprojGenerator::initDeploymentFiles()
+{
+    vcProject.DeploymentFiles.Name = "Deployment Files";
+    vcProject.DeploymentFiles.ParseFiles = _False;
+    vcProject.DeploymentFiles.Filter = "deploy";
+    vcProject.DeploymentFiles.Guid = _GUIDDeploymentFiles;
+
+    // Bad hack, please look away -------------------------------------
+
+    // Only deploy Qt libs for shared build
+    // FIXME: This code should actually resolve the libraries from all Qt modules.
+    const QString &qtdir = QLibraryInfo::rawLocation(QLibraryInfo::LibrariesPath,
+                                                     QLibraryInfo::EffectivePaths).toLower();
+    ProStringList arg = project->values("QMAKE_LIBS") + project->values("QMAKE_LIBS_PRIVATE");
+    for (ProStringList::ConstIterator it = arg.constBegin(); it != arg.constEnd(); ++it) {
+        if (it->toQString().toLower().contains(qtdir)) {
+            QString dllName = (*it).toQString();
+
+            if (dllName.contains(QLatin1String("QAxContainer"))
+                    || dllName.contains(QLatin1String("qtmain"))
+                    || dllName.contains(QLatin1String("QtUiTools"))
+                    || dllName.contains(QLatin1String("/LIBPATH:")))
+                continue;
+            dllName.replace(QLatin1String(".lib") , QLatin1String(".dll"));
+            QFileInfo info(dllName);
+            QString absoluteFilePath(QDir::toNativeSeparators(info.absoluteFilePath()));
+            vcProject.DeploymentFiles.addFile(absoluteFilePath);
+        }
+    }
+
+    // foreach item in DEPLOYMENT
+    foreach (const ProString &item, project->values("DEPLOYMENT")) {
+        // get item.path
+        QString devicePath = project->first(ProKey(item + ".path")).toQString();
+        // foreach d in item.files
+        foreach (const ProString &src, project->values(ProKey(item + ".files"))) {
+            QString itemDevicePath = devicePath;
+            QString source = Option::fixPathToLocalOS(src.toQString());
+            QString nameFilter;
+            QFileInfo info(source);
+            QString searchPath;
+            if (info.isDir()) {
+                nameFilter = QLatin1String("*");
+                itemDevicePath += "\\" + info.fileName();
+                searchPath = info.absoluteFilePath();
+            } else {
+                nameFilter = source.split('\\').last();
+                searchPath = info.absolutePath();
+            }
+
+            int pathSize = searchPath.size();
+            QDirIterator iterator(searchPath, QStringList() << nameFilter,
+                                  QDir::Files | QDir::NoDotAndDotDot | QDir::NoSymLinks,
+                                  QDirIterator::Subdirectories);
+            // foreach dirIterator-entry in d
+            while (iterator.hasNext()) {
+                iterator.next();
+                QString absoluteItemFilePath = Option::fixPathToLocalOS(QFileInfo(iterator.filePath()).absoluteFilePath());
+                // Identify if it is just another subdir
+                int diffSize = absoluteItemFilePath.size() - pathSize;
+                // write out rules
+                vcProject.DeploymentFiles.addFile(absoluteItemFilePath);
+
+                //conf.deployment.AdditionalFiles += iterator.fileName()
+                //    + "|" + absoluteItemPath
+                //    + "|" + itemDevicePath + (diffSize ? (absoluteItemPath.right(diffSize)) : QLatin1String(""))
+                //    + "|0;";
+            }
+        }
+    }
+
+    // You may look again --------------------------------------------
+
+    vcProject.DeploymentFiles.Project = this;
+    vcProject.DeploymentFiles.Config = &(vcProject.Configuration);
+    vcProject.DeploymentFiles.CustomBuild = none;
 }
 
 void VcprojGenerator::initExtraCompilerOutputs()
