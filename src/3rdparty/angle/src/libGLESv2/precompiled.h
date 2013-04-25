@@ -33,8 +33,12 @@
 #include <vector>
 
 #if defined(ANGLE_ENABLE_D3D11)
-# include <D3D11.h>
 # include <dxgi.h>
+# ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+#  include <d3d11_1.h>
+# else
+#  include <D3D11.h>
+# endif
 #else
 # include <d3d9.h>
 #endif

@@ -42,24 +42,19 @@
 //
 #if defined(ANGLE_OS_WIN)
 typedef DWORD OS_TLSIndex;
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+#define OS_INVALID_TLS_INDEX ((DWORD)0xFFFFFF)
+#else
 #define OS_INVALID_TLS_INDEX (TLS_OUT_OF_INDEXES)
+#endif
 #elif defined(ANGLE_OS_POSIX)
 typedef pthread_key_t OS_TLSIndex;
 #define OS_INVALID_TLS_INDEX (static_cast<OS_TLSIndex>(-1))
 #endif  // ANGLE_OS_WIN
 
 OS_TLSIndex OS_AllocTLSIndex();
+void *OS_GetTLSValue(OS_TLSIndex nIndex);
 bool OS_SetTLSValue(OS_TLSIndex nIndex, void *lpvValue);
 bool OS_FreeTLSIndex(OS_TLSIndex nIndex);
-
-inline void* OS_GetTLSValue(OS_TLSIndex nIndex)
-{
-    ASSERT(nIndex != OS_INVALID_TLS_INDEX);
-#if defined(ANGLE_OS_WIN)
-    return TlsGetValue(nIndex);
-#elif defined(ANGLE_OS_POSIX)
-    return pthread_getspecific(nIndex);
-#endif  // ANGLE_OS_WIN
-}
 
 #endif // __OSINCLUDE_H

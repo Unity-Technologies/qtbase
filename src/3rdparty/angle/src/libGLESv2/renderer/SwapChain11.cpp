@@ -17,7 +17,7 @@
 namespace rx
 {
 
-SwapChain11::SwapChain11(Renderer11 *renderer, HWND window, HANDLE shareHandle,
+SwapChain11::SwapChain11(Renderer11 *renderer, EGLNativeWindowType window, HANDLE shareHandle,
                          GLenum backBufferFormat, GLenum depthBufferFormat)
     : mRenderer(renderer), SwapChain(window, shareHandle, backBufferFormat, depthBufferFormat)
 {
@@ -467,6 +467,33 @@ EGLint SwapChain11::reset(int backbufferWidth, int backbufferHeight, EGLint swap
 
     if (mWindow)
     {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+        IDXGIFactory2 *factory = NULL;
+        HRESULT hr = mRenderer->getDxgiFactory()->QueryInterface(__uuidof(IDXGIFactory2), (void**)&factory);
+        ASSERT(SUCCEEDED(hr));
+
+        DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {0};
+# if WINAPI_FAMILY==WINAPI_FAMILY_PHONE_APP
+        swapChainDesc.BufferCount = 1; // On phone, only single buffering is supported.
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD; // On phone, no swap effects are supported.
+# else
+        swapChainDesc.BufferCount = 2; // has to be between 2 and DXGI_MAX_SWAP_CHAIN_BUFFERS
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL; // On non-phone, it's sequential flip only
+# endif
+        swapChainDesc.Format = gl_d3d11::ConvertRenderbufferFormat(mBackBufferFormat);
+        swapChainDesc.Width = backbufferWidth;
+        swapChainDesc.Height = backbufferHeight;
+        swapChainDesc.Scaling = DXGI_SCALING_STRETCH; // On phone, only stretch and aspect-ratio stretch scaling are allowed.
+        swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        swapChainDesc.Flags = 0;
+        swapChainDesc.Stereo = false;
+        swapChainDesc.SampleDesc.Count = 1; // Don't use multi-sampling.
+        swapChainDesc.SampleDesc.Quality = 0;
+
+        IDXGISwapChain1 *swapChain = NULL;
+        HRESULT result = factory->CreateSwapChainForCoreWindow(device, mWindow, &swapChainDesc, NULL, &swapChain);
+        mSwapChain = swapChain;
+#else
         // We cannot create a swap chain for an HWND that is owned by a different process
         DWORD currentProcessId = GetCurrentProcessId();
         DWORD wndProcessId;
@@ -498,6 +525,7 @@ EGLint SwapChain11::reset(int backbufferWidth, int backbufferHeight, EGLint swap
         swapChainDesc.Windowed = TRUE;
 
         HRESULT result = factory->CreateSwapChain(device, &swapChainDesc, &mSwapChain);
+#endif
 
         if (FAILED(result))
         {

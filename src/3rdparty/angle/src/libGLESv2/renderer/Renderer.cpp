@@ -74,7 +74,11 @@ bool Renderer::initializeCompiler()
     }
 #else
     // Load the version of the D3DCompiler DLL associated with the Direct3D version ANGLE was built with.
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT // Lib must be copied to app package from Redist
+    mD3dCompilerModule = LoadPackagedLibrary(D3DCOMPILER_DLL, NULL);
+#else
     mD3dCompilerModule = LoadLibrary(D3DCOMPILER_DLL);
+#endif
 #endif  // ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES
 
     if (!mD3dCompilerModule)

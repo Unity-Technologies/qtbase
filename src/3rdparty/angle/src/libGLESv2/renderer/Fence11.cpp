@@ -84,7 +84,11 @@ void Fence11::finishFence()
 
     while (!testFence())
     {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+        WaitForSingleObjectEx(GetCurrentThread(), 0, FALSE);
+#else
         Sleep(0);
+#endif
     }
 }
 

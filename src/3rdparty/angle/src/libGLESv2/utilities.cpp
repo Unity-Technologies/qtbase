@@ -714,6 +714,11 @@ bool IsTriangleMode(GLenum drawMode)
 
 std::string getTempPath()
 {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    // Unimplemented
+    UNREACHABLE();
+    return std::string();
+#else
     char path[MAX_PATH];
     DWORD pathLen = GetTempPathA(sizeof(path) / sizeof(path[0]), path);
     if (pathLen == 0)
@@ -730,6 +735,7 @@ std::string getTempPath()
     }
     
     return path;
+#endif
 }
 
 void writeFile(const char* path, const void* content, size_t size)

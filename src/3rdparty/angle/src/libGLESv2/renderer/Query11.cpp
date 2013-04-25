@@ -65,7 +65,11 @@ GLuint Query11::getResult()
     {
         while (!testQuery())
         {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+            WaitForSingleObjectEx(GetCurrentThread(), 0, FALSE);
+#else
             Sleep(0);
+#endif
             // explicitly check for device loss, some drivers seem to return S_FALSE
             // if the device is lost
             if (mRenderer->testDeviceLost(true))

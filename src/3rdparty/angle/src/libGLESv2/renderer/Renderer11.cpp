@@ -135,6 +135,7 @@ EGLint Renderer11::initialize()
         return EGL_NOT_INITIALIZED;
     }
 
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT // Don't delay-load on WinRT
     mDxgiModule = LoadLibrary(TEXT("dxgi.dll"));
     mD3d11Module = LoadLibrary(TEXT("d3d11.dll"));
 
@@ -153,6 +154,7 @@ EGLint Renderer11::initialize()
         ERR("Could not retrieve D3D11CreateDevice address - aborting!\n");
         return EGL_NOT_INITIALIZED;
     }
+#endif
 
     D3D_FEATURE_LEVEL featureLevels[] =
     {
@@ -182,8 +184,13 @@ EGLint Renderer11::initialize()
         return EGL_NOT_INITIALIZED;   // Cleanup done by destructor through glDestroyRenderer
     }
 
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    IDXGIDevice1 *dxgiDevice = NULL;
+    result = mDevice->QueryInterface(__uuidof(IDXGIDevice1), (void**)&dxgiDevice);
+#else
     IDXGIDevice *dxgiDevice = NULL;
     result = mDevice->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgiDevice);
+#endif
 
     if (FAILED(result))
     {
@@ -198,6 +205,13 @@ EGLint Renderer11::initialize()
         ERR("Could not retrieve DXGI adapter - aborting!\n");
         return EGL_NOT_INITIALIZED;
     }
+
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    // Ensure that DXGI does not queue more than one frame at a time. This both reduces latency and
+    // ensures that the application will only render after each VSync, minimizing power consumption.
+    result = dxgiDevice->SetMaximumFrameLatency(1);
+    ASSERT(SUCCEEDED(result));
+#endif
 
     dxgiDevice->Release();
 
@@ -489,7 +503,11 @@ void Renderer11::sync(bool block)
             result = mDeviceContext->GetData(mSyncQuery, NULL, 0, D3D11_ASYNC_GETDATA_DONOTFLUSH);
 
             // Keep polling, but allow other threads to do something useful first
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+            WaitForSingleObjectEx(GetCurrentThread(), 0, FALSE);
+#else
             Sleep(0);
+#endif
 
             if (testDeviceLost(true))
             {
@@ -504,7 +522,7 @@ void Renderer11::sync(bool block)
     }
 }
 
-SwapChain *Renderer11::createSwapChain(HWND window, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat)
+SwapChain *Renderer11::createSwapChain(EGLNativeWindowType window, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat)
 {
     return new rx::SwapChain11(this, window, shareHandle, backBufferFormat, depthBufferFormat);
 }

@@ -73,9 +73,16 @@
 #endif
 #include <windows.h>
 
+#if WINAPI_FAMILY==WINAPI_FAMILY_APP || WINAPI_FAMILY==WINAPI_FAMILY_PHONE_APP
+#include <windows.ui.core.h>
+typedef int                                  EGLNativeDisplayType;
+typedef void                                *EGLNativePixmapType;
+typedef ABI::Windows::UI::Core::ICoreWindow *EGLNativeWindowType;
+#else
 typedef HDC     EGLNativeDisplayType;
 typedef HBITMAP EGLNativePixmapType;
 typedef HWND    EGLNativeWindowType;
+#endif
 
 #elif defined(__WINSCW__) || defined(__SYMBIAN32__)  /* Symbian */
 

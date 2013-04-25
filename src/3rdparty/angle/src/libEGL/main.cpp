@@ -12,7 +12,20 @@
 
 #ifndef QT_OPENGL_ES_2_ANGLE_STATIC
 
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+__declspec(thread) egl::Current *thread_local_current = nullptr;
+#else
 static DWORD currentTLS = TLS_OUT_OF_INDEXES;
+#endif
+
+static inline egl::Current *getCurrent()
+{
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    return thread_local_current;
+#else
+    return (egl::Current*)TlsGetValue(currentTLS);
+#endif
+}
 
 extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 {
@@ -35,21 +48,35 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
             }
 #endif
 
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
             currentTLS = TlsAlloc();
 
             if (currentTLS == TLS_OUT_OF_INDEXES)
             {
                 return FALSE;
             }
+#endif
         }
         // Fall throught to initialize index
       case DLL_THREAD_ATTACH:
         {
-            egl::Current *current = (egl::Current*)LocalAlloc(LPTR, sizeof(egl::Current));
+            egl::Current *current = getCurrent();
+
+            if (!current) {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+                current = thread_local_current = (egl::Current*)HeapAlloc(GetProcessHeap(),
+                                                                      HEAP_GENERATE_EXCEPTIONS|HEAP_ZERO_MEMORY,
+                                                                      sizeof(egl::Current));
+#else
+                current = (egl::Current*)LocalAlloc(LPTR, sizeof(egl::Current));
+#endif
+            }
 
             if (current)
             {
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
                 TlsSetValue(currentTLS, current);
+#endif
 
                 current->error = EGL_SUCCESS;
                 current->API = EGL_OPENGL_ES_API;
@@ -61,24 +88,36 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
         break;
       case DLL_THREAD_DETACH:
         {
-            void *current = TlsGetValue(currentTLS);
+            egl::Current *current = getCurrent();
 
             if (current)
             {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+                HeapFree(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, current);
+                thread_local_current = nullptr;
+#else
                 LocalFree((HLOCAL)current);
+#endif
             }
         }
         break;
       case DLL_PROCESS_DETACH:
         {
-            void *current = TlsGetValue(currentTLS);
+            egl::Current *current = getCurrent();
 
             if (current)
             {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+                HeapFree(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, current);
+                thread_local_current = nullptr;
+#else
                 LocalFree((HLOCAL)current);
+#endif
             }
 
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
             TlsFree(currentTLS);
+#endif
         }
         break;
       default:
@@ -88,14 +127,9 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
     return TRUE;
 }
 
-static inline egl::Current *current()
-{
-    return (egl::Current*)TlsGetValue(currentTLS);
-}
-
 #else // !QT_OPENGL_ES_2_ANGLE_STATIC
 
-static egl::Current *current()
+static egl::Current *getCurrent()
 {
     // No precautions for thread safety taken as ANGLE is used single-threaded in Qt.
     static egl::Current curr = { EGL_SUCCESS, EGL_OPENGL_ES_API, EGL_NO_DISPLAY, EGL_NO_SURFACE, EGL_NO_SURFACE };
@@ -108,52 +142,52 @@ namespace egl
 {
 void setCurrentError(EGLint error)
 {
-    current()->error = error;
+    getCurrent()->error = error;
 }
 
 EGLint getCurrentError()
 {
-    return current()->error;
+    return getCurrent()->error;
 }
 
 void setCurrentAPI(EGLenum API)
 {
-    current()->API = API;
+    getCurrent()->API = API;
 }
 
 EGLenum getCurrentAPI()
 {
-    return current()->API;
+    return getCurrent()->API;
 }
 
 void setCurrentDisplay(EGLDisplay dpy)
 {
-    current()->display = dpy;
+    getCurrent()->display = dpy;
 }
 
 EGLDisplay getCurrentDisplay()
 {
-    return current()->display;
+    return getCurrent()->display;
 }
 
 void setCurrentDrawSurface(EGLSurface surface)
 {
-    current()->drawSurface = surface;
+    getCurrent()->drawSurface = surface;
 }
 
 EGLSurface getCurrentDrawSurface()
 {
-    return current()->drawSurface;
+    return getCurrent()->drawSurface;
 }
 
 void setCurrentReadSurface(EGLSurface surface)
 {
-    current()->readSurface = surface;
+    getCurrent()->readSurface = surface;
 }
 
 EGLSurface getCurrentReadSurface()
 {
-    return current()->readSurface;
+    return getCurrent()->readSurface;
 }
 
 void error(EGLint errorCode)

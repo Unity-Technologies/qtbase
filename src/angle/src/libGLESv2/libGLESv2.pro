@@ -12,7 +12,7 @@ angle_d3d11 {
 } else {
     LIBS += -ld3d9
 }
-LIBS += -ldxguid -ld3dcompiler
+LIBS += -ldxguid
 STATICLIBS = translator_common translator_hlsl preprocessor
 
 for(libname, STATICLIBS) {

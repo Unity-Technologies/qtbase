@@ -13,6 +13,8 @@
 #include "libGLESv2/Uniform.h"
 #include "libGLESv2/angletypes.h"
 
+#include <EGL/eglplatform.h>
+
 const int versionWindowsVista = MAKEWORD(0x00, 0x06);
 const int versionWindows7 = MAKEWORD(0x01, 0x06);
 
@@ -20,7 +22,11 @@ const int versionWindows7 = MAKEWORD(0x01, 0x06);
 // comparison.
 inline int getComparableOSVersion()
 {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    DWORD version = WINVER;
+#else
     DWORD version = GetVersion();
+#endif
     int majorVersion = LOBYTE(LOWORD(version));
     int minorVersion = HIBYTE(LOWORD(version));
     return MAKEWORD(minorVersion, majorVersion);
@@ -103,7 +109,7 @@ class Renderer
 
     virtual void sync(bool block) = 0;
 
-    virtual SwapChain *createSwapChain(HWND window, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat) = 0;
+    virtual SwapChain *createSwapChain(EGLNativeWindowType window, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat) = 0;
 
     virtual void setSamplerState(gl::SamplerType type, int index, const gl::SamplerState &sampler) = 0;
     virtual void setTexture(gl::SamplerType type, int index, gl::Texture *texture) = 0;

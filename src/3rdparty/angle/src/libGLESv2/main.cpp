@@ -13,7 +13,20 @@
 
 #ifndef QT_OPENGL_ES_2_ANGLE_STATIC
 
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+__declspec(thread) gl::Current *thread_local_current = nullptr;
+#else
 static DWORD currentTLS = TLS_OUT_OF_INDEXES;
+#endif
+
+static gl::Current *getCurrent()
+{
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    return thread_local_current;
+#else
+    return (gl::Current*)TlsGetValue(currentTLS);
+#endif
+}
 
 extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 {
@@ -21,22 +34,33 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
     {
       case DLL_PROCESS_ATTACH:
         {
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
             currentTLS = TlsAlloc();
 
             if (currentTLS == TLS_OUT_OF_INDEXES)
             {
                 return FALSE;
             }
+#endif
         }
         // Fall throught to initialize index
       case DLL_THREAD_ATTACH:
         {
-            gl::Current *current = (gl::Current*)LocalAlloc(LPTR, sizeof(gl::Current));
+            gl::Current *current = getCurrent();
+
+            if (!current) {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+                current = thread_local_current = (gl::Current*)HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS|HEAP_ZERO_MEMORY, sizeof(gl::Current));
+#else
+                current = (gl::Current*)LocalAlloc(LPTR, sizeof(gl::Current));
+#endif
+            }
 
             if (current)
             {
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
                 TlsSetValue(currentTLS, current);
-
+#endif
                 current->context = NULL;
                 current->display = NULL;
             }
@@ -44,24 +68,36 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
         break;
       case DLL_THREAD_DETACH:
         {
-            void *current = TlsGetValue(currentTLS);
+            gl::Current *current = getCurrent();
 
             if (current)
             {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+                HeapFree(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, current);
+                thread_local_current = nullptr;
+#else
                 LocalFree((HLOCAL)current);
+#endif
             }
         }
         break;
       case DLL_PROCESS_DETACH:
         {
-            void *current = TlsGetValue(currentTLS);
+            gl::Current *current = getCurrent();
 
             if (current)
             {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+                HeapFree(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, current);
+                thread_local_current = nullptr;
+#else
                 LocalFree((HLOCAL)current);
+#endif
             }
 
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
             TlsFree(currentTLS);
+#endif
         }
         break;
       default:
@@ -71,14 +107,9 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
     return TRUE;
 }
 
-static gl::Current *current()
-{
-    return (gl::Current*)TlsGetValue(currentTLS);
-}
-
 #else // !QT_OPENGL_ES_2_ANGLE_STATIC
 
-static inline gl::Current *current()
+static inline gl::Current *getCurrent()
 {
     // No precautions for thread safety taken as ANGLE is used single-threaded in Qt.
     static gl::Current curr = { 0, 0 };
@@ -91,7 +122,7 @@ namespace gl
 {
 void makeCurrent(Context *context, egl::Display *display, egl::Surface *surface)
 {
-    Current *curr = current();
+    Current *curr = getCurrent();
 
     curr->context = context;
     curr->display = display;
@@ -104,7 +135,7 @@ void makeCurrent(Context *context, egl::Display *display, egl::Surface *surface)
 
 Context *getContext()
 {
-    return current()->context;
+    return getCurrent()->context;
 }
 
 Context *getNonLostContext()
@@ -128,7 +159,7 @@ Context *getNonLostContext()
 
 egl::Display *getDisplay()
 {
-    return current()->display;
+    return getCurrent()->display;
 }
 
 // Records an error code

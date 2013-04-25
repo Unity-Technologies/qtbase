@@ -37,8 +37,13 @@ DEFINES +=  _WINDOWS \
             NOMINMAX \
             WIN32_LEAN_AND_MEAN=1
 
-# Defines specifying the API version (0x0600 = Vista)
-DEFINES +=  _WIN32_WINNT=0x0600 WINVER=0x0600
+# Defines specifying the API version (0x0600 = Vista, 0x0600 = Win8)
+winrt {
+    DEFINES += _WIN32_WINNT=0x0602 WINVER=0x0602
+    DEFINES += QT_OPENGL_ES_2_ANGLE_WINRT
+} else {
+    DEFINES +=  _WIN32_WINNT=0x0600 WINVER=0x0600
+}
 
 # ANGLE specific defines
 DEFINES +=  ANGLE_DISABLE_TRACE \

@@ -17,6 +17,57 @@
 //
 // Thread Local Storage Operations
 //
+
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+
+#include <vector>
+
+__declspec(thread) std::vector<void*> *tls = nullptr;
+
+OS_TLSIndex OS_AllocTLSIndex()
+{
+    if (!tls)
+        tls = new std::vector<void*>(1, nullptr);
+
+    tls->push_back(nullptr);
+    return tls->size() - 1;
+}
+
+void *OS_GetTLSValue(OS_TLSIndex nIndex)
+{
+    ASSERT(nIndex != OS_INVALID_TLS_INDEX);
+    ASSERT(tls);
+
+    return tls->at(nIndex);
+}
+
+bool OS_SetTLSValue(OS_TLSIndex nIndex, void *lpvValue)
+{
+    if (!tls || nIndex >= tls->size() || nIndex == OS_INVALID_TLS_INDEX) {
+        assert(0 && "OS_SetTLSValue(): Invalid TLS Index");
+        return false;
+    }
+
+    tls->at(nIndex) = lpvValue;
+    return true;
+}
+
+
+bool OS_FreeTLSIndex(OS_TLSIndex nIndex)
+{
+    if (!tls || nIndex >= tls->size() || nIndex == OS_INVALID_TLS_INDEX) {
+        assert(0 && "OS_SetTLSValue(): Invalid TLS Index");
+        return false;
+    }
+
+    // TODO: push freed indices into a reuse stack...
+    return true;
+}
+
+
+#else
+
+
 OS_TLSIndex OS_AllocTLSIndex()
 {
 	DWORD dwIndex = TlsAlloc();
@@ -26,6 +77,14 @@ OS_TLSIndex OS_AllocTLSIndex()
 	}
 
 	return dwIndex;
+}
+
+
+void *OS_GetTLSValue(OS_TLSIndex nIndex)
+{
+    ASSERT(nIndex != OS_INVALID_TLS_INDEX);
+
+    return TlsGetValue(nIndex);
 }
 
 
@@ -55,3 +114,5 @@ bool OS_FreeTLSIndex(OS_TLSIndex nIndex)
 	else
 		return false;
 }
+
+#endif

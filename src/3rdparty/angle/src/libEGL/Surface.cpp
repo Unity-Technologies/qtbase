@@ -20,12 +20,16 @@
 #include "libEGL/main.h"
 #include "libEGL/Display.h"
 
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+#include <windows.ui.core.h>
+#else
 #include <dwmapi.h>
+#endif
 
 namespace egl
 {
 
-Surface::Surface(Display *display, const Config *config, HWND window, EGLint postSubBufferSupported)
+Surface::Surface(Display *display, const Config *config, EGLNativeWindowType window, EGLint postSubBufferSupported)
     : mDisplay(display), mConfig(config), mWindow(window), mPostSubBufferSupported(postSubBufferSupported)
 {
     mRenderer = mDisplay->getRenderer();
@@ -71,12 +75,12 @@ Surface::~Surface()
 
 bool Surface::initialize()
 {
-    typedef HRESULT (STDAPICALLTYPE *PtrDwmIsCompositionEnabled)(BOOL*);
-    typedef HRESULT (STDAPICALLTYPE *PtrDwmSetPresentParameters)(HWND, DWM_PRESENT_PARAMETERS *);
-
     if (!resetSwapChain())
       return false;
 
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
+    typedef HRESULT (STDAPICALLTYPE *PtrDwmIsCompositionEnabled)(BOOL*);
+    typedef HRESULT (STDAPICALLTYPE *PtrDwmSetPresentParameters)(HWND, DWM_PRESENT_PARAMETERS *);
     // Modify present parameters for this window, if we are composited,
     // to minimize the amount of queuing done by DWM between our calls to
     // present and the actual screen.
@@ -108,6 +112,7 @@ bool Surface::initialize()
         }
       }
     }
+#endif
 
     return true;
 }
@@ -133,6 +138,12 @@ bool Surface::resetSwapChain()
 
     if (mWindow)
     {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+        ABI::Windows::Foundation::Rect windowRect;
+        mWindow->get_Bounds(&windowRect);
+        width = windowRect.Width;
+        height = windowRect.Height;
+#else
         RECT windowRect;
         if (!GetClientRect(getWindowHandle(), &windowRect))
         {
@@ -141,9 +152,9 @@ bool Surface::resetSwapChain()
             ERR("Could not retrieve the window dimensions");
             return error(EGL_BAD_SURFACE, false);
         }
-
         width = windowRect.right - windowRect.left;
         height = windowRect.bottom - windowRect.top;
+#endif
     }
     else
     {
@@ -263,7 +274,7 @@ bool Surface::swapRect(EGLint x, EGLint y, EGLint width, EGLint height)
     return true;
 }
 
-HWND Surface::getWindowHandle()
+EGLNativeWindowType Surface::getWindowHandle()
 {
     return mWindow;
 }
@@ -272,6 +283,7 @@ HWND Surface::getWindowHandle()
 #define kSurfaceProperty _TEXT("Egl::SurfaceOwner")
 #define kParentWndProc _TEXT("Egl::SurfaceParentWndProc")
 
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
 static LRESULT CALLBACK SurfaceWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
 {
   if (message == WM_SIZE)
@@ -285,9 +297,13 @@ static LRESULT CALLBACK SurfaceWindowProc(HWND hwnd, UINT message, WPARAM wparam
   WNDPROC prevWndFunc = reinterpret_cast<WNDPROC >(GetProp(hwnd, kParentWndProc));
   return CallWindowProc(prevWndFunc, hwnd, message, wparam, lparam);
 }
+#endif
 
 void Surface::subclassWindow()
 {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    mWindowSubclassed = false;
+#else
     if (!mWindow)
     {
         return;
@@ -311,10 +327,12 @@ void Surface::subclassWindow()
     SetProp(mWindow, kSurfaceProperty, reinterpret_cast<HANDLE>(this));
     SetProp(mWindow, kParentWndProc, reinterpret_cast<HANDLE>(oldWndProc));
     mWindowSubclassed = true;
+#endif
 }
 
 void Surface::unsubclassWindow()
 {
+#ifndef QT_OPENGL_ES_2_ANGLE_WINRT
     if(!mWindowSubclassed)
     {
         return;
@@ -337,10 +355,18 @@ void Surface::unsubclassWindow()
     RemoveProp(mWindow, kSurfaceProperty);
     RemoveProp(mWindow, kParentWndProc);
     mWindowSubclassed = false;
+#endif
 }
 
 bool Surface::checkForOutOfDateSwapChain()
 {
+#ifdef QT_OPENGL_ES_2_ANGLE_WINRT
+    ABI::Windows::Foundation::Rect client;
+    mWindow->get_Bounds(&client);
+    // Grow the buffer now, if the window has grown. We need to grow now to avoid losing information.
+    int clientWidth = client.Width;
+    int clientHeight = client.Height;
+#else
     RECT client;
     if (!GetClientRect(getWindowHandle(), &client))
     {
@@ -351,6 +377,8 @@ bool Surface::checkForOutOfDateSwapChain()
     // Grow the buffer now, if the window has grown. We need to grow now to avoid losing information.
     int clientWidth = client.right - client.left;
     int clientHeight = client.bottom - client.top;
+#endif
+
     bool sizeDirty = clientWidth != getWidth() || clientHeight != getHeight();
 
     if (mSwapIntervalDirty)
