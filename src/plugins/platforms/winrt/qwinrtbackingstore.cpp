@@ -41,41 +41,72 @@
 
 #include "qwinrtbackingstore.h"
 
-#include <QtGui/QScreen>
+#include "qwinrtscreen.h"
+#ifdef Q_WINRT_GL
+#  include "qwinrteglcontext.h"
+#  include <QOpenGLPaintDevice>
+#else
+#include <QImage>
+#endif
+#include <QScreen>
 
 QT_BEGIN_NAMESPACE
 
 QWinRTBackingStore::QWinRTBackingStore(QWindow *window)
     : QPlatformBackingStore(window)
 {
-    screen = static_cast<QWinRTScreen*>(window->screen()->handle());
+    m_screen = static_cast<QWinRTScreen*>(window->screen()->handle());
+#ifdef Q_WINRT_GL
+    m_context.reset(new QOpenGLContext);
+    m_context->setFormat(window->requestedFormat());
+    m_context->setScreen(window->screen());
+    m_context->create();
+#endif
+}
+
+QWinRTBackingStore::~QWinRTBackingStore()
+{
 }
 
 QPaintDevice *QWinRTBackingStore::paintDevice()
 {
-    return &surface;
+    return m_paintDevice.data();
 }
 
 void QWinRTBackingStore::flush(QWindow *window, const QRegion &region, const QPoint &offset)
 {
     Q_UNUSED(offset)
     // Write to screen's buffer
-    screen->update(region, window->position(), surface.constBits(), surface.width() * 4);
+#ifdef Q_WINRT_GL
+    Q_UNUSED(region)
+    m_context->swapBuffers(window);
+#else
+    m_screen->update(region, window->position(), m_paintDevice->constBits(), m_paintDevice->width() * 4);
+#endif
 }
 
 void QWinRTBackingStore::resize(const QSize &size, const QRegion &staticContents)
 {
+    Q_UNUSED(size);
     Q_UNUSED(staticContents);
-    if (size == surface.size())
-        return;
-    surface = QImage(size, QImage::Format_ARGB32_Premultiplied);
-    surface.fill(Qt::transparent);
 }
 
 void QWinRTBackingStore::beginPaint(const QRegion &region)
 {
     Q_UNUSED(region)
+#ifdef Q_WINRT_GL
+    window()->setSurfaceType(QSurface::OpenGLSurface);
+    m_context->makeCurrent(window());
+    if (m_paintDevice.isNull())
+        m_paintDevice.reset(new QOpenGLPaintDevice(window()->size()));
+    if (m_paintDevice->size() != window()->size())
+        m_paintDevice->setSize(window()->size());
+#else
     window()->setSurfaceType(QSurface::RasterSurface);
+    if (m_paintDevice.isNull() || m_paintDevice->size() != window()->size())
+        m_paintDevice.reset(new QImage(window()->size(), QImage::Format_ARGB32_Premultiplied));
+    m_paintDevice->fill(Qt::transparent);
+#endif
 }
 
 void QWinRTBackingStore::endPaint()

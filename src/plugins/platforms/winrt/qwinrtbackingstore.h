@@ -42,17 +42,21 @@
 #ifndef QWINRTBACKINGSTORE_H
 #define QWINRTBACKINGSTORE_H
 
-#include "qwinrtscreen.h"
-
 #include <qpa/qplatformbackingstore.h>
-#include <QtGui/QGenericMatrix>
+#include <QScopedPointer>
 
 QT_BEGIN_NAMESPACE
+
+class QOpenGLPaintDevice;
+class QOpenGLContext;
+class QImage;
+class QWinRTScreen;
 
 class QWinRTBackingStore : public QPlatformBackingStore
 {
 public:
     QWinRTBackingStore(QWindow *window);
+    ~QWinRTBackingStore();
     QPaintDevice *paintDevice();
     void beginPaint(const QRegion &);
     void endPaint();
@@ -60,8 +64,13 @@ public:
     void resize(const QSize &size, const QRegion &staticContents);
 
 private:
-    QImage surface;
-    QWinRTScreen *screen;
+#ifdef Q_WINRT_GL
+    QScopedPointer<QOpenGLContext> m_context;
+    QScopedPointer<QOpenGLPaintDevice> m_paintDevice;
+#else
+    QScopedPointer<QImage> m_paintDevice;
+#endif
+    QWinRTScreen *m_screen;
 };
 
 QT_END_NAMESPACE

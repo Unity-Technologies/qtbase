@@ -46,8 +46,12 @@
 #include "qwinrtscreen.h"
 #include "qwinrtinputcontext.h"
 #include "qwinrtservices.h"
+#ifdef Q_WINRT_GL
+#  include "qwinrteglcontext.h"
+#endif
 
 #include <QtPlatformSupport/private/qbasicfontdatabase_p.h>
+#include <QOpenGLContext>
 
 #include <wrl.h>
 #include <windows.ui.core.h>
@@ -106,9 +110,11 @@ bool QWinRTIntegration::hasCapability(QPlatformIntegration::Capability cap) cons
 {
     switch (cap) {
     case ThreadedPixmaps:
-    case OpenGL:
-    case ThreadedOpenGL:
         return true;
+#ifdef Q_WINRT_GL
+    case OpenGL:
+        return true;
+#endif
     default:
         return QPlatformIntegration::hasCapability(cap);
     }
@@ -123,6 +129,13 @@ QPlatformBackingStore *QWinRTIntegration::createPlatformBackingStore(QWindow *wi
 {
     return new QWinRTBackingStore(window);
 }
+
+#ifdef Q_WINRT_GL
+QPlatformOpenGLContext *QWinRTIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
+{
+    return new QWinRTEGLContext(context->format(), context->handle(), m_screen->eglDisplay(), m_screen->eglSurface());
+}
+#endif // Q_WINRT_GL
 
 QPlatformFontDatabase *QWinRTIntegration::fontDatabase() const
 {

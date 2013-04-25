@@ -43,10 +43,16 @@
 
 #include "qwinrtbackingstore.h"
 #include "qwinrtinputcontext.h"
-#include "qwinrtpageflipper.h"
 #include "qwinrtcursor.h"
+#ifdef Q_WINRT_GL
+#  include <QtPlatformSupport/private/qeglconvenience_p.h>
+#  include "qwinrteglcontext.h"
+#else
+#  include "qwinrtpageflipper.h"
+#endif
 
-#include <QtGui/QGuiApplication>
+#include <QGuiApplication>
+#include <QSurfaceFormat>
 #include <qpa/qwindowsysteminterface.h>
 #include <qt_windows.h>
 
@@ -467,9 +473,11 @@ QWinRTScreen::QWinRTScreen(ICoreWindow *window)
 #else
     , m_inputContext(Make<QWinRTInputContext>(m_window).Detach())
 #endif
-    , m_pageFlipper(new QWinRTPageFlipper(window))
     , m_cursor(new QWinRTCursor(window))
     , m_orientation(Qt::PrimaryOrientation)
+#ifndef Q_WINRT_GL
+    , m_pageFlipper(new QWinRTPageFlipper(window))
+#endif
 {
 #ifdef Q_OS_WINPHONE // On phone, there can be only one touch device
     QTouchDevice *touchDevice = new QTouchDevice;
@@ -484,9 +492,32 @@ QWinRTScreen::QWinRTScreen(ICoreWindow *window)
     Rect rect;
     window->get_Bounds(&rect);
     m_geometry = QRect(0, 0, rect.Width, rect.Height);
+
+    m_surfaceFormat.setAlphaBufferSize(0);
+    m_surfaceFormat.setRedBufferSize(8);
+    m_surfaceFormat.setGreenBufferSize(8);
+    m_surfaceFormat.setBlueBufferSize(8);
+
+#ifdef Q_WINRT_GL
+    m_surfaceFormat.setRenderableType(QSurfaceFormat::OpenGLES);
+    m_surfaceFormat.setSamples(1);
+    m_surfaceFormat.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    m_surfaceFormat.setDepthBufferSize(24);
+    m_surfaceFormat.setStencilBufferSize(8);
+
+    m_eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (m_eglDisplay == EGL_NO_DISPLAY)
+        qFatal("Qt WinRT platform plugin: failed to initialize EGL display.");
+
+    if (!eglInitialize(m_eglDisplay, NULL, NULL))
+        qFatal("Qt WinRT platform plugin: failed to initialize EGL. This can happen if you haven't included the D3D compiler DLL in your application package.");
+
+    m_eglSurface = eglCreateWindowSurface(m_eglDisplay, q_configFromGLFormat(m_eglDisplay, m_surfaceFormat), window, NULL);
+    if (m_eglSurface == EGL_NO_SURFACE)
+        qFatal("Could not create EGL surface, error 0x%X", eglGetError());
+#else
     m_pageFlipper->resize(m_geometry.size());
-    QWindowSystemInterface::handleScreenGeometryChange(screen(), m_geometry);
-    QWindowSystemInterface::handleScreenAvailableGeometryChange(screen(), m_geometry);
+#endif // Q_WINRT_GL
 
     // Event handlers mapped to QEvents
     m_window->add_KeyDown(Callback<KeyHandler>(this, &QWinRTScreen::onKey).Get(), &m_tokens[QEvent::KeyPress]);
@@ -542,14 +573,14 @@ QImage::Format QWinRTScreen::format() const
     return m_format;
 }
 
+QSurfaceFormat QWinRTScreen::surfaceFormat() const
+{
+    return m_surfaceFormat;
+}
+
 QWinRTInputContext *QWinRTScreen::inputContext() const
 {
     return m_inputContext;
-}
-
-QPlatformScreenPageFlipper *QWinRTScreen::pageFlipper() const
-{
-    return m_pageFlipper;
 }
 
 QPlatformCursor *QWinRTScreen::cursor() const
@@ -583,10 +614,36 @@ bool QWinRTScreen::tryUnsnap()
 #endif
 }
 
+#ifdef Q_WINRT_GL
+
+ICoreWindow *QWinRTScreen::coreWindow() const
+{
+    return m_window;
+}
+
+EGLDisplay QWinRTScreen::eglDisplay() const
+{
+    return m_eglDisplay;
+}
+
+EGLSurface QWinRTScreen::eglSurface() const
+{
+    return m_eglSurface;
+}
+
+#else // Q_WINRT_GL
+
+QPlatformScreenPageFlipper *QWinRTScreen::pageFlipper() const
+{
+    return m_pageFlipper;
+}
+
 void QWinRTScreen::update(const QRegion &region, const QPoint &offset, const void *handle, int stride)
 {
     m_pageFlipper->update(region, offset, handle, stride);
 }
+
+#endif // Q_WINRT_GL
 
 HRESULT QWinRTScreen::onKey(ABI::Windows::UI::Core::ICoreWindow *window, ABI::Windows::UI::Core::IKeyEventArgs *args)
 {
@@ -873,7 +930,9 @@ HRESULT QWinRTScreen::onSizeChanged(ICoreWindow *window, IWindowSizeChangedEvent
     }
 
     m_geometry.setSize(QSize(size.Width, size.Height));
+#ifndef Q_WINRT_GL
     m_pageFlipper->resize(m_geometry.size());
+#endif
 
     QWindowSystemInterface::handleScreenGeometryChange(screen(), m_geometry);
     QWindowSystemInterface::handleScreenAvailableGeometryChange(screen(), m_geometry);

@@ -39,54 +39,25 @@
 **
 ****************************************************************************/
 
-#include "qwinrtwindow.h"
-#include "qwinrtscreen.h"
+#include "qwinrteglcontext.h"
 
-#include <qpa/qwindowsysteminterface.h>
-#include <qpa/qplatformscreen.h>
+QT_BEGIN_NAMESPACE
 
-#include <QtGui/QGuiApplication>
-#include <QtGui/QWindow>
-
-QWinRTWindow::QWinRTWindow(QWindow *window)
-    : QPlatformWindow(window)
+QWinRTEGLContext::QWinRTEGLContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, EGLDisplay display, EGLSurface surface)
+    : QEGLPlatformContext(format, share, display, EGL_OPENGL_ES_API), m_eglSurface(surface)
 {
-    setWindowFlags(window->flags());
-    setWindowState(window->windowState());
-    setGeometry(window->geometry());
 }
 
-void QWinRTWindow::setGeometry(const QRect &rect)
+EGLSurface QWinRTEGLContext::eglSurfaceForPlatformSurface(QPlatformSurface *surface)
 {
-    if (window()->isTopLevel()) {
-        QPlatformWindow::setGeometry(screen()->geometry());
-        QWindowSystemInterface::handleGeometryChange(window(), screen()->geometry());
-        QWindowSystemInterface::handleExposeEvent(window(), screen()->geometry());
+    if (surface->surface()->surfaceClass() == QSurface::Window) {
+        // All windows use the same surface
+        return m_eglSurface;
     } else {
-        QPlatformWindow::setGeometry(rect);
-        QWindowSystemInterface::handleGeometryChange(window(), rect);
-        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(), rect.size()));
+        // TODO: return EGL surfaces for offscreen surfaces
+        qWarning("This plugin does not support offscreen surfaces.");
+        return EGL_NO_SURFACE;
     }
 }
 
-QSurfaceFormat QWinRTWindow::format() const
-{
-    return static_cast<QWinRTScreen*>(screen())->surfaceFormat();
-}
-
-void QWinRTWindow::setWindowState(Qt::WindowState state)
-{
-    // The screen is aware of 4 logical window states:
-    // hidden (Minimized), snapped (NoState), filled (Maximized), FullScreen
-    // This is irrelevant to the window size, which always matches the viewport size
-    Qt::WindowState screenState = static_cast<QWinRTScreen *>(screen())->windowState();
-    // Non-top-level and QWinRTScreen-initiated changes are OK
-    if (!window()->isTopLevel() || state == screenState) {
-        QWindowSystemInterface::handleWindowStateChanged(window(), state);
-        return;
-    }
-    // These situations are initiated by the application; we can only handle one case: unsnap.
-    // We can't minimize or restore programmatically, so those cases are ignored.
-    if (screenState == Qt::WindowNoState && (state == Qt::WindowMaximized || Qt::WindowFullScreen))
-        static_cast<QWinRTScreen *>(screen())->tryUnsnap();
-}
+QT_END_NAMESPACE

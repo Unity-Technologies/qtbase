@@ -59,15 +59,18 @@ public:
 
     QPlatformWindow *createPlatformWindow(QWindow *window) const;
     QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const;
+#ifdef Q_WINRT_GL
+    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const;
+#endif
     QAbstractEventDispatcher *guiThreadEventDispatcher() const;
     QPlatformFontDatabase *fontDatabase() const;
     QPlatformInputContext *inputContext() const;
     QPlatformServices *services() const;
 
 private:
+    QWinRTScreen *m_screen;
     QAbstractEventDispatcher *m_eventDispatcher;
     QPlatformFontDatabase *m_fontDatabase;
-    QWinRTScreen *m_screen;
     QPlatformServices *m_services;
 };
 

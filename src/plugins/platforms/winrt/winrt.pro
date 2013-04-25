@@ -7,7 +7,6 @@ load(qt_plugin)
 
 QT += core-private gui-private platformsupport-private
 
-LIBS += -ld3d11
 DEFINES += __WRL_NO_DEFAULT_LIB__
 
 LIBS += $$QMAKE_LIBS_CORE
@@ -32,6 +31,16 @@ HEADERS = \
     qwinrtscreen.h \
     qwinrtservices.h \
     qwinrtwindow.h
+
+contains(QT_CONFIG, opengles2) {
+    DEFINES += Q_WINRT_GL
+    SOURCES += qwinrteglcontext.cpp
+    HEADERS += qwinrteglcontext.h
+} else {
+    SOURCES += qwinrtpageflipper.cpp
+    HEADERS += qwinrtpageflipper.h
+    LIBS += -ld3d11
+}
 
 OTHER_FILES += winrt.json
 
