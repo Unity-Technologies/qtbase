@@ -326,6 +326,9 @@ void tst_QThread::isRunning()
 
 void tst_QThread::setPriority()
 {
+#if defined(Q_OS_WINRT)
+    QSKIP("Thread priority is not supported on WinRT");
+#endif
     Simple_Thread thread;
 
     // cannot change the priority, since the thread is not running
@@ -476,6 +479,9 @@ void tst_QThread::start()
 
 void tst_QThread::terminate()
 {
+#if defined(Q_OS_WINRT)
+    QSKIP("Terminate is not supported on WinRT");
+#endif
     Terminate_Thread thread;
     {
         QMutexLocker locker(&thread.mutex);
@@ -539,6 +545,9 @@ void tst_QThread::finished()
 
 void tst_QThread::terminated()
 {
+#if defined(Q_OS_WINRT)
+    QSKIP("Terminate is not supported on WinRT");
+#endif
     SignalRecorder recorder;
     Terminate_Thread thread;
     connect(&thread, SIGNAL(finished()), &recorder, SLOT(slot()), Qt::DirectConnection);
@@ -790,6 +799,9 @@ void tst_QThread::adoptedThreadAffinity()
 
 void tst_QThread::adoptedThreadSetPriority()
 {
+#if defined(Q_OS_WINRT)
+    QSKIP("Thread priority is not supported on WinRT");
+#endif
 
     NativeThreadWrapper nativeThread;
     nativeThread.setWaitForStop();
