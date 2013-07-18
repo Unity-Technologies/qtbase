@@ -124,3 +124,5 @@ contains(QT_CONFIG, xkbcommon-qt): {
     LIBS += $$QMAKE_LIBS_XKBCOMMON
     QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_XKBCOMMON
 }
+
+tizen:LIBS += -laul
