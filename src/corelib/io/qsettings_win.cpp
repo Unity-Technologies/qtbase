@@ -51,6 +51,31 @@
 
 QT_BEGIN_NAMESPACE
 
+#if defined(Q_OS_WINRT)
+QSettingsPrivate *QSettingsPrivate::create(QSettings::Format format, QSettings::Scope scope,
+                                           const QString &organization, const QString &application)
+{
+   // TODO
+   /*if (format == QSettings::NativeFormat) {
+       return new QWinSettingsPrivate(scope, organization, application);
+   } else */
+   {
+       return new QConfFileSettingsPrivate(format, scope, organization, application);
+   }
+}
+
+QSettingsPrivate *QSettingsPrivate::create(const QString &fileName, QSettings::Format format)
+{
+   // TODO
+   /*if (format == QSettings::NativeFormat) {
+       return new QWinSettingsPrivate(fileName);
+   } else */
+   {
+       return new QConfFileSettingsPrivate(fileName, format);
+   }
+}
+#else
+
 /*  Keys are stored in QStrings. If the variable name starts with 'u', this is a "user"
     key, ie. "foo/bar/alpha/beta". If the variable name starts with 'r', this is a "registry"
     key, ie. "\foo\bar\alpha\beta". */
@@ -842,6 +867,7 @@ QSettingsPrivate *QSettingsPrivate::create(const QString &fileName, QSettings::F
         return new QConfFileSettingsPrivate(fileName, format);
     }
 }
+#endif // !defined(Q_OS_WINRT)
 
 QT_END_NAMESPACE
 #endif // QT_NO_SETTINGS
