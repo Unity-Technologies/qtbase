@@ -510,6 +510,9 @@ void QCoreApplicationPrivate::appendApplicationPathToLibraryPaths()
     app_location = QDir(app_location).canonicalPath();
     if (QFile::exists(app_location) && !app_libpaths->contains(app_location))
         app_libpaths->append(app_location);
+#ifdef Q_OS_WINRT // On WinRT, we expect to look in the current (application) directory
+    app_libpaths->append(".");
+#endif
 #endif
 }
 
@@ -1945,7 +1948,10 @@ QString QCoreApplication::applicationFilePath()
     if (!d->cachedApplicationFilePath.isNull())
         return d->cachedApplicationFilePath;
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_WINRT)
+    d->cachedApplicationFilePath = QFileInfo(arguments().first()).filePath();
+    return d->cachedApplicationFilePath;
+#elif defined(Q_OS_WIN)
     d->cachedApplicationFilePath = QFileInfo(qAppFileName()).filePath();
     return d->cachedApplicationFilePath;
 #elif defined(Q_OS_BLACKBERRY)
