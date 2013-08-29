@@ -810,7 +810,7 @@ QProcessPrivate::~QProcessPrivate()
 void QProcessPrivate::cleanup()
 {
     q_func()->setProcessState(QProcess::NotRunning);
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     if (pid) {
         CloseHandle(pid->hThread);
         CloseHandle(pid->hProcess);
@@ -2413,10 +2413,12 @@ QT_END_INCLUDE_NAMESPACE
 QStringList QProcess::systemEnvironment()
 {
     QStringList tmp;
+#if !defined(Q_OS_WINRT)
     char *entry = 0;
     int count = 0;
     while ((entry = environ[count++]))
         tmp << QString::fromLocal8Bit(entry);
+#endif
     return tmp;
 }
 

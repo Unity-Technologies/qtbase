@@ -98,7 +98,14 @@ win32 {
         SOURCES += io/qfilesystemiterator_win.cpp
         SOURCES += io/qstandardpaths_win.cpp
 
-    wince* {
+    winrt {
+        HEADERS -=  \
+            io/qprocess.h \
+            io/qprocess_p.h
+
+        SOURCES -= \
+            io/qprocess.cpp
+    } else:wince* {
         SOURCES += io/qprocess_wince.cpp
     } else {
         HEADERS += \

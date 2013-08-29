@@ -103,7 +103,11 @@ void QWindowsPipeWriter::run()
 {
     OVERLAPPED overl;
     memset(&overl, 0, sizeof overl);
+#if defined(Q_OS_WINRT)
+    overl.hEvent = CreateEventEx(NULL, NULL, CREATE_EVENT_MANUAL_RESET, EVENT_ALL_ACCESS);
+#else
     overl.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+#endif
     forever {
         lock.lock();
         while(data.isEmpty() && (!quitNow)) {
@@ -138,7 +142,11 @@ void QWindowsPipeWriter::run()
                 }
 #ifndef Q_OS_WINCE
                 if (GetLastError() == ERROR_IO_PENDING) {
+#  if defined(Q_OS_WINRT)
+                  if (!GetOverlappedResultEx(writePipe, &overl, &written, INFINITE, FALSE)) {
+#  else
                   if (!GetOverlappedResult(writePipe, &overl, &written, TRUE)) {
+#  endif
                       CloseHandle(overl.hEvent);
                       return;
                   }

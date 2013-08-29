@@ -191,6 +191,13 @@ bool QProcessPrivate::createChannel(Channel &channel)
             // try to open in read-only mode
             channel.pipe[1] = INVALID_Q_PIPE;
             channel.pipe[0] =
+#if defined(Q_OS_WINRT)
+                CreateFile2((const wchar_t*)QFSFileEnginePrivate::longFileName(channel.file).utf16(),
+                            GENERIC_READ,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            OPEN_EXISTING,
+                            NULL);
+#else
                 CreateFile((const wchar_t*)QFSFileEnginePrivate::longFileName(channel.file).utf16(),
                            GENERIC_READ,
                            FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -198,6 +205,7 @@ bool QProcessPrivate::createChannel(Channel &channel)
                            OPEN_EXISTING,
                            FILE_ATTRIBUTE_NORMAL,
                            NULL);
+#endif
 
             if (channel.pipe[0] != INVALID_Q_PIPE)
                 return true;
@@ -207,6 +215,13 @@ bool QProcessPrivate::createChannel(Channel &channel)
             // open in write mode
             channel.pipe[0] = INVALID_Q_PIPE;
             channel.pipe[1] =
+#if defined(Q_OS_WINRT)
+                CreateFile2((const wchar_t *)QFSFileEnginePrivate::longFileName(channel.file).utf16(),
+                            GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            channel.append ? OPEN_ALWAYS : CREATE_ALWAYS,
+                            NULL);
+#else
                 CreateFile((const wchar_t *)QFSFileEnginePrivate::longFileName(channel.file).utf16(),
                            GENERIC_WRITE,
                            FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -214,10 +229,16 @@ bool QProcessPrivate::createChannel(Channel &channel)
                            channel.append ? OPEN_ALWAYS : CREATE_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL,
                            NULL);
+#endif
 
             if (channel.pipe[1] != INVALID_Q_PIPE) {
                 if (channel.append) {
+#if defined(Q_OS_WINRT)
+                    LARGE_INTEGER distanceToMove = { 0 };
+                    SetFilePointerEx(channel.pipe[1], distanceToMove, NULL, FILE_END);
+#else
                     SetFilePointer(channel.pipe[1], 0, NULL, FILE_END);
+#endif
                 }
                 return true;
             }
