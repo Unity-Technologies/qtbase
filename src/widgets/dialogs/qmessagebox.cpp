@@ -72,7 +72,7 @@
 
 QT_BEGIN_NAMESPACE
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 HMENU qt_getWindowsSystemMenu(const QWidget *w)
 {
     if (QWindow *window = QApplicationPrivate::windowForWidget(w))
@@ -1539,7 +1539,7 @@ void QMessageBox::showEvent(QShowEvent *e)
     QAccessibleEvent event(this, QAccessible::Alert);
     QAccessible::updateAccessibility(&event);
 #endif
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     if (const HMENU systemMenu = qt_getWindowsSystemMenu(this)) {
         EnableMenuItem(systemMenu, SC_CLOSE, d->detectedEscapeButton ?
                        MF_BYCOMMAND|MF_ENABLED : MF_BYCOMMAND|MF_GRAYED);
