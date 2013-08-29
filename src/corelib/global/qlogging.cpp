@@ -146,7 +146,7 @@ static void qEmergencyOut(QtMsgType msgType, const char *msg, va_list ap) Q_DECL
 {
     char emergency_buf[256] = { '\0' };
     emergency_buf[sizeof emergency_buf - 1] = '\0';
-#if defined(Q_OS_WIN) && defined(QT_BUILD_CORE_LIB) && defined(Q_OS_WINCE) \
+#if defined(Q_OS_WIN) && defined(QT_BUILD_CORE_LIB) && (defined(Q_OS_WINCE) || defined(Q_OS_WINRT)) \
     || defined(Q_CC_MSVC) && defined(QT_DEBUG) && defined(_DEBUG) && defined(_CRT_ERROR)
     wchar_t emergency_bufL[sizeof emergency_buf];
 #endif
@@ -155,7 +155,7 @@ static void qEmergencyOut(QtMsgType msgType, const char *msg, va_list ap) Q_DECL
         qvsnprintf(emergency_buf, sizeof emergency_buf - 1, msg, ap);
 
 #if defined(Q_OS_WIN) && defined(QT_BUILD_CORE_LIB)
-# ifdef Q_OS_WINCE
+# if defined(Q_OS_WINCE) || defined(Q_OS_WINRT)
     convert_to_wchar_t_elided(emergency_bufL, sizeof emergency_buf, emergency_buf);
     OutputDebugStringW(emergency_bufL);
 # else
@@ -679,7 +679,7 @@ void QMessagePattern::setPattern(const QString &pattern)
     else if (inIf)
         error += QStringLiteral("QT_MESSAGE_PATTERN: missing %{endif}\n");
     if (!error.isEmpty()) {
-#if defined(Q_OS_WINCE)
+#if defined(Q_OS_WINCE) || defined(Q_OS_WINRT)
         OutputDebugString(reinterpret_cast<const wchar_t*>(error.utf16()));
         if (0)
 #elif defined(Q_OS_WIN) && defined(QT_BUILD_CORE_LIB)
@@ -864,7 +864,7 @@ static void qDefaultMessageHandler(QtMsgType type, const QMessageLogContext &con
     QString logMessage = qMessageFormatString(type, context, buf);
 
 #if defined(Q_OS_WIN) && defined(QT_BUILD_CORE_LIB)
-#if !defined(Q_OS_WINCE)
+#if !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
     if (usingWinMain)
 #endif
     {

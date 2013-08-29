@@ -57,6 +57,33 @@ QT_BEGIN_NAMESPACE
 bool usingWinMain = false;  // whether the qWinMain() is used or not
 int appCmdShow = 0;
 
+#if defined(Q_OS_WINRT)
+#include <mutex>
+Q_CORE_EXPORT void qWinMsgHandler(QtMsgType t, const char* str)
+{
+   Q_UNUSED(t);
+   Q_UNUSED(str);
+   static std::mutex staticCriticalSection;
+
+   if (!str)
+      str = "(null)";
+
+   staticCriticalSection.lock();
+
+   QString s(QString::fromLocal8Bit(str));
+   s += QLatin1Char('\n');
+   OutputDebugString((wchar_t*)s.utf16());
+
+   staticCriticalSection.unlock();
+}
+
+QString QCoreApplicationPrivate::appName() const
+{
+   return QString::fromLatin1("self.exe");
+}
+
+#else
+
 Q_CORE_EXPORT HINSTANCE qWinAppInst()                // get Windows app handle
 {
     return GetModuleHandle(0);
@@ -1001,5 +1028,7 @@ QDebug operator<<(QDebug dbg, const MSG &msg)
 #endif
 
 #endif // QT_NO_QOBJECT
+
+#endif // !defined(Q_OS_WINRT)
 
 QT_END_NAMESPACE

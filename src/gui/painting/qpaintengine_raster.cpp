@@ -157,6 +157,9 @@ static const qreal aliasedCoordinateDelta = 0.5 - 0.015625;
 
 static inline bool winClearTypeFontsEnabled()
 {
+#ifdef Q_OS_WINRT
+    return false;
+#else
     UINT result = 0;
 #if !defined(SPI_GETFONTSMOOTHINGTYPE) // MinGW
 #    define SPI_GETFONTSMOOTHINGTYPE  0x200A
@@ -164,6 +167,7 @@ static inline bool winClearTypeFontsEnabled()
 #endif
     SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &result, 0);
     return result == FE_FONTSMOOTHINGCLEARTYPE;
+#endif
 }
 
 /*!

@@ -55,6 +55,7 @@
 
 QT_BEGIN_NAMESPACE
 
+#ifndef Q_OS_WINRT
 #ifdef Q_OS_WINCE
 #define GetDIBits(a,b,c,d,e,f,g) qt_wince_GetDIBits(a,b,c,d,e,f,g)
 int qt_wince_GetDIBits(HDC /*hdc*/ , HBITMAP hSourceBitmap, uint, uint, LPVOID lpvBits, LPBITMAPINFO, uint)
@@ -493,5 +494,6 @@ Q_GUI_EXPORT QPixmap qt_pixmapFromWinHICON(HICON icon)
     return QPixmap::fromImage(image);
 }
 #endif //ifndef Q_OS_WINCE
+#endif
 
 QT_END_NAMESPACE

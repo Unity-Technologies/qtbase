@@ -1133,6 +1133,13 @@ bool qSharedBuild() Q_DECL_NOTHROW
 */
 
 /*!
+    \macro Q_OS_WINRT
+    \relates <QtGlobal>
+
+    Defined on Windows 8 for Windows Store apps.
+*/
+
+/*!
     \macro Q_OS_CYGWIN
     \relates <QtGlobal>
 
@@ -1708,7 +1715,7 @@ QSysInfo::MacVersion QSysInfo::macVersion()
 }
 const QSysInfo::MacVersion QSysInfo::MacintoshVersion = QSysInfo::macVersion();
 
-#elif defined(Q_OS_WIN) || defined(Q_OS_CYGWIN) || defined(Q_OS_WINCE)
+#elif defined(Q_OS_WIN) || defined(Q_OS_CYGWIN) || defined(Q_OS_WINCE) || defined(Q_OS_WINRT)
 
 QT_BEGIN_INCLUDE_NAMESPACE
 #include "qt_windows.h"
@@ -1732,6 +1739,9 @@ QSysInfo::WinVersion QSysInfo::windowsVersion()
     static QSysInfo::WinVersion winver;
     if (winver)
         return winver;
+#if defined(Q_OS_WINRT)
+    winver = QSysInfo::WV_WINDOWS8;
+#else
     winver = QSysInfo::WV_NT;
     OSVERSIONINFO osver;
     osver.dwOSVersionInfoSize = sizeof(osver);
@@ -1815,6 +1825,7 @@ QSysInfo::WinVersion QSysInfo::windowsVersion()
         else if (override == "WINDOWS8")
             winver = QSysInfo::WV_WINDOWS8;
     }
+#endif
 #endif
 
     return winver;
@@ -2106,7 +2117,19 @@ QString qt_error_string(int errorCode)
         s = QT_TRANSLATE_NOOP("QIODevice", "No space left on device");
         break;
     default: {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN)
+        // Retrieve the system error message for the last-error code.
+#  if defined(Q_OS_WINRT)
+        __declspec(thread) static wchar_t string[4096];
+        FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                      NULL,
+                      errorCode,
+                      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                      string,
+                      ARRAYSIZE(string),
+                      NULL);
+        ret = QString::fromWCharArray(string);
+#  else
         wchar_t *string = 0;
         FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM,
                       NULL,
@@ -2117,7 +2140,7 @@ QString qt_error_string(int errorCode)
                       NULL);
         ret = QString::fromWCharArray(string);
         LocalFree((HLOCAL)string);
-
+#  endif
         if (ret.isEmpty() && errorCode == ERROR_MOD_NOT_FOUND)
             ret = QString::fromLatin1("The specified module could not be found.");
 #elif !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && _POSIX_VERSION >= 200112L && !defined(Q_OS_INTEGRITY) && !defined(Q_OS_QNX)
