@@ -57,7 +57,12 @@
 
 #include "qabstracteventdispatcher.h"
 
+#ifdef Q_OS_WINRT
+#define NOMINMAX
+#include <winsock2.h>
+#else
 #include <sys/time.h> // struct timeval
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -79,7 +84,7 @@ struct QTimerInfo {
 
 class Q_CORE_EXPORT QTimerInfoList : public QList<QTimerInfo*>
 {
-#if ((_POSIX_MONOTONIC_CLOCK-0 <= 0) && !defined(Q_OS_MAC)) || defined(QT_BOOTSTRAPPED)
+#if ((_POSIX_MONOTONIC_CLOCK-0 <= 0) && !defined(Q_OS_MAC) && !defined(Q_OS_WINRT)) || defined(QT_BOOTSTRAPPED)
     timespec previousTime;
     clock_t previousTicks;
     int ticksPerSecond;

@@ -42,7 +42,9 @@
 #include <qelapsedtimer.h>
 #include <qcoreapplication.h>
 
+#ifndef Q_OS_WINRT
 #include "private/qcore_unix_p.h"
+#endif
 #include "private/qtimerinfo_unix_p.h"
 #include "private/qobject_p.h"
 #include "private/qabstracteventdispatcher_p.h"
@@ -52,7 +54,60 @@
 #  include <QThread>
 #endif
 
+#ifdef Q_OS_WINRT
+#include <winsock2.h>
+#else
 #include <sys/times.h>
+#endif
+
+#ifdef Q_OS_WINRT
+timeval qt_gettime();
+
+// Internal operator functions for timevals
+inline timeval &normalizedTimeval(timeval &t)
+{
+    while (t.tv_usec > 1000000l) {
+        ++t.tv_sec;
+        t.tv_usec -= 1000000l;
+    }
+    while (t.tv_usec < 0l) {
+        --t.tv_sec;
+        t.tv_usec += 1000000l;
+    }
+    return t;
+}
+inline bool operator<(const timeval &t1, const timeval &t2)
+{ return t1.tv_sec < t2.tv_sec || (t1.tv_sec == t2.tv_sec && t1.tv_usec < t2.tv_usec); }
+inline bool operator==(const timeval &t1, const timeval &t2)
+{ return t1.tv_sec == t2.tv_sec && t1.tv_usec == t2.tv_usec; }
+inline timeval &operator+=(timeval &t1, const timeval &t2)
+{
+    t1.tv_sec += t2.tv_sec;
+    t1.tv_usec += t2.tv_usec;
+    return normalizedTimeval(t1);
+}
+inline timeval operator+(const timeval &t1, const timeval &t2)
+{
+    timeval tmp;
+    tmp.tv_sec = t1.tv_sec + t2.tv_sec;
+    tmp.tv_usec = t1.tv_usec + t2.tv_usec;
+    return normalizedTimeval(tmp);
+}
+inline timeval operator-(const timeval &t1, const timeval &t2)
+{
+    timeval tmp;
+    tmp.tv_sec = t1.tv_sec - (t2.tv_sec - 1);
+    tmp.tv_usec = t1.tv_usec - (t2.tv_usec + 1000000);
+    return normalizedTimeval(tmp);
+}
+inline timeval operator*(const timeval &t1, int mul)
+{
+    timeval tmp;
+    tmp.tv_sec = t1.tv_sec * mul;
+    tmp.tv_usec = t1.tv_usec * mul;
+    return normalizedTimeval(tmp);
+}
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -65,7 +120,7 @@ Q_CORE_EXPORT bool qt_disable_lowpriority_timers=false;
 
 QTimerInfoList::QTimerInfoList()
 {
-#if (_POSIX_MONOTONIC_CLOCK-0 <= 0) && !defined(Q_OS_MAC) && !defined(Q_OS_NACL)
+#if (_POSIX_MONOTONIC_CLOCK-0 <= 0) && !defined(Q_OS_MAC) && !defined(Q_OS_NACL) && !defined(Q_OS_WINRT)
     if (!QElapsedTimer::isMonotonic()) {
         // not using monotonic timers, initialize the timeChanged() machinery
         previousTime = qt_gettime();
@@ -92,7 +147,7 @@ timespec QTimerInfoList::updateCurrentTime()
     return (currentTime = qt_gettime());
 }
 
-#if ((_POSIX_MONOTONIC_CLOCK-0 <= 0) && !defined(Q_OS_MAC) && !defined(Q_OS_INTEGRITY)) || defined(QT_BOOTSTRAPPED)
+#if ((_POSIX_MONOTONIC_CLOCK-0 <= 0) && !defined(Q_OS_MAC) && !defined(Q_OS_INTEGRITY) && !defined(Q_OS_WINRT)) || defined(QT_BOOTSTRAPPED)
 
 timespec qAbsTimespec(const timespec &t)
 {
