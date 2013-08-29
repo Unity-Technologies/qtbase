@@ -2158,6 +2158,10 @@ QString qt_error_string(int errorCode)
     return ret.trimmed();
 }
 
+#if defined(Q_OS_WINRT)
+static QMap<QByteArray, QByteArray> envvars;
+#endif
+
 // getenv is declared as deprecated in VS2005. This function
 // makes use of the new secure getenv function.
 /*!
@@ -2175,7 +2179,11 @@ QString qt_error_string(int errorCode)
 */
 QByteArray qgetenv(const char *varName)
 {
-#if defined(_MSC_VER) && _MSC_VER >= 1400
+#if defined(Q_OS_WINRT)
+    if (envvars.contains(varName))
+        return envvars[varName];
+    return QByteArray();
+#elif defined(_MSC_VER) && _MSC_VER >= 1400
     size_t requiredSize = 0;
     QByteArray buffer;
     getenv_s(&requiredSize, 0, 0, varName);
@@ -2208,7 +2216,11 @@ QByteArray qgetenv(const char *varName)
 */
 bool qEnvironmentVariableIsEmpty(const char *varName) Q_DECL_NOEXCEPT
 {
-#if defined(_MSC_VER) && _MSC_VER >= 1400
+#if defined(Q_OS_WINRT)
+    if (envvars.contains(varName))
+        return envvars[varName].isEmpty();
+    return true;
+#elif defined(_MSC_VER) && _MSC_VER >= 1400
     // we provide a buffer that can only hold the empty string, so
     // when the env.var isn't empty, we'll get an ERANGE error (buffer
     // too small):
@@ -2237,7 +2249,11 @@ bool qEnvironmentVariableIsEmpty(const char *varName) Q_DECL_NOEXCEPT
 */
 bool qEnvironmentVariableIsSet(const char *varName) Q_DECL_NOEXCEPT
 {
-#if defined(_MSC_VER) && _MSC_VER >= 1400
+#if defined(Q_OS_WINRT)
+    if (envvars.contains(varName))
+        return !envvars[varName].isEmpty();
+    return false;
+#elif defined(_MSC_VER) && _MSC_VER >= 1400
     size_t requiredSize = 0;
     (void)getenv_s(&requiredSize, 0, 0, varName);
     return requiredSize != 0;
@@ -2266,7 +2282,10 @@ bool qEnvironmentVariableIsSet(const char *varName) Q_DECL_NOEXCEPT
 */
 bool qputenv(const char *varName, const QByteArray& value)
 {
-#if defined(_MSC_VER) && _MSC_VER >= 1400
+#if defined(Q_OS_WINRT)
+    envvars[varName] = value;
+    return true;
+#elif defined(_MSC_VER) && _MSC_VER >= 1400
     return _putenv_s(varName, value.constData()) == 0;
 #elif defined(_POSIX_VERSION) && (_POSIX_VERSION-0) >= 200112L
     // POSIX.1-2001 has setenv
@@ -2296,7 +2315,10 @@ bool qputenv(const char *varName, const QByteArray& value)
 */
 bool qunsetenv(const char *varName)
 {
-#if defined(_MSC_VER) && _MSC_VER >= 1400
+#if defined(Q_OS_WINRT)
+    envvars[varName] = "";
+    return true;
+#elif defined(_MSC_VER) && _MSC_VER >= 1400
     return _putenv_s(varName, "") == 0;
 #elif (defined(_POSIX_VERSION) && (_POSIX_VERSION-0) >= 200112L) || defined(Q_OS_BSD4)
     // POSIX.1-2001 and BSD have unsetenv
