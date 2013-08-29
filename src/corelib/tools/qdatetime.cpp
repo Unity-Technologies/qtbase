@@ -2597,7 +2597,11 @@ QString QDateTime::toString(Qt::DateFormat f) const
         buf += QString::number(d->date.day());
 #else
         wchar_t out[255];
+#ifndef Q_OS_WINRT
         GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ILDATE, out, 255);
+#else
+        GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_ILDATE, out, 255);
+#endif
         QString winstr = QString::fromWCharArray(out);
         switch (winstr.toInt()) {
         case 1:
@@ -4200,7 +4204,8 @@ static void localToUtc(QDate &date, QTime &time, int isdst)
 #if defined(Q_OS_WINCE)
     time_t secsSince1Jan1970UTC = (toMSecsSinceEpoch_helper(fakeDate.toJulianDay(), QTime().msecsTo(time)) / 1000);
 #else
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+    // ### TODO: WinRT what to do here? Does not exist
     _tzset();
 #endif
     time_t secsSince1Jan1970UTC = mktime(&localTM);

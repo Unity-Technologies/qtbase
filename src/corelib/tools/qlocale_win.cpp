@@ -57,10 +57,22 @@
 
 QT_BEGIN_NAMESPACE
 
+#if defined(Q_OS_WINRT)
+#undef GetLocaleInfo
+int GetLocaleInfo(LPWSTR lcName, LCTYPE type, LPWSTR data, int size)
+{
+   return GetLocaleInfoEx(lcName, type, data, size);
+}
+static QByteArray getWinLocaleName(LPWSTR id = LOCALE_NAME_USER_DEFAULT);
+static const char *winLangCodeToIsoName(int code);
+static QString winIso639LangName(LPWSTR id = LOCALE_NAME_USER_DEFAULT);
+static QString winIso3116CtryName(LPWSTR id = LOCALE_NAME_USER_DEFAULT);
+#else
 static QByteArray getWinLocaleName(LCID id = LOCALE_USER_DEFAULT);
 static const char *winLangCodeToIsoName(int code);
 static QString winIso639LangName(LCID id = LOCALE_USER_DEFAULT);
 static QString winIso3116CtryName(LCID id = LOCALE_USER_DEFAULT);
+#endif
 
 #ifndef QT_NO_SYSTEMLOCALE
 
@@ -121,13 +133,21 @@ private:
     };
 
     // cached values:
+#if defined(Q_OS_WINRT)
+    WCHAR lcName[LOCALE_NAME_MAX_LENGTH];
+#else
     LCID lcid;
+#endif
     SubstitutionType substitutionType;
     QChar zero;
 
+    int getLocaleInfo(LCTYPE type, LPWSTR data, int size);
     QString getLocaleInfo(LCTYPE type, int maxlen = 0);
     int getLocaleInfo_int(LCTYPE type, int maxlen = 0);
     QChar getLocaleInfo_qchar(LCTYPE type);
+
+    int getCurrencyFormat(DWORD flags, LPCWSTR value, const CURRENCYFMTW *format, LPWSTR data, int size);
+    int getDateFormat(DWORD flags, const SYSTEMTIME * date, LPCWSTR format, LPWSTR data, int size);
 
     SubstitutionType substitution();
     QString &substituteDigits(QString &string);
@@ -140,20 +160,53 @@ Q_GLOBAL_STATIC(QSystemLocalePrivate, systemLocalePrivate)
 QSystemLocalePrivate::QSystemLocalePrivate()
     : substitutionType(SUnknown)
 {
+#if defined(Q_OS_WINRT)
+    GetUserDefaultLocaleName(lcName, LOCALE_NAME_MAX_LENGTH);
+#else
     lcid = GetUserDefaultLCID();
+#endif
+}
+
+int QSystemLocalePrivate::getCurrencyFormat(DWORD flags, LPCWSTR value, const CURRENCYFMTW *format, LPWSTR data, int size)
+{
+#if defined(Q_OS_WINPHONE)
+    return 0; // FATAL: Not supported
+#elif defined(Q_OS_WINRT)
+    return GetCurrencyFormatEx(lcName, flags, value, format, data, size);
+#else
+    return GetCurrencyFormat(lcid, flags, value, format, data, size);
+#endif
+}
+
+int QSystemLocalePrivate::getDateFormat(DWORD flags, const SYSTEMTIME * date, LPCWSTR format, LPWSTR data, int size)
+{
+#if defined(Q_OS_WINRT)
+    return GetDateFormatEx(lcName, flags, date, format, data, size, NULL);
+#else
+    return GetDateFormat(lcid, flags, date, format, data, size);
+#endif
+}
+
+int QSystemLocalePrivate::getLocaleInfo(LCTYPE type, LPWSTR data, int size)
+{
+#if defined(Q_OS_WINRT)
+    return GetLocaleInfoEx(lcName, type, data, size);
+#else
+    return GetLocaleInfo(lcid, type, data, size);
+#endif
 }
 
 QString QSystemLocalePrivate::getLocaleInfo(LCTYPE type, int maxlen)
 {
     QVarLengthArray<wchar_t, 64> buf(maxlen ? maxlen : 64);
-    if (!GetLocaleInfo(lcid, type, buf.data(), buf.size()))
+    if (!getLocaleInfo(type, buf.data(), buf.size()))
         return QString();
     if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-        int cnt = GetLocaleInfo(lcid, type, 0, 0);
+        int cnt = getLocaleInfo(type, 0, 0);
         if (cnt == 0)
             return QString();
         buf.resize(cnt);
-        if (!GetLocaleInfo(lcid, type, buf.data(), buf.size()))
+        if (!getLocaleInfo(type, buf.data(), buf.size()))
             return QString();
     }
     return QString::fromWCharArray(buf.data());
@@ -177,7 +230,7 @@ QSystemLocalePrivate::SubstitutionType QSystemLocalePrivate::substitution()
 {
     if (substitutionType == SUnknown) {
         wchar_t buf[8];
-        if (!GetLocaleInfo(lcid, LOCALE_IDIGITSUBSTITUTION, buf, 8)) {
+        if (!getLocaleInfo(LOCALE_IDIGITSUBSTITUTION, buf, 8)) {
             substitutionType = QSystemLocalePrivate::SNever;
             return substitutionType;
         }
@@ -189,7 +242,7 @@ QSystemLocalePrivate::SubstitutionType QSystemLocalePrivate::substitution()
             substitutionType = QSystemLocalePrivate::SAlways;
         else {
             wchar_t digits[11];
-            if (!GetLocaleInfo(lcid, LOCALE_SNATIVEDIGITS, digits, 11)) {
+            if (!getLocaleInfo(LOCALE_SNATIVEDIGITS, digits, 11)) {
                 substitutionType = QSystemLocalePrivate::SNever;
                 return substitutionType;
             }
@@ -332,7 +385,11 @@ QVariant QSystemLocalePrivate::toString(const QDate &date, QLocale::FormatType t
 
     DWORD flags = (type == QLocale::LongFormat ? DATE_LONGDATE : DATE_SHORTDATE);
     wchar_t buf[255];
+#ifndef Q_OS_WINRT
     if (GetDateFormat(lcid, flags, &st, NULL, buf, 255)) {
+#else
+    if (GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, flags, &st, NULL, buf, 255, 0)) {
+#endif
         QString format = QString::fromWCharArray(buf);
         if (substitution() == SAlways)
             substituteDigits(format);
@@ -353,7 +410,11 @@ QVariant QSystemLocalePrivate::toString(const QTime &time, QLocale::FormatType)
     DWORD flags = 0;
 
     wchar_t buf[255];
+#ifndef Q_OS_WINRT
     if (GetTimeFormat(lcid, flags, &st, NULL, buf, 255)) {
+#else
+    if (GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, flags, &st, NULL, buf, 255)) {
+#endif
         QString format = QString::fromWCharArray(buf);
         if (substitution() == SAlways)
             substituteDigits(format);
@@ -371,7 +432,11 @@ QVariant QSystemLocalePrivate::measurementSystem()
 {
     wchar_t output[2];
 
+#if defined(Q_OS_WINRT)
+    if (GetLocaleInfoEx(lcName, LOCALE_IMEASURE, output, 2)) {
+#else
     if (GetLocaleInfo(lcid, LOCALE_IMEASURE, output, 2)) {
+#endif
         QString iMeasure = QString::fromWCharArray(output);
         if (iMeasure == QLatin1String("1")) {
             return QLocale::ImperialSystem;
@@ -385,7 +450,11 @@ QVariant QSystemLocalePrivate::amText()
 {
     wchar_t output[15]; // maximum length including  terminating zero character for Win2003+
 
+#if defined(Q_OS_WINRT)
+    if (GetLocaleInfoEx(lcName, LOCALE_S1159, output, 15)) {
+#else
     if (GetLocaleInfo(lcid, LOCALE_S1159, output, 15)) {
+#endif
         return QString::fromWCharArray(output);
     }
 
@@ -396,7 +465,7 @@ QVariant QSystemLocalePrivate::pmText()
 {
     wchar_t output[15]; // maximum length including  terminating zero character for Win2003+
 
-    if (GetLocaleInfo(lcid, LOCALE_S2359, output, 15)) {
+    if (getLocaleInfo(LOCALE_S2359, output, 15)) {
         return QString::fromWCharArray(output);
     }
 
@@ -407,7 +476,7 @@ QVariant QSystemLocalePrivate::firstDayOfWeek()
 {
     wchar_t output[4]; // maximum length including  terminating zero character for Win2003+
 
-    if (GetLocaleInfo(lcid, LOCALE_IFIRSTDAYOFWEEK, output, 4))
+    if (getLocaleInfo(LOCALE_IFIRSTDAYOFWEEK, output, 4))
         return QString::fromWCharArray(output).toUInt()+1;
 
     return 1;
@@ -418,20 +487,20 @@ QVariant QSystemLocalePrivate::currencySymbol(QLocale::CurrencySymbolFormat form
     wchar_t buf[13];
     switch (format) {
     case QLocale::CurrencySymbol:
-        if (GetLocaleInfo(lcid, LOCALE_SCURRENCY, buf, 13))
+        if (getLocaleInfo(LOCALE_SCURRENCY, buf, 13))
             return QString::fromWCharArray(buf);
         break;
     case QLocale::CurrencyIsoCode:
-        if (GetLocaleInfo(lcid, LOCALE_SINTLSYMBOL, buf, 9))
+        if (getLocaleInfo(LOCALE_SINTLSYMBOL, buf, 9))
             return QString::fromWCharArray(buf);
         break;
     case QLocale::CurrencyDisplayName: {
         QVarLengthArray<wchar_t, 64> buf(64);
-        if (!GetLocaleInfo(lcid, LOCALE_SNATIVECURRNAME, buf.data(), buf.size())) {
+        if (!getLocaleInfo(LOCALE_SNATIVECURRNAME, buf.data(), buf.size())) {
             if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
                 break;
             buf.resize(255); // should be large enough, right?
-            if (!GetLocaleInfo(lcid, LOCALE_SNATIVECURRNAME, buf.data(), buf.size()))
+            if (!getLocaleInfo(LOCALE_SNATIVECURRNAME, buf.data(), buf.size()))
                 break;
         }
         return QString::fromWCharArray(buf.data());
@@ -478,14 +547,14 @@ QVariant QSystemLocalePrivate::toCurrencyString(const QSystemLocale::CurrencyToS
     CURRENCYFMT format;
     CURRENCYFMT *pformat = NULL;
     if (!arg.symbol.isEmpty()) {
-        format.NumDigits = getLocaleInfo_int(lcid, LOCALE_ICURRDIGITS);
-        format.LeadingZero = getLocaleInfo_int(lcid, LOCALE_ILZERO);
-        decimalSep = getLocaleInfo(lcid, LOCALE_SMONDECIMALSEP);
+        format.NumDigits = getLocaleInfo_int(LOCALE_ICURRDIGITS);
+        format.LeadingZero = getLocaleInfo_int(LOCALE_ILZERO);
+        decimalSep = getLocaleInfo(LOCALE_SMONDECIMALSEP);
         format.lpDecimalSep = (wchar_t *)decimalSep.utf16();
-        thousandSep = getLocaleInfo(lcid, LOCALE_SMONTHOUSANDSEP);
+        thousandSep = getLocaleInfo(LOCALE_SMONTHOUSANDSEP);
         format.lpThousandSep = (wchar_t *)thousandSep.utf16();
-        format.NegativeOrder = getLocaleInfo_int(lcid, LOCALE_INEGCURR);
-        format.PositiveOrder = getLocaleInfo_int(lcid, LOCALE_ICURRENCY);
+        format.NegativeOrder = getLocaleInfo_int(LOCALE_INEGCURR);
+        format.PositiveOrder = getLocaleInfo_int(LOCALE_ICURRENCY);
         format.lpCurrencySymbol = (wchar_t *)arg.symbol.utf16();
 
         // grouping is complicated and ugly:
@@ -494,7 +563,7 @@ QVariant QSystemLocalePrivate::toCurrencyString(const QSystemLocale::CurrencyToS
         // int(30) == "123456,789.00"   == string("3;0;0")
         // int(32) == "12,34,56,789.00" == string("3;2;0")
         // int(320)== "1234,56,789.00"  == string("3;2")
-        QString groupingStr = getLocaleInfo(lcid, LOCALE_SMONGROUPING);
+        QString groupingStr = getLocaleInfo(LOCALE_SMONGROUPING);
         format.Grouping = groupingStr.remove(QLatin1Char(';')).toInt();
         if (format.Grouping % 10 == 0) // magic
             format.Grouping /= 10;
@@ -503,13 +572,13 @@ QVariant QSystemLocalePrivate::toCurrencyString(const QSystemLocale::CurrencyToS
         pformat = &format;
     }
 
-    int ret = ::GetCurrencyFormat(lcid, 0, reinterpret_cast<const wchar_t *>(value.utf16()),
+    int ret = getCurrencyFormat(0, reinterpret_cast<const wchar_t *>(value.utf16()),
                                   pformat, out.data(), out.size());
     if (ret == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-        ret = ::GetCurrencyFormat(lcid, 0, reinterpret_cast<const wchar_t *>(value.utf16()),
+        ret = getCurrencyFormat(0, reinterpret_cast<const wchar_t *>(value.utf16()),
                                   pformat, out.data(), 0);
         out.resize(ret);
-        ::GetCurrencyFormat(lcid, 0, reinterpret_cast<const wchar_t *>(value.utf16()),
+        getCurrencyFormat(0, reinterpret_cast<const wchar_t *>(value.utf16()),
                             pformat, out.data(), out.size());
     }
 
@@ -528,11 +597,13 @@ QVariant QSystemLocalePrivate::uiLanguages()
                     PWSTR pwszLanguagesBuffer,
                     PULONG pcchLanguagesBuffer);
         static GetUserPreferredUILanguagesFunc GetUserPreferredUILanguages_ptr = 0;
+#if !defined(Q_OS_WINRT)
         if (!GetUserPreferredUILanguages_ptr) {
             QSystemLibrary lib(QLatin1String("kernel32"));
             if (lib.load())
                 GetUserPreferredUILanguages_ptr = (GetUserPreferredUILanguagesFunc)lib.resolve("GetUserPreferredUILanguages");
         }
+#endif
         if (GetUserPreferredUILanguages_ptr) {
             unsigned long cnt = 0;
             QVarLengthArray<wchar_t, 64> buf(64);
@@ -560,8 +631,12 @@ QVariant QSystemLocalePrivate::uiLanguages()
         }
     }
 
+#ifndef Q_OS_WINRT
     // old Windows before Vista
     return QStringList(QString::fromLatin1(winLangCodeToIsoName(GetUserDefaultUILanguage())));
+#else
+    return QStringList();
+#endif
 }
 
 QVariant QSystemLocalePrivate::nativeLanguageName()
@@ -581,7 +656,11 @@ QVariant QSystemLocalePrivate::nativeCountryName()
 
 void QSystemLocalePrivate::update()
 {
+#if defined(Q_OS_WINRT)
+    GetUserDefaultLocaleName(lcName, LOCALE_NAME_MAX_LENGTH);
+#else
     lcid = GetUserDefaultLCID();
+#endif
     substitutionType = SUnknown;
     zero = QChar();
 }
@@ -895,7 +974,11 @@ static const char *winLangCodeToIsoName(int code)
 
 }
 
+#if defined(Q_OS_WINRT)
+static QString winIso639LangName(LPWSTR id)
+#else
 static QString winIso639LangName(LCID id)
+#endif
 {
     QString result;
 
@@ -932,7 +1015,11 @@ static QString winIso639LangName(LCID id)
     return result;
 }
 
+#if defined(Q_OS_WINRT)
+static QString winIso3116CtryName(LPWSTR id)
+#else
 static QString winIso3116CtryName(LCID id)
+#endif
 {
     QString result;
 
@@ -943,10 +1030,19 @@ static QString winIso3116CtryName(LCID id)
     return result;
 }
 
+#if defined(Q_OS_WINRT)
+static QByteArray getWinLocaleName(LPWSTR id)
+#else
 static QByteArray getWinLocaleName(LCID id)
+#endif
 {
     QByteArray result;
-    if (id == LOCALE_USER_DEFAULT) {
+#if defined(Q_OS_WINRT)
+    if (QString::fromWCharArray(id) == QString::fromWCharArray(LOCALE_NAME_USER_DEFAULT))
+#else
+    if (id == LOCALE_USER_DEFAULT)
+#endif
+    {
         static QByteArray langEnvVar = qgetenv("LANG");
         result = langEnvVar;
         QString lang, script, cntry;
@@ -965,8 +1061,16 @@ static QByteArray getWinLocaleName(LCID id)
 #if defined(Q_OS_WINCE)
     result = winLangCodeToIsoName(id != LOCALE_USER_DEFAULT ? id : GetUserDefaultLCID());
 #else
+#  if defined(Q_OS_WINRT)
+    WCHAR lcName[LOCALE_NAME_MAX_LENGTH];
+    if (QString::fromWCharArray(id) == QString::fromWCharArray(LOCALE_NAME_USER_DEFAULT)) {
+        GetUserDefaultLocaleName(lcName, LOCALE_NAME_MAX_LENGTH);
+        id = lcName;
+    }
+#  else
     if (id == LOCALE_USER_DEFAULT)
         id = GetUserDefaultLCID();
+#  endif
     QString resultuage = winIso639LangName(id);
     QString country = winIso3116CtryName(id);
     result = resultuage.toLatin1();
@@ -981,7 +1085,15 @@ static QByteArray getWinLocaleName(LCID id)
 
 Q_CORE_EXPORT QLocale qt_localeFromLCID(LCID id)
 {
+#if defined(Q_OS_WINPHONE)
+    return QLocale(); // FATAL: Not supported
+#elif defined(Q_OS_WINRT)
+    WCHAR name[LOCALE_NAME_MAX_LENGTH];
+    LCIDToLocaleName(id, name, LOCALE_NAME_MAX_LENGTH, 0);
+    return QLocale(QString::fromLatin1(getWinLocaleName(name)));
+#else
     return QLocale(QString::fromLatin1(getWinLocaleName(id)));
+#endif
 }
 
 QT_END_NAMESPACE
