@@ -50,6 +50,7 @@
 #endif
 
 #include <qt_windows.h>
+#ifndef Q_OS_WINRT
 #include <shlobj.h>
 #if !defined(Q_OS_WINCE)
 #  include <intshcut.h>
@@ -57,6 +58,7 @@
 #  if !defined(STANDARDSHELL_UI_MODEL)
 #    include <winx.h>
 #  endif
+#endif
 #endif
 
 #ifndef CSIDL_MYMUSIC
@@ -68,6 +70,7 @@
 
 QT_BEGIN_NAMESPACE
 
+#ifndef Q_OS_WINRT
 typedef BOOL (WINAPI*GetSpecialFolderPath)(HWND, LPWSTR, int, BOOL);
 static GetSpecialFolderPath resolveGetSpecialFolderPath()
 {
@@ -82,6 +85,7 @@ static GetSpecialFolderPath resolveGetSpecialFolderPath()
     }
     return gsfp;
 }
+#endif
 
 static QString convertCharArray(const wchar_t *path)
 {
@@ -90,6 +94,10 @@ static QString convertCharArray(const wchar_t *path)
 
 QString QStandardPaths::writableLocation(StandardLocation type)
 {
+#ifdef Q_OS_WINRT
+    Q_UNUSED(type);
+    return QString();
+#else
     QString result;
 
     static GetSpecialFolderPath SHGetSpecialFolderPath = resolveGetSpecialFolderPath();
@@ -175,6 +183,7 @@ QString QStandardPaths::writableLocation(StandardLocation type)
         break;
     }
     return result;
+#endif
 }
 
 QStringList QStandardPaths::standardLocations(StandardLocation type)
@@ -183,7 +192,7 @@ QStringList QStandardPaths::standardLocations(StandardLocation type)
 
     // type-specific handling goes here
 
-#ifndef Q_OS_WINCE
+#if !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
     static GetSpecialFolderPath SHGetSpecialFolderPath = resolveGetSpecialFolderPath();
     if (SHGetSpecialFolderPath) {
         wchar_t path[MAX_PATH];
