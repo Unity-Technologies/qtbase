@@ -691,6 +691,14 @@ void QCoreApplication::init()
     Q_ASSERT_X(!self, "QCoreApplication", "there should be only one application object");
     QCoreApplication::self = this;
 
+#ifdef Q_OS_WINRT
+    WSADATA wsaData;
+    int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (err != 0) {
+        qFatal("WSAStartup failed with error: %d", err);
+    }
+#endif
+
 #ifndef QT_NO_QOBJECT
     // use the event dispatcher created by the app programmer (if any)
     if (!QCoreApplicationPrivate::eventDispatcher)
@@ -771,6 +779,10 @@ QCoreApplication::~QCoreApplication()
 #ifndef QT_NO_LIBRARY
     delete coreappdata()->app_libpaths;
     coreappdata()->app_libpaths = 0;
+#endif
+
+#ifdef Q_OS_WINRT
+    WSACleanup();
 #endif
 }
 
