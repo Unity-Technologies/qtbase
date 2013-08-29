@@ -81,6 +81,13 @@ QStringList QWindowsFileSystemWatcherEngine::addPaths(const QStringList &paths,
                                                        QStringList *files,
                                                        QStringList *directories)
 {
+#ifdef Q_OS_WINRT
+    Q_UNUSED(paths);
+    Q_UNUSED(files);
+    Q_UNUSED(directories);
+    qWarning(Q_FUNC_INFO ": not supported in WinRT");
+    return QStringList();
+#else
     DEBUG() << "Adding" << paths.count() << "to existing" << (files->count() + directories->count()) << "watchers";
     QStringList p = paths;
     QMutableListIterator<QString> it(p);
@@ -217,12 +224,20 @@ QStringList QWindowsFileSystemWatcherEngine::addPaths(const QStringList &paths,
         }
     }
     return p;
+#endif
 }
 
 QStringList QWindowsFileSystemWatcherEngine::removePaths(const QStringList &paths,
                                                           QStringList *files,
                                                           QStringList *directories)
 {
+#ifdef Q_OS_WINRT
+    Q_UNUSED(paths);
+    Q_UNUSED(files);
+    Q_UNUSED(directories);
+    qWarning(Q_FUNC_INFO ": not supported in WinRT");
+    return QStringList();
+#else
     DEBUG() << "removePaths" << paths;
     QStringList p = paths;
     QMutableListIterator<QString> it(p);
@@ -299,6 +314,7 @@ QStringList QWindowsFileSystemWatcherEngine::removePaths(const QStringList &path
 
     threads.removeAll(0);
     return p;
+#endif
 }
 
 ///////////
@@ -308,10 +324,12 @@ QStringList QWindowsFileSystemWatcherEngine::removePaths(const QStringList &path
 QWindowsFileSystemWatcherEngineThread::QWindowsFileSystemWatcherEngineThread()
         : msg(0)
 {
+#ifndef Q_OS_WINRT
     if (HANDLE h = CreateEvent(0, false, false, 0)) {
         handles.reserve(MAXIMUM_WAIT_OBJECTS);
         handles.append(h);
     }
+#endif
 }
 
 
@@ -320,11 +338,13 @@ QWindowsFileSystemWatcherEngineThread::~QWindowsFileSystemWatcherEngineThread()
     CloseHandle(handles.at(0));
     handles[0] = INVALID_HANDLE_VALUE;
 
+#ifndef Q_OS_WINRT
     foreach (HANDLE h, handles) {
         if (h == INVALID_HANDLE_VALUE)
             continue;
         FindCloseChangeNotification(h);
     }
+#endif
 }
 
 static inline QString msgFindNextFailed(const QWindowsFileSystemWatcherEngineThread::PathInfoHash &pathInfos)
@@ -340,6 +360,7 @@ static inline QString msgFindNextFailed(const QWindowsFileSystemWatcherEngineThr
 
 void QWindowsFileSystemWatcherEngineThread::run()
 {
+#ifndef Q_OS_WINRT
     QMutexLocker locker(&mutex);
     forever {
         QVector<HANDLE> handlesCopy = handles;
@@ -430,6 +451,7 @@ void QWindowsFileSystemWatcherEngineThread::run()
             r = WaitForMultipleObjects(handlesCopy.count(), handlesCopy.constData(), false, 0);
         } while (r != WAIT_TIMEOUT);
     }
+#endif
 }
 
 
