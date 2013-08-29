@@ -66,6 +66,10 @@
 #include <algorithm>
 
 
+#ifdef Q_OS_WINRT
+#include <thread>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 class QAbstractEventDispatcher;
@@ -172,8 +176,13 @@ public:
     static unsigned int __stdcall start(void *);
     static void finish(void *, bool lockAnyway=true);
 
+#  if defined(Q_OS_WINRT)
+    std::thread* handle;
+    std::thread::id id;
+#  else
     Qt::HANDLE handle;
     unsigned int id;
+#  endif
     int waiters;
     bool terminationEnabled, terminatePending;
 # endif
