@@ -142,10 +142,17 @@ static inline QStringList qWinCmdArgs(QString cmdLine) // not const-ref: this mi
 
 static inline QStringList qCmdLineArgs(int argc, char *argv[])
 {
+#ifdef Q_OS_WINRT
+    QStringList args;
+    for (int i = 0; i != argc; ++i)
+        args += QString::fromLocal8Bit(argv[i]);
+    return args;
+#else
     Q_UNUSED(argc)
     Q_UNUSED(argv)
     QString cmdLine = QString::fromWCharArray(GetCommandLine());
     return qWinCmdArgs(cmdLine);
+#endif
 }
 
 #else  // !Q_OS_WIN
