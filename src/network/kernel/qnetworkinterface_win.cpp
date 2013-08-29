@@ -53,12 +53,14 @@
 
 QT_BEGIN_NAMESPACE
 
+#ifndef Q_OS_WINRT
 typedef DWORD (WINAPI *PtrGetAdaptersInfo)(PIP_ADAPTER_INFO, PULONG);
 static PtrGetAdaptersInfo ptrGetAdaptersInfo = 0;
 typedef ULONG (WINAPI *PtrGetAdaptersAddresses)(ULONG, ULONG, PVOID, PIP_ADAPTER_ADDRESSES, PULONG);
 static PtrGetAdaptersAddresses ptrGetAdaptersAddresses = 0;
 typedef DWORD (WINAPI *PtrGetNetworkParams)(PFIXED_INFO, PULONG);
 static PtrGetNetworkParams ptrGetNetworkParams = 0;
+#endif
 
 static void resolveLibs()
 {
@@ -68,6 +70,7 @@ static void resolveLibs()
     if (!done) {
         done = true;
 
+#ifndef Q_OS_WINRT
         HINSTANCE iphlpapiHnd = QSystemLibrary::load(L"iphlpapi");
         if (iphlpapiHnd == NULL)
             return;
@@ -80,6 +83,7 @@ static void resolveLibs()
         ptrGetAdaptersInfo = (PtrGetAdaptersInfo)GetProcAddress(iphlpapiHnd, "GetAdaptersInfo");
         ptrGetAdaptersAddresses = (PtrGetAdaptersAddresses)GetProcAddress(iphlpapiHnd, "GetAdaptersAddresses");
         ptrGetNetworkParams = (PtrGetNetworkParams)GetProcAddress(iphlpapiHnd, "GetNetworkParams");
+#endif
 #endif
     }
 }
@@ -105,6 +109,9 @@ static QHostAddress addressFromSockaddr(sockaddr *sa)
 
 static QHash<QHostAddress, QHostAddress> ipv4Netmasks()
 {
+#ifdef Q_OS_WINRT
+    return QHash<QHostAddress, QHostAddress>();
+#else
     //Retrieve all the IPV4 addresses & netmasks
     IP_ADAPTER_INFO staticBuf[2]; // 2 is arbitrary
     PIP_ADAPTER_INFO pAdapter = staticBuf;
@@ -139,9 +146,10 @@ static QHash<QHostAddress, QHostAddress> ipv4Netmasks()
         free(pAdapter);
 
     return ipv4netmasks;
-
+#endif
 }
 
+#ifndef Q_OS_WINRT
 static QList<QNetworkInterfacePrivate *> interfaceListingWinXP()
 {
     QList<QNetworkInterfacePrivate *> interfaces;
@@ -282,14 +290,17 @@ static QList<QNetworkInterfacePrivate *> interfaceListingWin2k()
 
     return interfaces;
 }
+#endif
 
 static QList<QNetworkInterfacePrivate *> interfaceListing()
 {
+#ifndef Q_OS_WINRT
     resolveLibs();
     if (ptrGetAdaptersAddresses != NULL)
         return interfaceListingWinXP();
     else if (ptrGetAdaptersInfo != NULL)
         return interfaceListingWin2k();
+#endif
 
     // failed
     return QList<QNetworkInterfacePrivate *>();
@@ -302,6 +313,9 @@ QList<QNetworkInterfacePrivate *> QNetworkInterfaceManager::scan()
 
 QString QHostInfo::localDomainName()
 {
+#ifdef Q_OS_WINRT
+    return QString();
+#else
     resolveLibs();
     if (ptrGetNetworkParams == NULL)
         return QString();       // couldn't resolve
@@ -326,6 +340,7 @@ QString QHostInfo::localDomainName()
         free(pinfo);
 
     return domainName;
+#endif
 }
 
 QT_END_NAMESPACE

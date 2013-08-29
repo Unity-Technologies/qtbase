@@ -47,12 +47,21 @@
 #include <private/qsystemerror_p.h>
 
 #include <qt_windows.h>
+#ifndef Q_OS_WINRT
 #include <windns.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
 void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestName, QDnsLookupReply *reply)
 {
+#ifdef Q_OS_WINRT
+    Q_UNUSED(requestType);
+    Q_UNUSED(requestName);
+    Q_UNUSED(reply);
+    reply->error = QDnsLookup::InvalidReplyError;
+    reply->errorString = "not supported in WinRT";
+#else
     // Perform DNS query.
     PDNS_RECORD dns_records = 0;
     const QString requestNameUtf16 = QString::fromUtf8(requestName.data(), requestName.size());
@@ -146,6 +155,7 @@ void QDnsLookupRunnable::query(const int requestType, const QByteArray &requestN
     }
 
     DnsRecordListFree(dns_records, DnsFreeRecordList);
+#endif
 }
 
 QT_END_NAMESPACE

@@ -70,9 +70,11 @@
 #include <CoreFoundation/CFArray.h>
 #elif defined(Q_OS_WIN)
 #include <QtCore/qt_windows.h>
+#ifndef Q_OS_WINRT
 #include <wincrypt.h>
 #ifndef HCRYPTPROV_LEGACY
 #define HCRYPTPROV_LEGACY HCRYPTPROV
+#endif
 #endif
 #endif
 
@@ -84,7 +86,7 @@ QT_BEGIN_NAMESPACE
     typedef OSStatus (*PtrSecTrustCopyAnchorCertificates)(CFArrayRef*);
 #endif
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 #if defined(Q_OS_WINCE)
     typedef HCERTSTORE (WINAPI *PtrCertOpenSystemStoreW)(LPCSTR, DWORD, HCRYPTPROV_LEGACY, DWORD, const void*);
 #else
@@ -149,7 +151,7 @@ public:
     static PtrSecCertificateCopyData ptrSecCertificateCopyData;
     static PtrSecTrustSettingsCopyCertificates ptrSecTrustSettingsCopyCertificates;
     static PtrSecTrustCopyAnchorCertificates ptrSecTrustCopyAnchorCertificates;
-#elif defined(Q_OS_WIN)
+#elif defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     static PtrCertOpenSystemStoreW ptrCertOpenSystemStoreW;
     static PtrCertFindCertificateInStore ptrCertFindCertificateInStore;
     static PtrCertCloseStore ptrCertCloseStore;

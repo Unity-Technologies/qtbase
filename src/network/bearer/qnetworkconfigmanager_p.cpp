@@ -379,7 +379,7 @@ void QNetworkConfigurationManagerPrivate::updateConfigurations()
         updating = false;
 
 #ifndef QT_NO_LIBRARY
-        QBearerEngine *generic = 0;
+        QBearerEngine *genericEngine = 0;
         QFactoryLoader *l = loader();
         const PluginKeyMap keyMap = l->keyMap();
         const PluginKeyMapConstIterator cend = keyMap.constEnd();
@@ -392,7 +392,7 @@ void QNetworkConfigurationManagerPrivate::updateConfigurations()
             addedEngines.append(key);
             if (QBearerEngine *engine = qLoadPlugin<QBearerEngine, QBearerEnginePlugin>(l, key)) {
                 if (key == QLatin1String("generic"))
-                    generic = engine;
+                    genericEngine = engine;
                 else
                     sessionEngines.append(engine);
 
@@ -413,8 +413,8 @@ void QNetworkConfigurationManagerPrivate::updateConfigurations()
             }
         }
 
-        if (generic)
-            sessionEngines.append(generic);
+        if (genericEngine)
+            sessionEngines.append(genericEngine);
 #endif // QT_NO_LIBRARY
     }
 

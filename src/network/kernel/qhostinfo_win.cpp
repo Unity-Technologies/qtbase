@@ -74,7 +74,23 @@ struct qt_addrinfo
 #define NI_MAXHOST 1024
 #endif
 
-typedef int (__stdcall *getnameinfoProto)(const sockaddr *, QT_SOCKLEN_T, const char *, DWORD, const char *, DWORD, int);
+#ifdef Q_OS_WINRT
+int WINAPI qt_getnameinfo(const sockaddr *sa, QT_SOCKLEN_T salen, char *host, DWORD hostlen, char *serv, DWORD servlen, int flags)
+{
+    return getnameinfo(sa, salen, host, hostlen, serv, servlen, flags);
+}
+int WINAPI qt_getaddrinfo(const char *nodeName, const char *serviceName, const qt_addrinfo *hints, qt_addrinfo **results)
+{
+    return getaddrinfo(nodeName, serviceName, (const struct addrinfo*)hints, (struct addrinfo**)results);
+}
+int WINAPI qt_freeaddrinfo(qt_addrinfo *ai)
+{
+    freeaddrinfo((struct addrinfo*)ai);
+    return 0;
+}
+#endif
+
+typedef int (__stdcall *getnameinfoProto)(const sockaddr *, QT_SOCKLEN_T, char *, DWORD, char *, DWORD, int);
 typedef int (__stdcall *getaddrinfoProto)(const char *, const char *, const qt_addrinfo *, qt_addrinfo **);
 typedef int (__stdcall *freeaddrinfoProto)(qt_addrinfo *);
 static getnameinfoProto local_getnameinfo = 0;
@@ -85,7 +101,11 @@ static void resolveLibrary()
 {
     // Attempt to resolve getaddrinfo(); without it we'll have to fall
     // back to gethostbyname(), which has no IPv6 support.
-#if !defined(Q_OS_WINCE)
+#if defined(Q_OS_WINRT)
+    local_getaddrinfo = qt_getaddrinfo;
+    local_freeaddrinfo = qt_freeaddrinfo;
+    local_getnameinfo = qt_getnameinfo;
+#elif !defined(Q_OS_WINCE)
     local_getaddrinfo = (getaddrinfoProto) QSystemLibrary::resolve(QLatin1String("ws2_32"), "getaddrinfo");
     local_freeaddrinfo = (freeaddrinfoProto) QSystemLibrary::resolve(QLatin1String("ws2_32"), "freeaddrinfo");
     local_getnameinfo = (getnameinfoProto) QSystemLibrary::resolve(QLatin1String("ws2_32"), "getnameinfo");

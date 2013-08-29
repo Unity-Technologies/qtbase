@@ -50,6 +50,7 @@
 #include <private/qsystemlibrary_p.h>
 #include <qnetworkinterface.h>
 
+#ifndef Q_OS_WINRT
 #include <string.h>
 #include <qt_windows.h>
 #include <wininet.h>
@@ -494,9 +495,13 @@ void QWindowsSystemProxy::init()
     functional = isAutoConfig || !proxyServerList.isEmpty();
 #endif
 }
+#endif // Q_OS_WINRT
 
 QList<QNetworkProxy> QNetworkProxyFactory::systemProxyForQuery(const QNetworkProxyQuery &query)
 {
+#ifdef Q_OS_WINRT
+    return QList<QNetworkProxy>() << QNetworkProxy();
+#else
     QWindowsSystemProxy *sp = systemProxy();
     if (!sp)
         return QList<QNetworkProxy>() << QNetworkProxy();
@@ -594,6 +599,7 @@ QList<QNetworkProxy> QNetworkProxyFactory::systemProxyForQuery(const QNetworkPro
         return sp->defaultResult;
 
     return result;
+#endif
 }
 
 QT_END_NAMESPACE
