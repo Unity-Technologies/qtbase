@@ -49,6 +49,9 @@
 
 #ifdef Q_OS_WIN
 # include <windows.h>
+#  if defined(Q_OS_WINRT)
+#    define tzset()
+#  endif
 #endif
 
 class tst_QDateTime : public QObject
@@ -165,7 +168,7 @@ void tst_QDateTime::init()
 {
 #if defined(Q_OS_WINCE)
     SetUserDefaultLCID(MAKELCID(MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), SORT_DEFAULT));
-#elif defined(Q_OS_WIN)
+#elif defined(Q_OS_WIN32)
     SetThreadLocale(MAKELCID(MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), SORT_DEFAULT));
 #endif
 }
@@ -1436,6 +1439,7 @@ void tst_QDateTime::operator_insert_extract()
     // Start off in a certain timezone.
     qputenv("TZ", serialiseAs.toLocal8Bit().constData());
     tzset();
+
     QDateTime dateTimeAsUTC(dateTime.toUTC());
 
     QByteArray byteArray;
@@ -1462,6 +1466,7 @@ void tst_QDateTime::operator_insert_extract()
     // still results in identical UTC-converted datetimes.
     qputenv("TZ", deserialiseAs.toLocal8Bit().constData());
     tzset();
+
     QDateTime expectedLocalTime(dateTimeAsUTC.toLocalTime());
     {
         // Deserialise whole QDateTime at once.
@@ -1517,6 +1522,7 @@ void tst_QDateTime::operator_insert_extract()
         qunsetenv("TZ");
     else
         qputenv("TZ", previousTimeZone.constData());
+
     tzset();
 }
 #endif
