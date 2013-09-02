@@ -39,10 +39,11 @@
 **
 ****************************************************************************/
 
+#if !defined Q_OS_WIN || (defined(Q_OS_WIN) && defined(Q_OS_WINPHONE))
 #include <qelapsedtimer.h>
 #include <qcoreapplication.h>
 
-#ifndef Q_OS_WINRT
+#ifndef Q_OS_WINPHONE
 #include "private/qcore_unix_p.h"
 #endif
 #include "private/qtimerinfo_unix_p.h"
@@ -708,3 +709,5 @@ int QTimerInfoList::activateTimers()
 }
 
 QT_END_NAMESPACE
+
+#endif // !Q_OS_WIN || (Q_OS_WIN && Q_OS_WINPHONE)

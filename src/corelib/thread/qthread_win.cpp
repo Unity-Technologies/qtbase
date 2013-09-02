@@ -54,7 +54,11 @@
 #include <qpointer.h>
 
 #include <private/qcoreapplication_p.h>
+#ifdef Q_OS_WINRT
+#include "private/qeventdispatcher_winrt_p.h"
+#else
 #include <private/qeventdispatcher_win_p.h>
+#endif
 
 #include <qt_windows.h>
 
@@ -362,7 +366,11 @@ void qt_set_thread_name(HANDLE threadId, LPCSTR threadName)
 
 void QThreadPrivate::createEventDispatcher(QThreadData *data)
 {
+#ifdef Q_OS_WINRT
+    QEventDispatcherWinRT *theEventDispatcher = new QEventDispatcherWinRT;
+#else
     QEventDispatcherWin32 *theEventDispatcher = new QEventDispatcherWin32;
+#endif
     data->eventDispatcher.storeRelease(theEventDispatcher);
     theEventDispatcher->startingUp();
 }
@@ -547,9 +555,10 @@ void QThread::start(Priority priority)
 
     d->id = d->handle->get_id();
 
-    if (priority != NormalPriority)
+    if (priority != NormalPriority && priority != InheritPriority) {
         qWarning("QThread::start: Failed to set thread priority (not implemented)");
-    d->priority = NormalPriority;
+        d->priority = NormalPriority;
+    }
 #else
     /*
       NOTE: we create the thread in the suspended state, set the

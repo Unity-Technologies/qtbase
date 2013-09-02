@@ -55,9 +55,10 @@
 
 // #define QTIMERINFO_DEBUG
 
+#if !defined Q_OS_WIN || (defined(Q_OS_WIN) && defined(Q_OS_WINPHONE))
 #include "qabstracteventdispatcher.h"
 
-#ifdef Q_OS_WINRT
+#ifdef Q_OS_WINPHONE
 #define NOMINMAX
 #include <winsock2.h>
 #else
@@ -120,5 +121,7 @@ public:
 };
 
 QT_END_NAMESPACE
+
+#endif // !Q_OS_WIN || (Q_OS_WIN && Q_OS_WINPHONE)
 
 #endif // QTIMERINFO_UNIX_P_H

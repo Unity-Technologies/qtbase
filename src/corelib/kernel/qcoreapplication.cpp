@@ -84,7 +84,11 @@
 #  endif
 #endif
 #ifdef Q_OS_WIN
+# ifdef Q_OS_WINRT
+#  include "qeventdispatcher_winrt_p.h"
+# else
 #  include "qeventdispatcher_win_p.h"
+# endif
 #endif
 #endif // QT_NO_QOBJECT
 
@@ -101,6 +105,10 @@
 
 #ifdef Q_OS_VXWORKS
 #  include <taskLib.h>
+#endif
+
+#ifdef Q_OS_WINPHONE
+#  include <winsock2.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -464,6 +472,8 @@ void QCoreApplicationPrivate::createEventDispatcher()
 #  endif
         eventDispatcher = new QEventDispatcherUNIX(q);
 #  endif
+#elif defined(Q_OS_WINRT)
+    eventDispatcher = new QEventDispatcherWinRT(q);
 #elif defined(Q_OS_WIN)
     eventDispatcher = new QEventDispatcherWin32(q);
 #else
@@ -694,7 +704,7 @@ void QCoreApplication::init()
     Q_ASSERT_X(!self, "QCoreApplication", "there should be only one application object");
     QCoreApplication::self = this;
 
-#ifdef Q_OS_WINRT
+#ifdef Q_OS_WINPHONE
     WSADATA wsaData;
     int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (err != 0) {
@@ -784,7 +794,7 @@ QCoreApplication::~QCoreApplication()
     coreappdata()->app_libpaths = 0;
 #endif
 
-#ifdef Q_OS_WINRT
+#ifdef Q_OS_WINPHONE
     WSACleanup();
 #endif
 }
