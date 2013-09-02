@@ -52,7 +52,6 @@ QT_BEGIN_NAMESPACE
 
 QLockFile::LockError QLockFilePrivate::tryLock_sys()
 {
-    SECURITY_ATTRIBUTES securityAtts = { sizeof(SECURITY_ATTRIBUTES), NULL, FALSE };
     const QFileSystemEntry fileEntry(fileName);
     // When writing, allow others to read.
     // When reading, QFile will allow others to read and write, all good.
@@ -60,6 +59,8 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
     // but Windows doesn't allow recreating it while this handle is open anyway,
     // so this would only create confusion (can't lock, but no lock file to read from).
     const DWORD dwShareMode = FILE_SHARE_READ;
+#ifndef Q_OS_WINRT
+    SECURITY_ATTRIBUTES securityAtts = { sizeof(SECURITY_ATTRIBUTES), NULL, FALSE };
     HANDLE fh = CreateFile((const wchar_t*)fileEntry.nativeFilePath().utf16(),
                            GENERIC_WRITE,
                            dwShareMode,
@@ -67,6 +68,13 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
                            CREATE_NEW, // error if already exists
                            FILE_ATTRIBUTE_NORMAL,
                            NULL);
+#else
+    HANDLE fh = CreateFile2((const wchar_t*)fileEntry.nativeFilePath().utf16(),
+                            GENERIC_WRITE,
+                            dwShareMode,
+                            CREATE_NEW, // error if already exists
+                            NULL);
+#endif
     if (fh == INVALID_HANDLE_VALUE) {
         const DWORD lastError = GetLastError();
         switch (lastError) {
@@ -112,6 +120,7 @@ bool QLockFilePrivate::isApparentlyStale() const
     if (!getLockInfo(&pid, &hostname, &appname))
         return false;
 
+#ifndef Q_OS_WINRT // TODO: any way to get process information on WinRT?
     HANDLE procHandle = ::OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!procHandle)
         return true;
@@ -120,6 +129,7 @@ bool QLockFilePrivate::isApparentlyStale() const
     ::CloseHandle(procHandle);
     if (dwR == WAIT_TIMEOUT)
         return true;
+#endif
     const qint64 age = QFileInfo(fileName).lastModified().msecsTo(QDateTime::currentDateTime());
     return staleLockTime > 0 && age > staleLockTime;
 }

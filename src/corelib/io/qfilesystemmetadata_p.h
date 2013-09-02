@@ -219,7 +219,9 @@ public:
 #if defined(Q_OS_WIN)
     inline void fillFromFileAttribute(DWORD fileAttribute, bool isDriveRoot = false);
     inline void fillFromFindData(WIN32_FIND_DATA &findData, bool setLinkType = false, bool isDriveRoot = false);
+#if !defined(Q_OS_WINRT)
     inline void fillFromFindInfo(BY_HANDLE_FILE_INFORMATION &fileInfo);
+#endif
 #endif
 private:
     friend class QFileSystemEngine;
@@ -340,6 +342,7 @@ inline void QFileSystemMetaData::fillFromFindData(WIN32_FIND_DATA &findData, boo
     }
 }
 
+#if !defined(Q_OS_WINRT)
 inline void QFileSystemMetaData::fillFromFindInfo(BY_HANDLE_FILE_INFORMATION &fileInfo)
 {
     fillFromFileAttribute(fileInfo.dwFileAttributes);
@@ -355,6 +358,7 @@ inline void QFileSystemMetaData::fillFromFindInfo(BY_HANDLE_FILE_INFORMATION &fi
     }
     knownFlagsMask |=  Times | SizeAttribute;
 }
+#endif
 #endif
 
 QT_END_NAMESPACE

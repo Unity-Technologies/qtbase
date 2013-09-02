@@ -151,18 +151,28 @@ static bool createFileFromTemplate(NativeFileHandle &file,
     for (;;) {
         // Atomically create file and obtain handle
 #if defined(Q_OS_WIN)
+#  ifdef Q_OS_WINRT
+        file = CreateFile2((const wchar_t *)path.constData(),
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE, CREATE_NEW,
+                NULL);
+#  else
         file = CreateFile((const wchar_t *)path.constData(),
                 GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_NEW,
                 FILE_ATTRIBUTE_NORMAL, NULL);
-
+#  endif
         if (file != INVALID_HANDLE_VALUE)
             return true;
 
         DWORD err = GetLastError();
         if (err == ERROR_ACCESS_DENIED) {
-            DWORD attributes = GetFileAttributes((const wchar_t *)path.constData());
-            if (attributes == INVALID_FILE_ATTRIBUTES) {
+            WIN32_FILE_ATTRIBUTE_DATA attributes;
+            if (!GetFileAttributesEx((const wchar_t *)path.constData(),
+                                     GetFileExInfoStandard, &attributes))
+                return false;
+
+            if (attributes.dwFileAttributes == INVALID_FILE_ATTRIBUTES) {
                 // Potential write error (read-only parent directory, etc.).
                 error = QSystemError(err, QSystemError::NativeError);
                 return false;
@@ -234,7 +244,7 @@ bool QTemporaryFileEngine::isReallyOpen()
     Q_D(QFSFileEngine);
 
     if (!((0 == d->fh) && (-1 == d->fd)
-#if defined Q_OS_WIN
+#if defined(Q_OS_WIN)
                 && (INVALID_HANDLE_VALUE == d->fileHandle)
 #endif
             ))
@@ -336,7 +346,7 @@ bool QTemporaryFileEngine::open(QIODevice::OpenMode openMode)
 
     d->fileEntry = QFileSystemEntry(filename, QFileSystemEntry::FromNativePath());
 
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_WIN) || defined(Q_OS_WINRT)
     d->closeFileHandle = true;
 #endif
 
