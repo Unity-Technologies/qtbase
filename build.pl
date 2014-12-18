@@ -107,11 +107,12 @@ sub zip
 	if ($os_name eq 'MSWin32')
 	{
 		my $zipCmd = '"C:\Program Files (x86)\7-Zip\7z"';
-		doSystemCommand("$zipCmd a -r builds.7z ./qtbase/*");
+		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		doSystemCommand("tar zcfv builds.tar.gz -C qtbase .");
+		doSystemCommand("mkdir -p build");
+		doSystemCommand("tar zcfv build/builds.tar.gz -C qtbase .");
 	}
 	else
 	{
