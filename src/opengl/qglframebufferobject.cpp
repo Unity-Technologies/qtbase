@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Copyright (C) 2014 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the QtOpenGL module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
+** a written agreement between you and Digia. For licensing terms and
+** conditions see http://qt.digia.com/licensing. For further information
 ** use the contact form at http://qt.digia.com/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
 ** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** rights. These rights are described in the Digia Qt LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -61,11 +53,11 @@ extern QImage qt_gl_read_frame_buffer(const QSize&, bool, bool);
 #ifndef QT_NO_DEBUG
 #define QT_RESET_GLERROR()                                \
 {                                                         \
-    while (glGetError() != GL_NO_ERROR) {}                \
+    while (QOpenGLContext::currentContext()->functions()->glGetError() != GL_NO_ERROR) {} \
 }
 #define QT_CHECK_GLERROR()                                \
 {                                                         \
-    GLenum err = glGetError();                            \
+    GLenum err = QOpenGLContext::currentContext()->functions()->glGetError(); \
     if (err != GL_NO_ERROR) {                             \
         qDebug("[%s line %d] GL Error: %d",               \
                __FILE__, __LINE__, (int)err);             \
@@ -92,6 +84,10 @@ extern QImage qt_gl_read_frame_buffer(const QSize&, bool, bool);
 
 #ifndef GL_DEPTH_COMPONENT24
 #define GL_DEPTH_COMPONENT24 0x81A6
+#endif
+
+#ifndef GL_DEPTH_COMPONENT24_OES
+#define GL_DEPTH_COMPONENT24_OES 0x81A6
 #endif
 
 #ifndef GL_READ_FRAMEBUFFER
@@ -460,7 +456,7 @@ namespace
     void freeTextureFunc(QGLContext *ctx, GLuint id)
     {
         Q_UNUSED(ctx);
-        glDeleteTextures(1, &id);
+        ctx->contextHandle()->functions()->glDeleteTextures(1, &id);
     }
 }
 
@@ -475,6 +471,8 @@ void QGLFramebufferObjectPrivate::init(QGLFramebufferObject *q, const QSize &sz,
 
     if (!funcs.hasOpenGLFeature(QOpenGLFunctions::Framebuffers))
         return;
+
+    ctx->d_ptr->refreshCurrentFbo();
 
     size = sz;
     target = texture_target;
@@ -493,10 +491,10 @@ void QGLFramebufferObjectPrivate::init(QGLFramebufferObject *q, const QSize &sz,
     QT_CHECK_GLERROR();
     // init texture
     if (samples == 0) {
-        glGenTextures(1, &texture);
-        glBindTexture(target, texture);
-        glTexImage2D(target, 0, internal_format, size.width(), size.height(), 0,
-                GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        funcs.glGenTextures(1, &texture);
+        funcs.glBindTexture(target, texture);
+        funcs.glTexImage2D(target, 0, internal_format, size.width(), size.height(), 0,
+                           GL_RGBA, GL_UNSIGNED_BYTE, NULL);
         if (mipmap) {
             int width = size.width();
             int height = size.height();
@@ -505,26 +503,26 @@ void QGLFramebufferObjectPrivate::init(QGLFramebufferObject *q, const QSize &sz,
                 width = qMax(1, width >> 1);
                 height = qMax(1, height >> 1);
                 ++level;
-                glTexImage2D(target, level, internal_format, width, height, 0,
-                        GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+                funcs.glTexImage2D(target, level, internal_format, width, height, 0,
+                                   GL_RGBA, GL_UNSIGNED_BYTE, NULL);
             }
         }
-        glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        funcs.glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        funcs.glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        funcs.glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        funcs.glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         funcs.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                 target, texture, 0);
 
         QT_CHECK_GLERROR();
         valid = checkFramebufferStatus();
-        glBindTexture(target, 0);
+        funcs.glBindTexture(target, 0);
 
         color_buffer = 0;
     } else {
         mipmap = false;
         GLint maxSamples;
-        glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+        funcs.glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
 
         samples = qBound(0, int(samples), int(maxSamples));
 
@@ -694,7 +692,7 @@ void QGLFramebufferObjectPrivate::init(QGLFramebufferObject *q, const QSize &sz,
         if (color_buffer)
             funcs.glDeleteRenderbuffers(1, &color_buffer);
         else
-            glDeleteTextures(1, &texture);
+            funcs.glDeleteTextures(1, &texture);
         if (depth_buffer)
             funcs.glDeleteRenderbuffers(1, &depth_buffer);
         if (stencil_buffer && depth_buffer != stencil_buffer)
@@ -792,8 +790,6 @@ void QGLFramebufferObjectPrivate::init(QGLFramebufferObject *q, const QSize &sz,
     OpenGL ES 2.0 is required for this to work.
 
     \note This class has been deprecated in favor of QOpenGLFramebufferObject.
-
-    \sa {Framebuffer Object 2 Example}
 */
 
 
@@ -1033,7 +1029,7 @@ bool QGLFramebufferObject::bind()
     d->funcs.glBindFramebuffer(GL_FRAMEBUFFER, d->fbo());
     d->valid = d->checkFramebufferStatus();
     if (d->valid && current)
-        current->d_ptr->current_fbo = d->fbo();
+        current->d_ptr->setCurrentFbo(d->fbo());
     return d->valid;
 }
 
@@ -1066,7 +1062,7 @@ bool QGLFramebufferObject::release()
 #endif
 
     if (current) {
-        current->d_ptr->current_fbo = current->d_ptr->default_fbo;
+        current->d_ptr->setCurrentFbo(current->d_ptr->default_fbo);
         d->funcs.glBindFramebuffer(GL_FRAMEBUFFER, current->d_ptr->default_fbo);
     }
 
@@ -1114,6 +1110,20 @@ QGLFramebufferObjectFormat QGLFramebufferObject::format() const
     \fn QImage QGLFramebufferObject::toImage() const
 
     Returns the contents of this framebuffer object as a QImage.
+
+    The returned image has a format of premultiplied ARGB32 or RGB32. The latter is used
+    only when internalTextureFormat() is set to \c GL_RGB.
+
+    If the rendering in the framebuffer was not done with premultiplied alpha in mind,
+    create a wrapper QImage with a non-premultiplied format. This is necessary before
+    performing operations like QImage::save() because otherwise the image data would get
+    unpremultiplied, even though it was not premultiplied in the first place. To create
+    such a wrapper without performing a copy of the pixel data, do the following:
+
+    \code
+    QImage fboImage(fbo.toImage());
+    QImage image(fboImage.constBits(), fboImage.width(), fboImage.height(), QImage::Format_ARGB32);
+    \endcode
 
     On QNX the back buffer is not preserved when a buffer swap occures. So this function
     might return old content.
@@ -1179,7 +1189,7 @@ bool QGLFramebufferObject::bindDefault()
         if (!functions.hasOpenGLFeature(QOpenGLFunctions::Framebuffers))
             return false;
 
-        ctx->d_ptr->current_fbo = ctx->d_ptr->default_fbo;
+        ctx->d_ptr->setCurrentFbo(ctx->d_ptr->default_fbo);
         functions.glBindFramebuffer(GL_FRAMEBUFFER, ctx->d_ptr->default_fbo);
 #ifdef QT_DEBUG
     } else {
@@ -1326,7 +1336,12 @@ bool QGLFramebufferObject::isBound() const
 {
     Q_D(const QGLFramebufferObject);
     const QGLContext *current = QGLContext::currentContext();
-    return current ? current->d_ptr->current_fbo == d->fbo() : false;
+    if (current) {
+        current->d_ptr->refreshCurrentFbo();
+        return current->d_ptr->current_fbo == d->fbo();
+    }
+
+    return false;
 }
 
 /*!
@@ -1405,6 +1420,8 @@ void QGLFramebufferObject::blitFramebuffer(QGLFramebufferObject *target, const Q
     const int tx1 = targetRect.left() + targetRect.width();
     const int ty0 = th - (targetRect.top() + targetRect.height());
     const int ty1 = th - targetRect.top();
+
+    ctx->d_ptr->refreshCurrentFbo();
 
     functions.glBindFramebuffer(GL_READ_FRAMEBUFFER, source ? source->handle() : 0);
     functions.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target ? target->handle() : 0);

@@ -366,9 +366,14 @@ void QCocoaMenu::syncMenuItem(QPlatformMenuItem *menuItem)
     }
 
     bool wasMerged = cocoaItem->isMerged();
-    NSMenu *oldMenu = wasMerged ? [getMenuLoader() applicationMenu] : m_nativeMenu;
-    NSMenuItem *oldItem = [oldMenu itemWithTag:(NSInteger) cocoaItem];
+    NSMenu *oldMenu = m_nativeMenu;
+    if (wasMerged) {
+        QPlatformMenuItem::MenuRole role = cocoaItem->effectiveRole();
+        if (role >= QPlatformMenuItem::ApplicationSpecificRole && role < QPlatformMenuItem::CutRole)
+            oldMenu = [getMenuLoader() applicationMenu];
+    }
 
+    NSMenuItem *oldItem = [oldMenu itemWithTag:(NSInteger) cocoaItem];
     if (cocoaItem->sync() != oldItem) {
         // native item was changed for some reason
         if (oldItem) {
@@ -438,10 +443,11 @@ void QCocoaMenu::setVisible(bool visible)
     m_visible = visible;
 }
 
-void QCocoaMenu::showPopup(const QWindow *parentWindow, QPoint pos, const QPlatformMenuItem *item)
+void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect, const QPlatformMenuItem *item)
 {
     QCocoaAutoReleasePool pool;
 
+    QPoint pos =  QPoint(targetRect.left(), targetRect.top() + targetRect.height());
     QCocoaWindow *cocoaWindow = parentWindow ? static_cast<QCocoaWindow *>(parentWindow->handle()) : 0;
     NSView *view = cocoaWindow ? cocoaWindow->contentView() : nil;
     NSMenuItem *nsItem = item ? ((QCocoaMenuItem *)item)->nsItem() : nil;

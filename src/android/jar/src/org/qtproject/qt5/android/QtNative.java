@@ -191,6 +191,16 @@ public class QtNative
         }
     }
 
+    private static void runQtOnUiThread(final long id)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                QtNative.onAndroidUiThread(id);
+            }
+        });
+    }
+
     public static boolean startApplication(String params,
                                            String environment,
                                            String mainLibrary,
@@ -440,12 +450,12 @@ public class QtNative
         return m_clipboardManager.getText().toString();
     }
 
-    private static void openContextMenu()
+    private static void openContextMenu(final int x, final int y, final int w, final int h)
     {
         runAction(new Runnable() {
             @Override
             public void run() {
-                m_activityDelegate.openContextMenu();
+                m_activityDelegate.openContextMenu(x, y, w, h);
             }
         });
     }
@@ -466,6 +476,16 @@ public class QtNative
             @Override
             public void run() {
                 m_activityDelegate.resetOptionsMenu();
+            }
+        });
+    }
+
+    private static void openOptionsMenu()
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                m_activity.openOptionsMenu();
             }
         });
     }
@@ -527,6 +547,26 @@ public class QtNative
         });
     }
 
+    private static void bringChildToFront(final int id)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                m_activityDelegate.bringChildToFront(id);
+            }
+        });
+    }
+
+    private static void bringChildToBack(final int id)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                m_activityDelegate.bringChildToBack(id);
+            }
+        });
+    }
+
     private static void destroySurface(final int id)
     {
         runAction(new Runnable() {
@@ -581,10 +621,13 @@ public class QtNative
     public static native void onOptionsMenuClosed(Menu menu);
 
     public static native void onCreateContextMenu(ContextMenu menu);
+    public static native void fillContextMenu(Menu menu);
     public static native boolean onContextItemSelected(int itemId, boolean checked);
     public static native void onContextMenuClosed(Menu menu);
     // menu methods
 
     // activity methods
     public static native void onActivityResult(int requestCode, int resultCode, Intent data);
+
+    public static native void onAndroidUiThread(long id);
 }

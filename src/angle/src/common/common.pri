@@ -51,12 +51,15 @@ static: DEFINES *= QT_OPENGL_ES_2_ANGLE_STATIC
 HEADERS +=  \
     $$ANGLE_DIR/src/common/angleutils.h \
     $$ANGLE_DIR/src/common/debug.h \
-    $$ANGLE_DIR/src/common/event_tracer.h \
+    $$ANGLE_DIR/src/common/mathutil.h \
+    $$ANGLE_DIR/src/common/platform.h \
     $$ANGLE_DIR/src/common/RefCountObject.h \
+    $$ANGLE_DIR/src/common/tls.h \
     $$ANGLE_DIR/src/common/version.h
 
 SOURCES +=  \
+    $$ANGLE_DIR/src/common/angleutils.cpp \
     $$ANGLE_DIR/src/common/debug.cpp \
-    $$ANGLE_DIR/src/common/event_tracer.cpp \
-    $$ANGLE_DIR/src/common/RefCountObject.cpp
+    $$ANGLE_DIR/src/common/RefCountObject.cpp \
+    $$ANGLE_DIR/src/common/tls.cpp
 

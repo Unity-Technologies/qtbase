@@ -5,35 +5,27 @@
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
+** a written agreement between you and Digia. For licensing terms and
+** conditions see http://qt.digia.com/licensing. For further information
 ** use the contact form at http://qt.digia.com/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
 ** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** rights. These rights are described in the Digia Qt LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -98,6 +90,81 @@ UnixMakefileGenerator::writeMakefile(QTextStream &t)
 }
 
 void
+UnixMakefileGenerator::writeDefaultVariables(QTextStream &t)
+{
+    MakefileGenerator::writeDefaultVariables(t);
+    t << "TAR           = " << var("QMAKE_TAR") << endl;
+    t << "COMPRESS      = " << var("QMAKE_GZIP") << endl;
+
+    if (project->isEmpty("QMAKE_DISTNAME")) {
+        ProString distname = project->first("QMAKE_ORIG_TARGET");
+        if (!project->isActiveConfig("no_dist_version"))
+            distname += project->first("VERSION");
+        project->values("QMAKE_DISTNAME") = distname;
+    }
+    t << "DISTNAME      = " << var("QMAKE_DISTNAME") << endl;
+
+    if (project->isEmpty("QMAKE_DISTDIR"))
+        project->values("QMAKE_DISTDIR") = project->first("QMAKE_DISTNAME");
+    t << "DISTDIR = " << escapeFilePath(fileFixify(
+            (project->isEmpty("OBJECTS_DIR") ? ProString(".tmp/") : project->first("OBJECTS_DIR")) + project->first("QMAKE_DISTDIR"),
+            Option::output_dir, Option::output_dir, FileFixifyAbsolute)) << endl;
+}
+
+void
+UnixMakefileGenerator::writeSubTargets(QTextStream &t, QList<MakefileGenerator::SubTarget*> targets, int flags)
+{
+    MakefileGenerator::writeSubTargets(t, targets, flags);
+
+    t << "dist: distdir FORCE" << endl;
+    t << "\t(cd `dirname $(DISTDIR)` && $(TAR) $(DISTNAME).tar $(DISTNAME) && $(COMPRESS) $(DISTNAME).tar)"
+         " && $(MOVE) `dirname $(DISTDIR)`/$(DISTNAME).tar.gz . && $(DEL_FILE) -r $(DISTDIR)";
+    t << endl << endl;
+
+    t << "distdir:";
+    for (int target = 0; target < targets.size(); ++target) {
+        SubTarget *subtarget = targets.at(target);
+        t << " " << subtarget->target << "-distdir";
+    }
+    t << " FORCE\n\t"
+      << mkdir_p_asstring("$(DISTDIR)", false) << "\n\t"
+      << "$(COPY_FILE) --parents " << var("DISTFILES") << " $(DISTDIR)" << Option::dir_sep << endl << endl;
+
+    const QString abs_source_path = project->first("QMAKE_ABSOLUTE_SOURCE_PATH").toQString();
+    for (int target = 0; target < targets.size(); ++target) {
+        SubTarget *subtarget = targets.at(target);
+        QString in_directory = subtarget->in_directory;
+        if (!in_directory.isEmpty() && !in_directory.endsWith(Option::dir_sep))
+            in_directory += Option::dir_sep;
+        QString out_directory = subtarget->out_directory;
+        if (!out_directory.isEmpty() && !out_directory.endsWith(Option::dir_sep))
+            out_directory += Option::dir_sep;
+        if (!abs_source_path.isEmpty() && out_directory.startsWith(abs_source_path))
+            out_directory = Option::output_dir + out_directory.mid(abs_source_path.length());
+
+        QString dist_directory = out_directory;
+        if (dist_directory.endsWith(Option::dir_sep))
+            dist_directory.chop(Option::dir_sep.length());
+        if (!dist_directory.startsWith(Option::dir_sep))
+            dist_directory.prepend(Option::dir_sep);
+
+        QString out_directory_cdin = out_directory.isEmpty() ? "\n\t"
+                                                             : "\n\tcd " + out_directory + " && ";
+        QString makefilein = " -e -f " + subtarget->makefile + " distdir DISTDIR=$(DISTDIR)" + dist_directory;
+
+        QString out = subtarget->makefile;
+        QString in = escapeFilePath(fileFixify(in_directory + subtarget->profile, FileFixifyAbsolute));
+        if (out.startsWith(in_directory))
+            out.remove(0, in_directory.length());
+
+        t << subtarget->target << "-distdir: FORCE";
+        writeSubTargetCall(t, in_directory, in, out_directory, out,
+                           out_directory_cdin, makefilein);
+        t << endl;
+    }
+}
+
+void
 UnixMakefileGenerator::writeMakeParts(QTextStream &t)
 {
     QString deps = fileFixify(Option::output.fileName()), target_deps, prl;
@@ -142,6 +209,8 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
        t << " " << var("QMAKE_FRAMEWORKPATH_FLAGS");
     t << endl;
 
+    writeDefaultVariables(t);
+
     if(!project->isActiveConfig("staticlib")) {
         t << "LINK          = " << var("QMAKE_LINK") << endl;
         t << "LFLAGS        = " << var("QMAKE_LFLAGS") << endl;
@@ -150,26 +219,10 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
 
     t << "AR            = " << var("QMAKE_AR") << endl;
     t << "RANLIB        = " << var("QMAKE_RANLIB") << endl;
-    t << "QMAKE         = " << var("QMAKE_QMAKE") << endl;
-    t << "TAR           = " << var("QMAKE_TAR") << endl;
-    t << "COMPRESS      = " << var("QMAKE_GZIP") << endl;
     if(project->isActiveConfig("compile_libtool"))
         t << "LIBTOOL       = " << var("QMAKE_LIBTOOL") << endl;
-    t << "COPY          = " << var("QMAKE_COPY") << endl;
     t << "SED           = " << var("QMAKE_STREAM_EDITOR") << endl;
-    t << "COPY_FILE     = " << var("QMAKE_COPY_FILE") << endl;
-    t << "COPY_DIR      = " << var("QMAKE_COPY_DIR") << endl;
     t << "STRIP         = " << var("QMAKE_STRIP") << endl;
-    t << "INSTALL_FILE  = " << var("QMAKE_INSTALL_FILE") << endl;
-    t << "INSTALL_DIR   = " << var("QMAKE_INSTALL_DIR") << endl;
-    t << "INSTALL_PROGRAM = " << var("QMAKE_INSTALL_PROGRAM") << endl;
-
-    t << "DEL_FILE      = " << var("QMAKE_DEL_FILE") << endl;
-    t << "SYMLINK       = " << var("QMAKE_SYMBOLIC_LINK") << endl;
-    t << "DEL_DIR       = " << var("QMAKE_DEL_DIR") << endl;
-    t << "MOVE          = " << var("QMAKE_MOVE") << endl;
-    t << "CHK_DIR_EXISTS= " << var("QMAKE_CHK_DIR_EXISTS") << endl;
-    t << "MKDIR         = " << var("QMAKE_MKDIR") << endl;
 
     t << endl;
 
@@ -217,6 +270,7 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
     if(do_incremental && !src_incremental)
         do_incremental = false;
     t << "DIST          = " << valList(fileFixify(project->values("DISTFILES").toQStringList())) << " "
+                            << valList(escapeFilePaths(project->values("HEADERS"))) << " "
                             << valList(escapeFilePaths(project->values("SOURCES"))) << endl;
     t << "QMAKE_TARGET  = " << var("QMAKE_ORIG_TARGET") << endl;
     // The comment is important for mingw32-make.exe on Windows as otherwise trailing slashes
@@ -760,22 +814,26 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
             }
             commonSedArgs << "-e \"s,@TYPEINFO@,"<< (project->isEmpty("QMAKE_PKGINFO_TYPEINFO") ?
                        QString::fromLatin1("????") : project->first("QMAKE_PKGINFO_TYPEINFO").left(4)) << ",g\" ";
+
+            QString bundlePrefix = project->first("QMAKE_TARGET_BUNDLE_PREFIX").toQString();
+            if (bundlePrefix.isEmpty())
+                bundlePrefix = "com.yourcompany";
+            if (bundlePrefix.endsWith("."))
+                bundlePrefix.chop(1);
+            QString bundleIdentifier =  bundlePrefix + "." + var("QMAKE_BUNDLE");
+            if (bundleIdentifier.endsWith(".app"))
+                bundleIdentifier.chop(4);
+            if (bundleIdentifier.endsWith(".framework"))
+                bundleIdentifier.chop(10);
+            commonSedArgs << "-e \"s,@BUNDLEIDENTIFIER@," << bundleIdentifier << ",g\" ";
+
             if (isApp) {
                 QString icon = fileFixify(var("ICON"));
-                QString bundlePrefix = project->first("QMAKE_TARGET_BUNDLE_PREFIX").toQString();
-                if (bundlePrefix.isEmpty())
-                    bundlePrefix = "com.yourcompany";
-                if (bundlePrefix.endsWith("."))
-                    bundlePrefix.chop(1);
-                QString bundleIdentifier =  bundlePrefix + "." + var("QMAKE_BUNDLE");
-                if (bundleIdentifier.endsWith(".app"))
-                    bundleIdentifier.chop(4);
                 t << "@$(DEL_FILE) " << info_plist_out << "\n\t"
                   << "@sed ";
                 foreach (const ProString &arg, commonSedArgs)
                     t << arg;
                 t << "-e \"s,@ICON@," << icon.section(Option::dir_sep, -1) << ",g\" "
-                  << "-e \"s,@BUNDLEIDENTIFIER@," << bundleIdentifier << ",g\" "
                   << "-e \"s,@EXECUTABLE@," << var("QMAKE_ORIG_TARGET") << ",g\" "
                   << "-e \"s,@TYPEINFO@,"<< (project->isEmpty("QMAKE_PKGINFO_TYPEINFO") ?
                              QString::fromLatin1("????") : project->first("QMAKE_PKGINFO_TYPEINFO").left(4)) << ",g\" "
@@ -862,21 +920,15 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
       << valGlue(escapeDependencyPaths(project->values("ALL_DEPS")), " \\\n\t\t", " \\\n\t\t", "")
       << allDeps << endl << endl;
 
-    ProString ddir;
-    ProString packageName(project->first("QMAKE_ORIG_TARGET"));
-    if(!project->isActiveConfig("no_dist_version"))
-        packageName += var("VERSION");
-    if (project->isEmpty("QMAKE_DISTDIR"))
-        ddir = packageName;
-    else
-        ddir = project->first("QMAKE_DISTDIR");
+    t << "dist: distdir FORCE\n\t";
+    t << "(cd `dirname $(DISTDIR)` && $(TAR) $(DISTNAME).tar $(DISTNAME) && $(COMPRESS) $(DISTNAME).tar)"
+         " && $(MOVE) `dirname $(DISTDIR)`" << Option::dir_sep << "$(DISTNAME).tar.gz ."
+         " && $(DEL_FILE) -r $(DISTDIR)";
+    t << endl << endl;
 
-    QString ddir_c = escapeFilePath(fileFixify((project->isEmpty("OBJECTS_DIR") ? ProString(".tmp/") :
-                                                project->first("OBJECTS_DIR")) + ddir,
-                                               Option::output_dir, Option::output_dir));
-    t << "dist: \n\t"
-      << mkdir_p_asstring(ddir_c, false) << "\n\t"
-      << "$(COPY_FILE) --parents $(DIST) " << ddir_c << Option::dir_sep << " && ";
+    t << "distdir: FORCE\n\t"
+      << mkdir_p_asstring("$(DISTDIR)", false) << "\n\t"
+      << "$(COPY_FILE) --parents $(DIST) $(DISTDIR)" << Option::dir_sep << endl;
     if(!project->isEmpty("QMAKE_EXTRA_COMPILERS")) {
         const ProStringList &quc = project->values("QMAKE_EXTRA_COMPILERS");
         for (ProStringList::ConstIterator it = quc.begin(); it != quc.end(); ++it) {
@@ -885,20 +937,13 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                 const ProStringList &val = project->values((*var_it).toKey());
                 if(val.isEmpty())
                     continue;
-                t << "$(COPY_FILE) --parents " << val.join(' ') << " " << ddir_c << Option::dir_sep << " && ";
+                t << "\t$(COPY_FILE) --parents " << val.join(' ') << " $(DISTDIR)" << Option::dir_sep << endl;
             }
         }
     }
     if(!project->isEmpty("TRANSLATIONS"))
-        t << "$(COPY_FILE) --parents " << var("TRANSLATIONS") << " " << ddir_c << Option::dir_sep << " && ";
-    t << "(cd `dirname " << ddir_c << "` && "
-      << "$(TAR) " << packageName << ".tar " << ddir << " && "
-      << "$(COMPRESS) " << packageName << ".tar) && "
-      << "$(MOVE) `dirname " << ddir_c << "`" << Option::dir_sep << packageName << ".tar.gz . && "
-      << "$(DEL_FILE) -r " << ddir_c
-      << endl << endl;
-
-    t << endl;
+        t << "\t$(COPY_FILE) --parents " << var("TRANSLATIONS") << " $(DISTDIR)" << Option::dir_sep << endl;
+    t << endl << endl;
 
     QString clean_targets = "compiler_clean " + var("CLEAN_DEPS");
     if(do_incremental) {
@@ -1250,6 +1295,13 @@ void UnixMakefileGenerator::init2()
                     if(!instpath.endsWith(Option::dir_sep))
                         instpath += Option::dir_sep;
                     soname.prepend(instpath);
+                } else if (!project->isEmpty("QMAKE_SONAME_PREFIX")) {
+                    QString sonameprefix = project->first("QMAKE_SONAME_PREFIX").toQString();
+                    if (!sonameprefix.startsWith('@') && !sonameprefix.startsWith('$'))
+                        sonameprefix = Option::fixPathToTargetOS(sonameprefix, false);
+                    if (!sonameprefix.endsWith(Option::dir_sep))
+                        sonameprefix += Option::dir_sep;
+                    soname.prepend(sonameprefix);
                 }
                 project->values("QMAKE_LFLAGS_SONAME").first() += escapeFilePath(soname);
             }

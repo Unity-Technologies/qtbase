@@ -100,7 +100,8 @@ QCocoaMenuItem::QCocoaMenuItem() :
     m_role(NoRole),
     m_checked(false),
     m_merged(false),
-    m_tag(0)
+    m_tag(0),
+    m_iconSize(16)
 {
 }
 
@@ -255,8 +256,8 @@ NSMenuItem *QCocoaMenuItem::sync()
             if (depth == 3 || !menubar)
                 break; // Menu item too deep in the hierarchy, or not connected to any menubar
 
-            m_detectedRole = detectMenuRole(m_text);
-            switch (m_detectedRole) {
+            MenuRole newDetectedRole = detectMenuRole(m_text);
+            switch (newDetectedRole) {
             case QPlatformMenuItem::AboutRole:
                 if (m_text.indexOf(QRegExp(QString::fromLatin1("qt$"), Qt::CaseInsensitive)) == -1)
                     mergeItem = [loader aboutMenuItem];
@@ -270,12 +271,15 @@ NSMenuItem *QCocoaMenuItem::sync()
                 mergeItem = [loader quitMenuItem];
                 break;
             default:
-                if (m_detectedRole >= CutRole && m_detectedRole < RoleCount && menubar)
-                    mergeItem = menubar->itemForRole(m_detectedRole);
+                if (newDetectedRole >= CutRole && newDetectedRole < RoleCount && menubar)
+                    mergeItem = menubar->itemForRole(newDetectedRole);
                 if (!m_text.isEmpty())
                     m_textSynced = true;
                 break;
             }
+
+            m_detectedRole = newDetectedRole;
+
             break;
         }
 
@@ -319,17 +323,22 @@ NSMenuItem *QCocoaMenuItem::sync()
         text += QLatin1String(" (") + accel.toString(QKeySequence::NativeText) + QLatin1String(")");
 
     QString finalString = qt_mac_removeMnemonics(text);
+    bool useAttributedTitle = false;
     // Cocoa Font and title
     if (m_font.resolve()) {
         NSFont *customMenuFont = [NSFont fontWithName:QCFString::toNSString(m_font.family())
                                   size:m_font.pointSize()];
-        NSArray *keys = [NSArray arrayWithObjects:NSFontAttributeName, nil];
-        NSArray *objects = [NSArray arrayWithObjects:customMenuFont, nil];
-        NSDictionary *attributes = [NSDictionary dictionaryWithObjects:objects forKeys:keys];
-        NSAttributedString *str = [[[NSAttributedString alloc] initWithString:QCFString::toNSString(finalString)
-                                 attributes:attributes] autorelease];
-       [m_native setAttributedTitle: str];
-    } else {
+        if (customMenuFont) {
+            NSArray *keys = [NSArray arrayWithObjects:NSFontAttributeName, nil];
+            NSArray *objects = [NSArray arrayWithObjects:customMenuFont, nil];
+            NSDictionary *attributes = [NSDictionary dictionaryWithObjects:objects forKeys:keys];
+            NSAttributedString *str = [[[NSAttributedString alloc] initWithString:QCFString::toNSString(finalString)
+                                     attributes:attributes] autorelease];
+            [m_native setAttributedTitle: str];
+            useAttributedTitle = true;
+        }
+    }
+    if (!useAttributedTitle) {
        [m_native setTitle: QCFString::toNSString(finalString)];
     }
 
@@ -344,7 +353,7 @@ NSMenuItem *QCocoaMenuItem::sync()
     NSImage *img = nil;
     if (!m_icon.isNull()) {
         img = qt_mac_create_nsimage(m_icon);
-        [img setSize:NSMakeSize(16, 16)];
+        [img setSize:NSMakeSize(m_iconSize, m_iconSize)];
     }
     [m_native setImage:img];
     [img release];
@@ -414,4 +423,9 @@ QPlatformMenuItem::MenuRole QCocoaMenuItem::effectiveRole() const
         return m_role;
     else
         return m_detectedRole;
+}
+
+void QCocoaMenuItem::setIconSize(int size)
+{
+    m_iconSize = size;
 }

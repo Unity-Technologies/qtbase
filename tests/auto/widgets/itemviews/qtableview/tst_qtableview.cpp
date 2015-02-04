@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Copyright (C) 2014 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
+** a written agreement between you and Digia. For licensing terms and
+** conditions see http://qt.digia.com/licensing. For further information
 ** use the contact form at http://qt.digia.com/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
 ** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** rights. These rights are described in the Digia Qt LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -181,6 +173,8 @@ private slots:
     void spansAfterColumnInsertion();
     void spansAfterRowRemoval();
     void spansAfterColumnRemoval();
+    void editSpanFromDirections_data();
+    void editSpanFromDirections();
 
     void checkHeaderReset();
     void checkHeaderMinSize();
@@ -440,7 +434,7 @@ public:
     {
         QTableView::setModel(model);
         connect(selectionModel(), SIGNAL(currentChanged(QModelIndex,QModelIndex)),
-                     this, SLOT(currentChanged(QModelIndex,QModelIndex)));
+                     this, SLOT(slotCurrentChanged(QModelIndex,QModelIndex)));
         connect(selectionModel(), SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
                      this, SLOT(itemSelectionChanged(QItemSelection,QItemSelection)));
     }
@@ -501,7 +495,7 @@ public:
 
     bool checkSignalOrder;
 public slots:
-    void currentChanged(QModelIndex , QModelIndex ) {
+    void slotCurrentChanged(QModelIndex, QModelIndex) {
         hasCurrentChanged++;
         if (checkSignalOrder)
             QVERIFY(hasCurrentChanged > hasSelectionChanged);
@@ -1243,28 +1237,28 @@ void tst_QTableView::moveCursorStrikesBack_data()
             << IntList()
             << QRect(1, 2, 2, 3)
             << 2 << 0 << (IntList() << int(QtTestTableView::MoveNext))
-            << 2 << 2;
+            << 2 << 1;
 
     QTest::newRow("Span, anchor column disabled") << -1 << -1
             << IntList()
             << (IntList() << 1)
             << QRect(1, 2, 2, 3)
             << 2 << 0 << (IntList() << int(QtTestTableView::MoveNext))
-            << 2 << 2;
+            << 2 << 1;
 
     QTest::newRow("Span, anchor row hidden") << 2 << -1
             << IntList()
             << IntList()
             << QRect(1, 2, 2, 3)
             << 1 << 2 << (IntList() << int(QtTestTableView::MoveDown))
-            << 3 << 2;
+            << 2 << 1;
 
     QTest::newRow("Span, anchor row disabled") << -1 << -1
             << (IntList() << 2)
             << IntList()
             << QRect(1, 2, 2, 3)
             << 1 << 2 << (IntList() << int(QtTestTableView::MoveDown))
-            << 3 << 2;
+            << 2 << 1;
 
     QTest::newRow("Move through span right") << -1 << -1
             << IntList()
@@ -3435,6 +3429,159 @@ void tst_QTableView::spansAfterColumnRemoval()
     }
 
     VERIFY_SPANS_CONSISTENCY(&view);
+}
+
+Q_DECLARE_METATYPE(Qt::Key)
+
+void tst_QTableView::editSpanFromDirections_data()
+{
+    QTest::addColumn<QList<Qt::Key> >("keyPresses");
+    QTest::addColumn<QSharedPointer<QStandardItemModel> >("model");
+    QTest::addColumn<int>("row");
+    QTest::addColumn<int>("column");
+    QTest::addColumn<int>("rowSpan");
+    QTest::addColumn<int>("columnSpan");
+    QTest::addColumn<QModelIndex>("expectedVisualCursorIndex");
+    QTest::addColumn<QModelIndex>("expectedEditedIndex");
+
+    /* x = the cell that should be edited
+       c = the cell that should actually be the current index
+       +---+---+
+       |   |   |
+       +---+---+
+       |   | x |
+       +---+   +
+       |   | c |
+       +---+---+
+       |   | ^ |
+       +---+---+ */
+    QList<Qt::Key> keyPresses;
+    keyPresses << Qt::Key_Right << Qt::Key_PageDown << Qt::Key_Up;
+    QSharedPointer<QStandardItemModel> model(new QStandardItemModel(4, 2));
+    QTest::newRow("row span, bottom up")
+        << keyPresses << model << 1 << 1 << 2 << 1 << model->index(2, 1) << model->index(1, 1);
+
+    /* +---+---+
+       |   | v |
+       +---+---+
+       |   |x,c|
+       +---+   +
+       |   |   |
+       +---+---+
+       |   |   |
+       +---+---+ */
+    keyPresses.clear();
+    keyPresses << Qt::Key_Right << Qt::Key_Down;
+    model.reset(new QStandardItemModel(4, 2));
+    QTest::newRow("row span, top down")
+        << keyPresses << model << 1 << 1 << 2 << 1 << model->index(1, 1) << model->index(1, 1);
+
+    /* +---+---+---+
+       |   |   |   |
+       +---+---+---+
+       |   |x,c| < |
+       +---+   +---+
+       |   |   |   |
+       +---+---+---+ */
+    keyPresses.clear();
+    keyPresses << Qt::Key_End << Qt::Key_Down << Qt::Key_Left;
+    model.reset(new QStandardItemModel(3, 3));
+    QTest::newRow("row span, right to left")
+        << keyPresses << model << 1 << 1 << 2 << 1 << model->index(1, 1) << model->index(1, 1);
+
+    /* +---+---+---+
+       |   |   |   |
+       +---+---+---+
+       |   | x |   |
+       +---+   +---+
+       | > | c |   |
+       +---+---+---+ */
+    keyPresses.clear();
+    keyPresses << Qt::Key_PageDown << Qt::Key_Right;
+    model.reset(new QStandardItemModel(3, 3));
+    QTest::newRow("row span, left to right")
+        << keyPresses << model << 1 << 1 << 2 << 1 << model->index(2, 1) << model->index(1, 1);
+
+    /* +---+---+---+
+       |   |   |   |
+       +---+---+---+
+       |x,c        |
+       +---+---+---+
+       | ^ |   |   |
+       +---+---+---+ */
+    keyPresses.clear();
+    keyPresses << Qt::Key_PageDown << Qt::Key_Up;
+    model.reset(new QStandardItemModel(3, 3));
+    QTest::newRow("col span, bottom up")
+        << keyPresses << model << 1 << 0 << 1 << 3 << model->index(1, 0) << model->index(1, 0);
+
+    /* +---+---+---+
+       |   |   |   |
+       +---+---+---+
+       | x   c     |
+       +---+---+---+
+       |   | ^ |   |
+       +---+---+---+ */
+    keyPresses.clear();
+    keyPresses << Qt::Key_PageDown << Qt::Key_Right << Qt::Key_Up;
+    model.reset(new QStandardItemModel(3, 3));
+    QTest::newRow("col span, bottom up #2")
+        << keyPresses << model << 1 << 0 << 1 << 3 << model->index(1, 1) << model->index(1, 0);
+
+    /* +---+---+---+
+       |   |   | v |
+       +---+---+---+
+       | x       c |
+       +---+---+---+
+       |   |   |   |
+       +---+---+---+ */
+    keyPresses.clear();
+    keyPresses << Qt::Key_End << Qt::Key_Down;
+    model.reset(new QStandardItemModel(3, 3));
+    QTest::newRow("col span, top down")
+        << keyPresses << model << 1 << 0 << 1 << 3 << model->index(1, 2) << model->index(1, 0);
+}
+
+class TableViewWithCursorExposed : public QTableView
+{
+public:
+    TableViewWithCursorExposed() :
+        QTableView() {
+    }
+
+public:
+    QModelIndex visualCursorIndex() {
+        QTableViewPrivate *d = static_cast<QTableViewPrivate*>(qt_widget_private(this));
+        return d->model->index(d->visualCursor.y(), d->visualCursor.x());
+    }
+};
+
+void tst_QTableView::editSpanFromDirections()
+{
+    QFETCH(QList<Qt::Key>, keyPresses);
+    QFETCH(QSharedPointer<QStandardItemModel>, model);
+    QFETCH(int, row);
+    QFETCH(int, column);
+    QFETCH(int, rowSpan);
+    QFETCH(int, columnSpan);
+    QFETCH(QModelIndex, expectedVisualCursorIndex);
+    QFETCH(QModelIndex, expectedEditedIndex);
+
+    TableViewWithCursorExposed view;
+    view.setModel(model.data());
+    view.setSpan(row, column, rowSpan, columnSpan);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowActive(&view));
+
+    foreach (Qt::Key key, keyPresses) {
+        QTest::keyClick(&view, key);
+    }
+    QCOMPARE(view.visualCursorIndex(), expectedVisualCursorIndex);
+    QCOMPARE(view.selectionModel()->currentIndex(), expectedEditedIndex);
+
+    QTest::keyClick(&view, Qt::Key_X);
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Enter);
+    QTRY_COMPARE(view.model()->data(expectedEditedIndex).toString(), QLatin1String("x"));
 }
 
 class Model : public QAbstractTableModel {
