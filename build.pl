@@ -111,8 +111,8 @@ sub zip
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		doSystemCommand("mkdir -p build");
-		doSystemCommand("tar zcfv build/builds.tar.gz -C qtbase .");
+		my $zipCmd = '"./BuildTools/MacUtils/7za"';
+		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
 	}
 	else
 	{
