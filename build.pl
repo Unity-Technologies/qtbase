@@ -10,7 +10,8 @@ use Params::Check qw[check];
 my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\VC\\vcvarsall.bat"';
 my %platforms = (
 	MSWin32 => { 32 => 'x86', 64 => 'amd64' },
-	darwin => {32 => 'macx-clang-32', 64 => 'macx-clang' }
+	darwin => {32 => 'macx-clang-32', 64 => 'macx-clang' },
+	linux => {32 => 'linux-g++-32', 64 => 'linux-g++-64' }
  );
 
 sub clean
@@ -27,11 +28,15 @@ sub confugreLine
     my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip");
+		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -no-harfbuzz -strip");
 	}
 	elsif ($os_name eq 'darwin')
 	{
 		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework");
+	}
+	elsif ($os_name eq 'linux')
+	{
+		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -debug-and-release -confirm-license -qt-xcb -no-icu -nomake examples -nomake tests");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -45,7 +50,7 @@ sub makeInstallCommandLine
 	{
 		return ("$launchVisualStudioEnv $platform && nmake install");
 	}
-	elsif ($os_name eq 'darwin')
+	elsif ($os_name eq 'darwin' or $os_name eq 'linux')
 	{
 		return ("make && make install");
 	}
@@ -114,6 +119,11 @@ sub zip
 		my $zipCmd = '"./BuildTools/MacUtils/7za"';
 		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
 	}
+	elsif ($os_name eq 'linux')
+	{
+		my $zipCmd = '"7za"';
+		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
+	}
 	else
 	{
 		die ("Unknown platform $os_name");
@@ -123,7 +133,7 @@ sub zip
 sub main
 {
 	my %params = getArgs ();
-	clean ();
+	#clean ();
 	configure ($params{arch});
 	make ($params{arch});
 	zip ();
