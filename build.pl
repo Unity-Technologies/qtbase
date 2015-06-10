@@ -36,7 +36,7 @@ sub confugreLine
 	}
 	elsif ($os_name eq 'linux')
 	{
-		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -debug-and-release -confirm-license -qt-xcb -no-icu -nomake examples -nomake tests");
+		return ("./configure -platform $platform -R \"\$ORIGIN\" -R \"\$ORIGIN/lib\" -prefix `pwd`/qtbase -static -opensource -confirm-license -qt-xcb -no-icu -nomake examples -nomake tests");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -133,7 +133,7 @@ sub zip
 sub main
 {
 	my %params = getArgs ();
-	#clean ();
+	clean ();
 	configure ($params{arch});
 	make ($params{arch});
 	zip ();
