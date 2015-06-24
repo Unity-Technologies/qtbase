@@ -1,5 +1,7 @@
 #!/usr/bin/env perl
 
+use BuildOpenSSL;
+
 use warnings;
 use strict;
 use Cwd qw[getcwd];
@@ -8,6 +10,8 @@ use Getopt::Long;
 use Params::Check qw[check];
 
 my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat"';
+my $root = getcwd ();
+my $openSSL =  "$root\\openssl";
 my %platforms = (
 	MSWin32 => { 32 => 'x86', 64 => 'amd64' },
 	darwin => {32 => 'macx-clang-32', 64 => 'macx-clang' }
@@ -27,7 +31,7 @@ sub confugreLine
 	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform 8.1 && configure -platform win32-msvc -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-dbus -no-harfbuzz -strip");
+		return ("$launchVisualStudioEnv $platform 8.1 && configure -platform win32-msvc -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-dbus -no-harfbuzz -strip -openssl -I \"$openSSL\\build\\include\" -L \"$openSSL\\build");
 	}
 	elsif ($os_name eq 'darwin')
 	{
@@ -62,10 +66,22 @@ sub doSystemCommand
 	}
 }
 
+sub prepare
+{
+	my ($arch) = shift;
+	print ("Preparing\n");
+
+	my $os_name = $^O;
+	if ($os_name eq 'MSWin32')
+	{
+		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
+	}
+}
+
 sub configure
 {
 	my ($arch) = @_;
-	print "Configuring\n";
+	print "\nConfiguring\n";
 	my $cmd = confugreLine ($arch);
 	doSystemCommand ($cmd);
 }
@@ -124,6 +140,7 @@ sub main
 {
 	my %params = getArgs ();
 	clean ();
+	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
 	zip ();
