@@ -54,7 +54,7 @@ sub build
 	doSystemCommand("$launchVisualStudioEnv $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} --prefix=build no-asm");
 	doSystemCommand("$launchVisualStudioEnv $platform && $platform_dependent{'do_ms'}->{$arch}");
 	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\nt.mak ");
-	doSystemCommand("nmake -f ms\\nt.mak install");
+	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\nt.mak install");
 	chdir ("..");
 }
 
