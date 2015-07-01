@@ -28,7 +28,7 @@ sub confugreLine
 {
 	my ($arch) = @_;
 	my $os_name = $^O;
-    my $platform = $platforms{$os_name}->{$arch};
+  my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
 		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip -openssl -I \"$openSSL\\openssl-$platform\\include\" -L \"$openSSL\\openssl-$platform");
@@ -44,7 +44,7 @@ sub makeInstallCommandLine
 {
 	my ($arch) = @_;
 	my $os_name = $^O;
-    my $platform = $platforms{$os_name}->{$arch};
+  my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
 		return ("$launchVisualStudioEnv $platform && nmake install");
@@ -119,6 +119,7 @@ sub getArgs
 
 sub zip
 {
+	my $platform = $platforms{$os_name}->{$arch};
 	my $os_name = $^O;
 	if ($os_name eq 'MSWin32')
 	{
