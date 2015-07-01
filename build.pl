@@ -119,8 +119,9 @@ sub getArgs
 
 sub zip
 {
-	my $platform = $platforms{$os_name}->{$arch};
+	my ($arch) = @_;
 	my $os_name = $^O;
+	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
 		my $zipCmd = '"C:\Program Files (x86)\7-Zip\7z"';
@@ -144,7 +145,7 @@ sub main
 	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
-	zip ();
+	zip ($params{arch});
 }
 
 main();
