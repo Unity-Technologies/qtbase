@@ -44,7 +44,7 @@ sub build
 	print ("\nBuilding OpenSSL\n");
 
 	my %platform_dependent = (
-		'arch_str' => {32 => 'x86', 64 => 'amd64'},
+		'arch_str' => {32 => 'x86', 64 => 'x86_amd64'},
 		'configure_arg' => { 32 => 'VC-WIN32', 64 => 'VC-WIN64A' },
 		'do_ms' => {32 => 'ms\\do_ms', 64 => 'ms\\do_win64a'},
 	);
