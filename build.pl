@@ -13,7 +13,7 @@ my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 1
 my $root = getcwd ();
 my $openSSL =  "$root\\openssl";
 my %platforms = (
-	MSWin32 => { 32 => 'x86', 64 => 'x86_amd64' },
+	MSWin32 => { 32 => 'x86', 64 => 'amd64' },
 	darwin => {32 => 'macx-clang-32', 64 => 'macx-clang' }
  );
 

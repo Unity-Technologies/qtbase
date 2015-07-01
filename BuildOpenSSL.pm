@@ -44,16 +44,16 @@ sub build
 	print ("\nBuilding OpenSSL\n");
 
 	my %platform_dependent = (
-		'arch_str' => {32 => 'x86', 64 => 'x86_amd64'},
+		'arch_str' => {32 => 'x86', 64 => 'amd64'},
 		'configure_arg' => { 32 => 'VC-WIN32', 64 => 'VC-WIN64A' },
 		'do_ms' => {32 => 'ms\\do_ms', 64 => 'ms\\do_win64a'},
 	);
 
 	chdir ($path);
 	my $platform = $platform_dependent{'arch_str'}->{$arch};
-	doSystemCommand("$launchVisualStudioEnv $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
+	doSystemCommand("$launchVisualStudioEnv $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm shared --prefix=openssl-$platform");
 	doSystemCommand("$launchVisualStudioEnv $platform && $platform_dependent{'do_ms'}->{$arch}");
-	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\nt.mak install");
+	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\ntdll.mak install");
 	chdir ("..");
 }
 
