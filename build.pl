@@ -31,11 +31,11 @@ sub confugreLine
     my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip -openssl -I \"$openSSL\\openssl-$platform\\include\" -L \"$openSSL\\openssl-$platform");
+		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip -openssl -I \"$openSSL\\openssl-$platform\\include\" -L \"$openSSL\\openssl-$platform");
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework");
+		return ("./configure -platform $platform -prefix `pwd`/qtbase-$platform -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -123,12 +123,12 @@ sub zip
 	if ($os_name eq 'MSWin32')
 	{
 		my $zipCmd = '"C:\Program Files (x86)\7-Zip\7z"';
-		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
+		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 	}
 	elsif ($os_name eq 'darwin')
 	{
 		my $zipCmd = '"./BuildTools/MacUtils/7za"';
-		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
+		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 	}
 	else
 	{
