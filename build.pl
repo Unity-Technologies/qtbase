@@ -31,7 +31,7 @@ sub confugreLine
     my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip -openssl -I \"$openSSL\\build\\include\" -L \"$openSSL\\build");
+		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip -openssl -I \"$openSSL\\openssl-$platform\\include\" -L \"$openSSL\\openssl-$platform");
 	}
 	elsif ($os_name eq 'darwin')
 	{

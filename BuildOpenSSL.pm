@@ -51,7 +51,7 @@ sub build
 
 	chdir ($path);
 	my $platform = $platform_dependent{'arch_str'}->{$arch};
-	doSystemCommand("$launchVisualStudioEnv $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=build");
+	doSystemCommand("$launchVisualStudioEnv $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
 	doSystemCommand("$launchVisualStudioEnv $platform && $platform_dependent{'do_ms'}->{$arch}");
 	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\nt.mak install");
 	chdir ("..");
