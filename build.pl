@@ -36,7 +36,8 @@ sub confugreLine
 	}
 	elsif ($os_name eq 'linux')
 	{
-		return ("./configure -platform $platform -R \"\$ORIGIN\" -R \"\$ORIGIN/lib\" -prefix `pwd`/qtbase -static -opensource -confirm-license -qt-xcb -no-icu -nomake examples -nomake tests");
+		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -confirm-license -qt-xcb -no-icu -nomake examples -nomake tests");
+
 	}
 	die ("Unknown platform $os_name");
 }
@@ -106,6 +107,27 @@ sub getArgs
     return %{$options};
 }
 
+sub patch
+{
+	my ($arch) = @_;
+	my $os_name = $^O;
+
+	if ($os_name ne 'linux')
+	{
+		# we only patch files on linux
+		return;
+	}
+
+	# To be able to use the local uic tool, we need to set-up rpath,
+	# so that is uses local QT .so files. The relative rpath contains
+	# '$ORIGIN', substring. However getting all the escape rules for
+	# passing '$' to the linker is an unhuman task, use 'chrpath' to
+	# set rpath.
+
+	# patch rpath in uic binary
+	doSystemCommand('chrpath -r \'$ORIGIN/../lib/\' ./qtbase/bin/uic');
+}
+
 sub zip
 {
 	my $os_name = $^O;
@@ -136,6 +158,7 @@ sub main
 	clean ();
 	configure ($params{arch});
 	make ($params{arch});
+	patch ($params{arch});
 	zip ();
 }
 
