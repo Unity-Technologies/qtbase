@@ -80,6 +80,8 @@ struct CompilerInfo{
     {CC_NET2012, "Microsoft (R) 32-bit C/C++ Optimizing Compiler.NET 2012 (11.0)", "Software\\Wow6432Node\\Microsoft\\VisualStudio\\SxS\\VC7\\11.0", "cl.exe"}, // link.exe, lib.exe
     {CC_NET2013, "Microsoft (R) 32-bit C/C++ Optimizing Compiler.NET 2013 (12.0)", "Software\\Microsoft\\VisualStudio\\SxS\\VC7\\12.0", "cl.exe"}, // link.exe, lib.exe
     {CC_NET2013, "Microsoft (R) 32-bit C/C++ Optimizing Compiler.NET 2013 (12.0)", "Software\\Wow6432Node\\Microsoft\\VisualStudio\\SxS\\VC7\\12.0", "cl.exe"}, // link.exe, lib.exe
+    {CC_NET2015, "Microsoft (R) 32-bit C/C++ Optimizing Compiler.NET 2015 (14.0)", "Software\\Microsoft\\VisualStudio\\SxS\\VC7\\14.0", "cl.exe"}, // link.exe, lib.exe
+    {CC_NET2015, "Microsoft (R) 32-bit C/C++ Optimizing Compiler.NET 2015 (14.0)", "Software\\Wow6432Node\\Microsoft\\VisualStudio\\SxS\\VC7\\14.0", "cl.exe"}, // link.exe, lib.exe
     {CC_UNKNOWN, "Unknown", 0, 0},
 };
 
@@ -105,6 +107,9 @@ QString Environment::detectQMakeSpec()
 {
     QString spec;
     switch (detectCompiler()) {
+    case CC_NET2015:
+        spec = "win32-msvc2015";
+        break;
     case CC_NET2013:
         spec = "win32-msvc2013";
         break;
@@ -141,6 +146,8 @@ QString Environment::detectQMakeSpec()
 
 Compiler Environment::compilerFromQMakeSpec(const QString &qmakeSpec)
 {
+    if (qmakeSpec == QLatin1String("win32-msvc2015"))
+        return CC_NET2015;
     if (qmakeSpec == QLatin1String("win32-msvc2013"))
         return CC_NET2013;
     if (qmakeSpec == QLatin1String("win32-msvc2012"))
