@@ -124,7 +124,7 @@ sub zip
 	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		my $zipCmd = '"C:\Program Files (x86)\7-Zip\7z"';
+		my $zipCmd = '"7z"';
 		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 	}
 	elsif ($os_name eq 'darwin')
