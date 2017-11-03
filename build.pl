@@ -9,7 +9,10 @@ use File::Spec::Functions qw[canonpath];
 use Getopt::Long;
 use Params::Check qw[check];
 
-my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\VC\\vcvarsall.bat"';
+my %visualStudios = (
+	'2010' => ['"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\VC\\vcvarsall.bat"', 'win32-msvc2010'],
+	'2015' => ['"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat"', 'win32-msvc2015']
+);
 my $root = getcwd ();
 my $openSSL =  "$root\\openssl";
 my %platforms = (
@@ -24,14 +27,16 @@ sub clean
 	doSystemCommand ("git reset --hard HEAD");
 }
 
-sub confugreLine
+sub configureLine
 {
-	my ($arch) = @_;
+	my ($arch, $compiler) = @_;
 	my $os_name = $^O;
-  my $platform = $platforms{$os_name}->{$arch};
+	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip -openssl-linked OPENSSL_LIBS=\"-lssleay32 -llibeay32 -lgdi32 -luser32\" -I \"$openSSL\\openssl-$platform\\include\" -L \"$openSSL\\openssl-$platform\\lib\"");
+		my $vs = $visualStudios{$compiler}->[0];
+		my $qtPlat = $visualStudios{$compiler}->[1];
+		return ("$vs $platform && configure -platform $qtPlat -prefix %CD%\\qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -strip -openssl-linked OPENSSL_LIBS=\"-lssleay32 -llibeay32 -lgdi32 -luser32\" -I \"$openSSL\\openssl-$platform\\include\" -L \"$openSSL\\openssl-$platform\\lib\"");
 	}
 	elsif ($os_name eq 'darwin')
 	{
@@ -42,12 +47,13 @@ sub confugreLine
 
 sub makeInstallCommandLine
 {
-	my ($arch) = @_;
+	my ($arch, $compiler) = @_;
 	my $os_name = $^O;
-  my $platform = $platforms{$os_name}->{$arch};
+	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && nmake install");
+		my $vs = $visualStudios{$compiler}[0];
+		return ("$vs $platform && nmake install");
 	}
 	elsif ($os_name eq 'darwin')
 	{
@@ -80,17 +86,17 @@ sub prepare
 
 sub configure
 {
-	my ($arch) = @_;
+	my ($arch, $compiler) = @_;
 	print "\nConfiguring\n";
-	my $cmd = confugreLine ($arch);
+	my $cmd = configureLine ($arch, $compiler);
 	doSystemCommand ($cmd);
 }
 
 sub make
 {
-	my ($arch) = @_;
+	my ($arch, $compiler) = @_;
 	print "Making\n";
-	my $cmd = makeInstallCommandLine ($arch);
+	my $cmd = makeInstallCommandLine ($arch, $compiler);
 	doSystemCommand ($cmd);
 }
 
@@ -103,9 +109,10 @@ sub printUsage
 sub getArgs
 {
 	my ($options) = {
-		qt_repo_dir => canonpath (getcwd ())
+		qt_repo_dir => canonpath (getcwd ()),
+		compiler => '2010'
 	};
-	GetOptions ($options, 'arch=s', 'qtversion=s') or printUsage ();
+	GetOptions ($options, 'arch=s', 'qtversion=s', 'compiler=s') or printUsage ();
 	my $arg_scheme = {
 		arch => { required => 1, allow => ['32', '64'] }
 	};
@@ -143,8 +150,8 @@ sub main
 	my %params = getArgs ();
 	clean ();
 	prepare ($params{arch});
-	configure ($params{arch});
-	make ($params{arch});
+	configure ($params{arch}, $params{compiler});
+	make ($params{arch}, $params{compiler});
 	zip ($params{arch});
 }
 
