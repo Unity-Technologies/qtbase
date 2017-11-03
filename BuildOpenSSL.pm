@@ -5,7 +5,6 @@ use strict;
 
 use File::Path qw[rmtree];
 
-my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\VC\\vcvarsall.bat"';
 
 sub doSystemCommand
 {
@@ -41,7 +40,14 @@ sub build
 {
 	my ($path) = shift;
 	my ($arch) = shift;
-	print ("\nBuilding OpenSSL\n");
+	my ($compiler) = shift;
+	print ("\nBuilding OpenSSL, arch '$arch' compiler '$compiler'\n");
+
+	my $vs = '"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\VC\\vcvarsall.bat"';
+	if ($compiler eq '2015')
+	{
+		$vs = '"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat"';
+	}
 
 	my %platform_dependent = (
 		'arch_str' => {32 => 'x86', 64 => 'amd64'},
@@ -51,9 +57,9 @@ sub build
 
 	chdir ($path);
 	my $platform = $platform_dependent{'arch_str'}->{$arch};
-	doSystemCommand("$launchVisualStudioEnv $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
-	doSystemCommand("$launchVisualStudioEnv $platform && $platform_dependent{'do_ms'}->{$arch}");
-	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\nt.mak install");
+	doSystemCommand("$vs $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
+	doSystemCommand("$vs $platform && $platform_dependent{'do_ms'}->{$arch}");
+	doSystemCommand("$vs $platform && nmake -f ms\\nt.mak install");
 	chdir ("..");
 }
 
@@ -61,10 +67,11 @@ sub buildOpenSSL
 {
 	my $dir = shift;
 	my $arch = shift;
+	my $compiler = shift;
 	
 	clean ($dir);
 	clone ($dir);
-	build ($dir, $arch);
+	build ($dir, $arch, $compiler);
 	print("\nDone building OpenSSL\n");
 }
 

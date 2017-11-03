@@ -74,13 +74,13 @@ sub doSystemCommand
 
 sub prepare
 {
-	my ($arch) = shift;
+	my ($arch, $compiler) = @_;
 	print ("Preparing\n");
 
 	my $os_name = $^O;
 	if ($os_name eq 'MSWin32')
 	{
-		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
+		BuildOpenSSL::buildOpenSSL ($openSSL, $arch, $compiler);
 	}
 }
 
@@ -149,7 +149,7 @@ sub main
 {
 	my %params = getArgs ();
 	clean ();
-	prepare ($params{arch});
+	prepare ($params{arch}, $params{compiler});
 	configure ($params{arch}, $params{compiler});
 	make ($params{arch}, $params{compiler});
 	zip ($params{arch});
