@@ -27,7 +27,7 @@ sub confugreLine
 	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc2010 -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -no-harfbuzz -strip");
+		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -no-harfbuzz -strip");
 	}
 	elsif ($os_name eq 'darwin')
 	{
