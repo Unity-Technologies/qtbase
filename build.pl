@@ -7,7 +7,7 @@ use File::Spec::Functions qw[canonpath];
 use Getopt::Long;
 use Params::Check qw[check];
 
-my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\VC\\vcvarsall.bat"';
+my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat"';
 my %platforms = (
 	MSWin32 => { 32 => 'x86', 64 => 'amd64' },
 	darwin => {32 => 'macx-clang-32', 64 => 'macx-clang' }
@@ -27,11 +27,11 @@ sub confugreLine
 	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && configure -platform win32-msvc -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-rtti -no-dbus -no-harfbuzz -strip");
+		return ("$launchVisualStudioEnv $platform 8.1 && configure -platform win32-msvc -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-dbus -no-harfbuzz -strip");
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework");
+		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework -qt-pcre");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -43,7 +43,7 @@ sub makeInstallCommandLine
 	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform && nmake install");
+		return ("$launchVisualStudioEnv $platform 8.1 && nmake && nmake install");
 	}
 	elsif ($os_name eq 'darwin')
 	{
