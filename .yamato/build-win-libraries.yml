@@ -1,0 +1,13 @@
+name: Build QTBase for Windows
+  
+agent:
+  type: Unity::VM
+  image: cds-ops/win10-vs2017:stable
+  flavor: b1.large
+
+artifacts:
+  paths:
+    - build\builds.7z
+
+commands:
+  - perl build.pl --arch=64
