@@ -1,4 +1,4 @@
-name: Build QTBase for Windows
+name: Build QTBase for macOS
   
 agent:
   type: Unity::VM::osx
