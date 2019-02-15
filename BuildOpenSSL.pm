@@ -5,7 +5,7 @@ use strict;
 
 use File::Path qw[rmtree];
 
-my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\VC\\vcvarsall.bat"';
+my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat"';
 
 sub doSystemCommand
 {
@@ -51,10 +51,9 @@ sub build
 
 	chdir ($path);
 	my $platform = $platform_dependent{'arch_str'}->{$arch};
-	doSystemCommand("$launchVisualStudioEnv $platform && perl Configure $platform_dependent{'configure_arg'}->{$arch} --prefix=build no-asm");
-	doSystemCommand("$launchVisualStudioEnv $platform && $platform_dependent{'do_ms'}->{$arch}");
-	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\nt.mak ");
-	doSystemCommand("$launchVisualStudioEnv $platform && nmake -f ms\\nt.mak install");
+	doSystemCommand("$launchVisualStudioEnv $platform 8.1 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
+	doSystemCommand("$launchVisualStudioEnv $platform 8.1 && $platform_dependent{'do_ms'}->{$arch}");
+	doSystemCommand("$launchVisualStudioEnv $platform 8.1 && nmake -f ms\\nt.mak install");
 	chdir ("..");
 }
 

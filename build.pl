@@ -22,7 +22,7 @@ sub clean
 {
 	print "Cleaning\n";
 	doSystemCommand ("git clean -xdf");
-	doSystemCommand ("git reset --hard HEAD");
+	#doSystemCommand ("git reset --hard HEAD");
 }
 
 sub confugreLine
@@ -32,11 +32,11 @@ sub confugreLine
 	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
-		return ("$launchVisualStudioEnv $platform 8.1 && configure -platform win32-msvc -prefix %CD%\\qtbase -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-dbus -no-harfbuzz -strip -openssl -I \"$openSSL\\build\\include\" -L \"$openSSL\\build");
+		return ("$launchVisualStudioEnv $platform 8.1 && configure -platform win32-msvc -prefix %CD%\\qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake examples -nomake tests -no-dbus -no-harfbuzz -strip -openssl-linked OPENSSL_LIBS=\"-lssleay32 -llibeay32 -lgdi32 -luser32\" -I \"$openSSL\\openssl-$platform\\include\" -L \"$openSSL\\openssl-$platform\\lib\"");
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		return ("./configure -platform $platform -prefix `pwd`/qtbase -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework -qt-pcre");
+		return ("./configure -platform $platform -prefix `pwd`/qtbase-$platform -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework -qt-pcre");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -120,16 +120,18 @@ sub getArgs
 
 sub zip
 {
+	my ($arch) = @_;
 	my $os_name = $^O;
+	my $platform = $platforms{$os_name}->{$arch};
 	if ($os_name eq 'MSWin32')
 	{
 		my $zipCmd = '"7z"';
-		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
+		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 	}
 	elsif ($os_name eq 'darwin')
 	{
 		my $zipCmd = '"./BuildTools/MacUtils/7za"';
-		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase/*");
+		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 	}
 	else
 	{
@@ -144,7 +146,7 @@ sub main
 	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
-	zip ();
+	zip ($params{arch});
 }
 
 main();
