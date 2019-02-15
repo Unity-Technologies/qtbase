@@ -51,9 +51,9 @@ sub build
 
 	chdir ($path);
 	my $platform = $platform_dependent{'arch_str'}->{$arch};
-	doSystemCommand("$launchVisualStudioEnv $platform 8.1 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
-	doSystemCommand("$launchVisualStudioEnv $platform 8.1 && $platform_dependent{'do_ms'}->{$arch}");
-	doSystemCommand("$launchVisualStudioEnv $platform 8.1 && nmake -f ms\\nt.mak install");
+	doSystemCommand("$launchVisualStudioEnv $platform 10.0.10240.0 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
+	doSystemCommand("$launchVisualStudioEnv $platform 10.0.10240.0 && $platform_dependent{'do_ms'}->{$arch}");
+	doSystemCommand("$launchVisualStudioEnv $platform 10.0.10240.0 && nmake -f ms\\nt.mak install");
 	chdir ("..");
 }
 

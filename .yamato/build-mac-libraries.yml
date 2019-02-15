@@ -1,0 +1,19 @@
+name: Build QTBase for Windows
+  
+agent:
+  type: Unity::VM::osx
+  image: buildfarm/mac:stable
+  flavor: m1.mac
+
+artifacts:
+  qtbase-macos.zip:
+    paths:
+      - build/builds.7z
+
+commands:
+  - perl build.pl --arch=64
+
+triggers:
+  pushes:
+    only:
+      - qtbuild.5.9.7
