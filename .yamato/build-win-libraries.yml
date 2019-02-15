@@ -11,3 +11,8 @@ artifacts:
 
 commands:
   - perl build.pl --arch=64
+
+triggers:
+  pushes:
+    only:
+      - qtbuild.5.9.7
