@@ -6,8 +6,9 @@ agent:
   flavor: b1.large
 
 artifacts:
-  paths:
-    - build\builds.7z
+  qtbase-windows.zip:
+    paths:
+      - build/builds.7z
 
 commands:
   - perl build.pl --arch=64
