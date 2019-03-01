@@ -38,6 +38,10 @@ sub confugreLine
 	{
 		return ("./configure -platform $platform -prefix `pwd`/qtbase-$platform -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework -qt-pcre");
 	}
+	elsif ($os_name eq 'linux')
+	{
+		return ("./configure -prefix `pwd`/qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake tests -nomake examples -no-harfbuzz -qt-pcre -no-dbus -openssl-runtime -I $openSSL/openssl-$platform")
+	}
 	die ("Unknown platform $os_name");
 }
 
@@ -51,6 +55,10 @@ sub makeInstallCommandLine
 		return ("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake && nmake install");
 	}
 	elsif ($os_name eq 'darwin')
+	{
+		return ("make && make install");
+	}
+	elsif ($os_name eq 'linux')
 	{
 		return ("make && make install");
 	}
@@ -74,6 +82,13 @@ sub prepare
 
 	my $os_name = $^O;
 	if ($os_name eq 'MSWin32')
+	{
+		#pretty awful hack, the vcvarsall.bat script doesn't set up paths correctly to make rc.exe available
+		#so we add this to the path so that Qt configure script can find it.
+		$ENV{PATH} = "$ENV{PATH};C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.16299.0\\x64";
+		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
+	}
+	elsif ($os_name eq 'linux')
 	{
 		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
 	}
@@ -123,20 +138,17 @@ sub zip
 	my ($arch) = @_;
 	my $os_name = $^O;
 	my $platform = $platforms{$os_name}->{$arch};
-	if ($os_name eq 'MSWin32')
+	my $zipCmd = '"7z"';
+
+	if ($os_name eq 'darwin')
 	{
-		my $zipCmd = '"7z"';
-		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
+		$zipCmd = '"./BuildTools/MacUtils/7za"';
 	}
-	elsif ($os_name eq 'darwin')
-	{
-		my $zipCmd = '"./BuildTools/MacUtils/7za"';
-		doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
-	}
-	else
+	elsif ($os_name ne 'linux' && $os_name ne 'MSWin32')
 	{
 		die ("Unknown platform $os_name");
 	}
+	doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 }
 
 sub main

@@ -1,12 +1,12 @@
-name: Build QTBase for Windows
+name: Build QTBase for Linux
   
 agent:
   type: Unity::VM
-  image: cds-ops/win10-vs2017:stable
-  flavor: b1.xlarge
+  image: cds-ops/ubuntu-18.04-agent:latest
+  flavor: m1.large
 
 artifacts:
-  qtbase-windows.zip:
+  qtbase-linux.zip:
     paths:
       - build/builds.7z
 
