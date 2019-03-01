@@ -90,6 +90,7 @@ sub prepare
 	}
 	elsif ($os_name eq 'linux')
 	{
+		my $openSSL =  "$root/openssl";
 		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
 	}
 }
