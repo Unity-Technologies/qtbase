@@ -15,7 +15,8 @@ my $root = getcwd ();
 my $openSSL =  "$root\\openssl";
 my %platforms = (
 	MSWin32 => { 32 => 'x86', 64 => 'amd64' },
-	darwin => {32 => 'macx-clang-32', 64 => 'macx-clang' }
+	darwin => { 32 => 'macx-clang-32', 64 => 'macx-clang' },
+	linux => { 32 => 'x86', 64 => 'amd64' }
 );
 
 sub clean
@@ -40,7 +41,8 @@ sub confugreLine
 	}
 	elsif ($os_name eq 'linux')
 	{
-		return ("./configure -prefix `pwd`/qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake tests -nomake examples -no-harfbuzz -qt-pcre -no-dbus -openssl-runtime -I $openSSL/openssl-$platform")
+		$openSSL = "$root/openssl";
+		return ("OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix $root/qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake tests -nomake examples -no-harfbuzz -qt-pcre -no-dbus -openssl-linked -I $openSSL/openssl-$platform/include -L $openSSL/openssl-$platform/lib");
 	}
 	die ("Unknown platform $os_name");
 }

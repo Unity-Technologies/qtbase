@@ -60,8 +60,10 @@ sub build
 	}
 	elsif($os_name eq "linux")
 	{
-		doSystemCommand("./config --prefix=openssl-$platform");
-		doSystemCommand("make && make install");
+		#we build shared libs *additionally* on Linux to force -fPIC compilation flags (recommended course of action by OpenSSL devs)
+		doSystemCommand("./config no-asm shared --prefix=$path/openssl-$platform");
+		doSystemCommand("make");
+		doSystemCommand("make install");
 	}
 	chdir ("..");
 }
