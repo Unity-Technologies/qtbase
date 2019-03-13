@@ -2,7 +2,7 @@ name: Build QTBase for Linux
   
 agent:
   type: Unity::VM
-  image: cds-ops/ubuntu-18.04-agent:latest
+  image: slough-ops/ubuntu-16.04-base:stable
   flavor: m1.large
 
 artifacts:
