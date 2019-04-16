@@ -2,7 +2,7 @@ name: Build QTBase for Linux
   
 agent:
   type: Unity::VM
-  image: cds-ops/ubuntu-18.04-agent:latest
+  image: tokyo-dev/qt-linux-build-image:latest
   flavor: m1.large
 
 artifacts:
@@ -11,8 +11,8 @@ artifacts:
       - build/builds.7z
 
 commands:
-  - sudo apt-get -y install gcc-4.8 g++-4.8
-  - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 60 --slave /usr/bin/g++ g++ /usr/bin/g++-4.8
+  - 7z x /toolchains/PlatformD*/Linux/Ex*/NonR*/g*/builds.7z -o/toolchains/gcc
+  - export PATH=$PATH:/toolchains/gcc/bin CC="x86_64-ubuntu14.04-linux-gnu-gcc" CXX="x86_64-ubuntu14.04-linux-gnu-g++" LD="x86_64-ubuntu14.04-linux-gnu-gcc" AR="x86_64-ubuntu14.04-linux-gnu-ar" RANLIB="x86_64-ubuntu14.04-linux-gnu-ranlib" ARFLAGS="-r"
   - perl build.pl --arch=64
 
 triggers:
