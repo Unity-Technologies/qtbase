@@ -42,7 +42,7 @@ sub confugreLine
 	elsif ($os_name eq 'linux')
 	{
 		$openSSL = "$root/openssl";
-		return ("QMAKE_CC='x86_64-ubuntu14.04-linux-gnu-gcc' QMAKE_CXX='x86_64-ubuntu14.04-linux-gnu-g++' QMAKE_LD='x86_64-ubuntu14.04-linux-gnu-gcc' QMAKE_AR='x86_64-ubuntu14.04-linux-gnu-ar' QMAKE_RANLIB='x86_64-ubuntu14.04-linux-gnu-ranlib' QMAKE_STRIP='x86_64-ubuntu14.04-linux-gnu-strip' OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix $root/qtbase-$platform -opensource -confirm-license -no-opengl -no-icu -nomake tests -nomake examples -no-harfbuzz -qt-pcre -no-dbus -openssl-linked -I $openSSL/openssl-$platform/include -L $openSSL/openssl-$platform/lib");
+		return ("OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix $root/qtbase-$platform -sysroot /toolchains/gcc/x86_64-ubuntu14.04-linux-gnu/sysroot -platform linux-g++-unity -gcc-sysroot -c++std c++11 -opensource -confirm-license -no-opengl -no-icu -nomake tests -nomake examples -no-harfbuzz -qt-pcre -no-dbus -openssl-linked -I $openSSL/openssl-$platform/include -L $openSSL/openssl-$platform/lib");
 	}
 	die ("Unknown platform $os_name");
 }
