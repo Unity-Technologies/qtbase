@@ -11,6 +11,8 @@ artifacts:
       - build/builds.7z
 
 commands:
+  - pwd
+  - ls -al
   - git clone https://github.com/openssl/openssl
   - git -C /home/bokken/qtbase/openssl checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
   - sudo mount --bind /dev /toolchains/linux/dev
