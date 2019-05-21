@@ -12,8 +12,7 @@ artifacts:
 
 commands:
   - git clone https://github.com/openssl/openssl
-  - cd openssl
-  - git checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
+  - git -C /home/bokken/qtbase/openssl checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
   - sudo mount --bind /dev /toolchains/linux/dev
   - mkdir /toolchains/linux/qtbase
   - sudo mount --bind /home/bokken/qtbase /toolchains/linux/qtbase
