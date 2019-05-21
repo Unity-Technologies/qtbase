@@ -11,9 +11,13 @@ artifacts:
       - build/builds.7z
 
 commands:
-  - 7z x /toolchains/PlatformD*/Linux/Ex*/NonR*/g*/builds.7z -o/toolchains/gcc
-  - export PATH=$PATH:/toolchains/gcc/bin CC="x86_64-ubuntu14.04-linux-gnu-gcc" CXX="x86_64-ubuntu14.04-linux-gnu-g++" LD="x86_64-ubuntu14.04-linux-gnu-gcc" AR="x86_64-ubuntu14.04-linux-gnu-ar" RANLIB="x86_64-ubuntu14.04-linux-gnu-ranlib" ARFLAGS="-r"
-  - perl build.pl --arch=64
+  - git clone https://github.com/openssl/openssl
+  - cd openssl
+  - git checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
+  - sudo mount --bind /dev /toolchains/linux/dev
+  - mkdir /toolchains/linux/qtbase
+  - sudo mount --bind /home/bokken/qtbase /toolchains/linux/qtbase
+  - sudo chroot --userspec=bokken:bokken /toolchains/linux sh -c "cd /qtbase ; perl build.pl --arch=64"
 
 triggers:
   pushes:

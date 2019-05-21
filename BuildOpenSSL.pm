@@ -60,8 +60,7 @@ sub build
 	}
 	elsif($os_name eq "linux")
 	{
-		#we build shared libs *additionally* on Linux to force -fPIC compilation flags (recommended course of action by OpenSSL devs)
-		doSystemCommand("./config no-asm shared --prefix=$path/openssl-$platform");
+		doSystemCommand("./config no-asm no-shared no-dso -fPIC --prefix=$path/openssl-$platform");
 		doSystemCommand("make");
 		doSystemCommand("make install");
 	}
@@ -72,9 +71,14 @@ sub buildOpenSSL
 {
 	my $dir = shift;
 	my $arch = shift;
-	
-	clean ($dir);
-	clone ($dir);
+
+	#the chroot in use has problems with Git so just clone in the Yamato job instead
+	my $os_name = $^O;
+	if($os_name ne "linux")
+	{
+		clean ($dir);
+		clone ($dir);
+	}
 	build ($dir, $arch);
 	print("\nDone building OpenSSL\n");
 }
