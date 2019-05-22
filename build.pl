@@ -154,6 +154,22 @@ sub zip
 	doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 }
 
+sub patch
+{
+	        #the default rpath for the xcb plugin is not correct 
+                #when distributing the local libs.
+		#patch it up with chroot after it's done. (Linux only)
+		my ($arch) = @_;
+		my $os_name = $^O;
+		my $platform = $platforms{$os_name}->{$arch};
+		if ($os_name ne 'linux')
+		{
+		        return;
+		}
+		my $origin = '$ORIGIN';
+		doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
+}
+
 sub main
 {
 	my %params = getArgs ();
@@ -161,6 +177,7 @@ sub main
 	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
+	patch ($params{arch});
 	zip ($params{arch});
 }
 
