@@ -41,15 +41,15 @@ protected:
 private slots:
     void initTestCase();
 
+    void load_data();
     void load();
-    void load2();
     void threadLoad();
     void testLanguageChange();
     void plural();
     void translate_qm_file_generated_with_msgfmt();
-    void loadFromResource();
     void loadDirectory();
     void dependencies();
+    void translationInThreadWhileInstallingTranslator();
 
 private:
     int languageChangeEventCounter;
@@ -105,24 +105,45 @@ bool tst_QTranslator::eventFilter(QObject *, QEvent *event)
     return false;
 }
 
-void tst_QTranslator::load()
+void tst_QTranslator::load_data()
 {
+    QTest::addColumn<QString>("filepath");
+    QTest::addColumn<bool>("isEmpty");
+    QTest::addColumn<QString>("translation");
 
-    QTranslator tor( 0 );
-    tor.load("hellotr_la");
-    QVERIFY(!tor.isEmpty());
-    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
+    QTest::newRow("hellotr_la") << "hellotr_la.qm" << false << "Hallo Welt!";
+    QTest::newRow("hellotr_empty") << "hellotr_empty.qm" << true << "";
 }
 
-void tst_QTranslator::load2()
+void tst_QTranslator::load()
 {
-    QTranslator tor( 0 );
-    QFile file("hellotr_la.qm");
-    file.open(QFile::ReadOnly);
-    QByteArray data = file.readAll();
-    tor.load((const uchar *)data.constData(), data.length());
-    QVERIFY(!tor.isEmpty());
-    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
+    QFETCH(QString, filepath);
+    QFETCH(bool, isEmpty);
+    QFETCH(QString, translation);
+
+    {
+        QTranslator tor;
+        QVERIFY(tor.load(QFileInfo(filepath).baseName()));
+        QCOMPARE(tor.isEmpty(), isEmpty);
+        QCOMPARE(tor.translate("QPushButton", "Hello world!"), translation);
+    }
+
+    {
+        QFile file(filepath);
+        file.open(QFile::ReadOnly);
+        QByteArray data = file.readAll();
+        QTranslator tor;
+        QVERIFY(tor.load((const uchar *)data.constData(), data.length()));
+        QCOMPARE(tor.isEmpty(), isEmpty);
+        QCOMPARE(tor.translate("QPushButton", "Hello world!"), translation);
+    }
+
+    {
+        QTranslator tor;
+        QVERIFY(tor.load(QString(":/tst_qtranslator/%1").arg(filepath)));
+        QCOMPARE(tor.isEmpty(), isEmpty);
+        QCOMPARE(tor.translate("QPushButton", "Hello world!"), translation);
+    }
 }
 
 class TranslatorThread : public QThread
@@ -239,14 +260,6 @@ void tst_QTranslator::translate_qm_file_generated_with_msgfmt()
     qApp->removeTranslator(&translator);
 }
 
-void tst_QTranslator::loadFromResource()
-{
-    QTranslator tor;
-    tor.load(":/tst_qtranslator/hellotr_la.qm");
-    QVERIFY(!tor.isEmpty());
-    QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
-}
-
 void tst_QTranslator::loadDirectory()
 {
     QString current_base = QDir::current().dirName();
@@ -287,6 +300,52 @@ void tst_QTranslator::dependencies()
     }
 }
 
+struct TranslateThread : public QThread
+{
+    bool ok = false;
+    QAtomicInt terminate;
+    QMutex startupLock;
+    QWaitCondition runningCondition;
+
+    void run() {
+        bool startSignalled = false;
+
+        while (terminate.load() == 0) {
+            const QString result =  QCoreApplication::translate("QPushButton", "Hello %n world(s)!", 0, 0);
+
+            if (!startSignalled) {
+                QMutexLocker startupLocker(&startupLock);
+                runningCondition.wakeAll();
+                startSignalled = true;
+            }
+
+            ok = (result == QLatin1String("Hallo 0 Welten!"))
+                  || (result == QLatin1String("Hello 0 world(s)!"));
+            if (!ok)
+                break;
+        }
+    }
+};
+
+void tst_QTranslator::translationInThreadWhileInstallingTranslator()
+{
+    TranslateThread thread;
+
+    QMutexLocker startupLocker(&thread.startupLock);
+
+    thread.start();
+
+    thread.runningCondition.wait(&thread.startupLock);
+
+    QTranslator *tor = new QTranslator;
+    tor->load("hellotr_la");
+    QCoreApplication::installTranslator(tor);
+
+    ++thread.terminate;
+
+    QVERIFY(thread.wait());
+    QVERIFY(thread.ok);
+}
 
 QTEST_MAIN(tst_QTranslator)
 #include "tst_qtranslator.moc"

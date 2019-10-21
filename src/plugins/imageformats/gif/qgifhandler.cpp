@@ -213,7 +213,7 @@ void QGIFFormat::disposePrevious(QImage *image)
       case RestoreImage: {
         if (frame >= 0) {
             for (int ln=t; ln<=b; ln++) {
-                memcpy(image->scanLine(ln)+l,
+                memcpy(image->scanLine(ln)+l*sizeof(QRgb),
                     backingstore.constScanLine(ln-t),
                     (r-l+1)*sizeof(QRgb));
             }
@@ -355,7 +355,7 @@ int QGIFFormat::decode(QImage *image, const uchar *buffer, int length,
                     bpl = image->bytesPerLine();
                     bits = image->bits();
                     if (bits)
-                        memset(bits, 0, image->byteCount());
+                        memset(bits, 0, image->sizeInBytes());
                 }
 
                 // Check if the previous attempt to create the image failed. If it
@@ -420,13 +420,13 @@ int QGIFFormat::decode(QImage *image, const uchar *buffer, int length,
                             state = Error;
                             return -1;
                         }
-                        memset(backingstore.bits(), 0, backingstore.byteCount());
+                        memset(backingstore.bits(), 0, backingstore.sizeInBytes());
                     }
                     const int dest_bpl = backingstore.bytesPerLine();
                     unsigned char *dest_data = backingstore.bits();
                     for (int ln=0; ln<h; ln++) {
                         memcpy(FAST_SCAN_LINE(dest_data, dest_bpl, ln),
-                               FAST_SCAN_LINE(bits, bpl, t+ln) + l, w*sizeof(QRgb));
+                               FAST_SCAN_LINE(bits, bpl, t+ln) + l*sizeof(QRgb), w*sizeof(QRgb));
                     }
                 }
 
@@ -1215,9 +1215,11 @@ int QGifHandler::currentImageNumber() const
     return frameNumber;
 }
 
+#if QT_DEPRECATED_SINCE(5, 13)
 QByteArray QGifHandler::name() const
 {
     return "gif";
 }
+#endif
 
 QT_END_NAMESPACE

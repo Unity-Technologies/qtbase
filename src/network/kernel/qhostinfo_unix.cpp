@@ -66,8 +66,8 @@
 #  include <gnu/lib-names.h>
 #endif
 
-#if defined (QT_NO_GETADDRINFO)
-static QBasicMutex getHostByNameMutex;
+#if defined(Q_OS_FREEBSD) || QT_CONFIG(dlopen)
+#  include <dlfcn.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -83,6 +83,11 @@ QT_BEGIN_NAMESPACE
 #  define Q_ADDRCONFIG          AI_ADDRCONFIG
 #endif
 
+enum LibResolvFeature {
+    NeedResInit,
+    NeedResNInit
+};
+
 typedef struct __res_state *res_state_ptr;
 
 typedef int (*res_init_proto)(void);
@@ -93,9 +98,41 @@ typedef void (*res_nclose_proto)(res_state_ptr);
 static res_nclose_proto local_res_nclose = 0;
 static res_state_ptr local_res = 0;
 
-static bool resolveLibraryInternal()
-{
 #if QT_CONFIG(library) && !defined(Q_OS_QNX)
+namespace {
+struct LibResolv
+{
+    enum {
+#ifdef RES_NORELOAD
+        // If RES_NORELOAD is defined, then the libc is capable of watching
+        // /etc/resolv.conf for changes and reloading as necessary. So accept
+        // whatever is configured.
+        ReinitNecessary = false
+#else
+        ReinitNecessary = true
+#endif
+    };
+
+    QLibrary lib;
+    LibResolv();
+    ~LibResolv() { lib.unload(); }
+};
+}
+
+static QFunctionPointer resolveSymbol(QLibrary &lib, const char *sym)
+{
+    if (lib.isLoaded())
+        return lib.resolve(sym);
+
+#if defined(RTLD_DEFAULT) && (defined(Q_OS_FREEBSD) || QT_CONFIG(dlopen))
+    return reinterpret_cast<QFunctionPointer>(dlsym(RTLD_DEFAULT, sym));
+#else
+    return nullptr;
+#endif
+}
+
+LibResolv::LibResolv()
+{
     QLibrary lib;
 #ifdef LIBRESOLV_SO
     lib.setFileName(QStringLiteral(LIBRESOLV_SO));
@@ -103,33 +140,45 @@ static bool resolveLibraryInternal()
 #endif
     {
         lib.setFileName(QLatin1String("resolv"));
-        if (!lib.load())
-            return false;
+        lib.load();
     }
 
-    local_res_init = res_init_proto(lib.resolve("__res_init"));
-    if (!local_res_init)
-        local_res_init = res_init_proto(lib.resolve("res_init"));
-
-    local_res_ninit = res_ninit_proto(lib.resolve("__res_ninit"));
+    // res_ninit is required for localDomainName()
+    local_res_ninit = res_ninit_proto(resolveSymbol(lib, "__res_ninit"));
     if (!local_res_ninit)
-        local_res_ninit = res_ninit_proto(lib.resolve("res_ninit"));
-
-    if (!local_res_ninit) {
-        // if we can't get a thread-safe context, we have to use the global _res state
-        local_res = res_state_ptr(lib.resolve("_res"));
-    } else {
-        local_res_nclose = res_nclose_proto(lib.resolve("res_nclose"));
+        local_res_ninit = res_ninit_proto(resolveSymbol(lib, "res_ninit"));
+    if (local_res_ninit) {
+        // we must now find res_nclose
+        local_res_nclose = res_nclose_proto(resolveSymbol(lib, "res_nclose"));
         if (!local_res_nclose)
-            local_res_nclose = res_nclose_proto(lib.resolve("__res_nclose"));
+            local_res_nclose = res_nclose_proto(resolveSymbol(lib, "__res_nclose"));
         if (!local_res_nclose)
-            local_res_ninit = 0;
+            local_res_ninit = nullptr;
     }
-#endif
 
-    return true;
+    if (ReinitNecessary || !local_res_ninit) {
+        local_res_init = res_init_proto(resolveSymbol(lib, "__res_init"));
+        if (!local_res_init)
+            local_res_init = res_init_proto(resolveSymbol(lib, "res_init"));
+
+        if (local_res_init && !local_res_ninit) {
+            // if we can't get a thread-safe context, we have to use the global _res state
+            local_res = res_state_ptr(resolveSymbol(lib, "_res"));
+        }
+    }
 }
-Q_GLOBAL_STATIC_WITH_ARGS(bool, resolveLibrary, (resolveLibraryInternal()))
+Q_GLOBAL_STATIC(LibResolv, libResolv)
+
+static void resolveLibrary(LibResolvFeature f)
+{
+    if (LibResolv::ReinitNecessary || f == NeedResNInit)
+        libResolv();
+}
+#else // QT_CONFIG(library) || Q_OS_QNX
+static void resolveLibrary(LibResolvFeature)
+{
+}
+#endif // QT_CONFIG(library) || Q_OS_QNX
 
 QHostInfo QHostInfoAgent::fromName(const QString &hostName)
 {
@@ -141,7 +190,7 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
 #endif
 
     // Load res_init on demand.
-    resolveLibrary();
+    resolveLibrary(NeedResInit);
 
     // If res_init is available, poll it.
     if (local_res_init)
@@ -150,7 +199,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
     QHostAddress address;
     if (address.setAddress(hostName)) {
         // Reverse lookup
-#if !defined (QT_NO_GETADDRINFO)
         sockaddr_in sa4;
         sockaddr_in6 sa6;
         sockaddr *sa = 0;
@@ -173,12 +221,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
         char hbuf[NI_MAXHOST];
         if (sa && getnameinfo(sa, saSize, hbuf, sizeof(hbuf), 0, 0, 0) == 0)
             results.setHostName(QString::fromLatin1(hbuf));
-#else
-        in_addr_t inetaddr = qt_safe_inet_addr(hostName.toLatin1().constData());
-        struct hostent *ent = gethostbyaddr((const char *)&inetaddr, sizeof(inetaddr), AF_INET);
-        if (ent)
-            results.setHostName(QString::fromLatin1(ent->h_name));
-#endif
 
         if (results.hostName().isEmpty())
             results.setHostName(address.toString());
@@ -197,7 +239,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
         return results;
     }
 
-#if !defined (QT_NO_GETADDRINFO)
     // Call getaddrinfo, and place all IPv4 addresses at the start and
     // the IPv6 addresses at the end of the address list in results.
     addrinfo *res = 0;
@@ -264,39 +305,6 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
         results.setErrorString(QString::fromLocal8Bit(gai_strerror(result)));
     }
 
-#else
-    // Fall back to gethostbyname for platforms that don't define
-    // getaddrinfo. gethostbyname does not support IPv6, and it's not
-    // reentrant on all platforms. For now this is okay since we only
-    // use one QHostInfoAgent, but if more agents are introduced, locking
-    // must be provided.
-    QMutexLocker locker(&getHostByNameMutex);
-    hostent *result = gethostbyname(aceHostname.constData());
-    if (result) {
-        if (result->h_addrtype == AF_INET) {
-            QList<QHostAddress> addresses;
-            for (char **p = result->h_addr_list; *p != 0; p++) {
-                QHostAddress addr;
-                addr.setAddress(ntohl(*((quint32 *)*p)));
-                if (!addresses.contains(addr))
-                    addresses.prepend(addr);
-            }
-            results.setAddresses(addresses);
-        } else {
-            results.setError(QHostInfo::UnknownError);
-            results.setErrorString(tr("Unknown address type"));
-        }
-#if !defined(Q_OS_VXWORKS)
-    } else if (h_errno == HOST_NOT_FOUND || h_errno == NO_DATA
-               || h_errno == NO_ADDRESS) {
-        results.setError(QHostInfo::HostNotFound);
-        results.setErrorString(tr("Host not found"));
-#endif
-    } else {
-        results.setError(QHostInfo::UnknownError);
-        results.setErrorString(tr("Unknown error"));
-    }
-#endif //  !defined (QT_NO_GETADDRINFO)
 
 #if defined(QHOSTINFO_DEBUG)
     if (results.error() != QHostInfo::NoError) {
@@ -320,7 +328,7 @@ QHostInfo QHostInfoAgent::fromName(const QString &hostName)
 QString QHostInfo::localDomainName()
 {
 #if !defined(Q_OS_VXWORKS) && !defined(Q_OS_ANDROID)
-    resolveLibrary();
+    resolveLibrary(NeedResNInit);
     if (local_res_ninit) {
         // using thread-safe version
         res_state_ptr state = res_state_ptr(malloc(sizeof(*state)));
@@ -339,11 +347,6 @@ QString QHostInfo::localDomainName()
     if (local_res_init && local_res) {
         // using thread-unsafe version
 
-#if defined(QT_NO_GETADDRINFO)
-        // We have to call res_init to be sure that _res was initialized
-        // So, for systems without getaddrinfo (which is thread-safe), we lock the mutex too
-        QMutexLocker locker(&getHostByNameMutex);
-#endif
         local_res_init();
         QString domainName = QUrl::fromAce(local_res->defdname);
         if (domainName.isEmpty())

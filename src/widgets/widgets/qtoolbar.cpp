@@ -39,8 +39,6 @@
 
 #include "qtoolbar.h"
 
-#ifndef QT_NO_TOOLBAR
-
 #include <qapplication.h>
 #if QT_CONFIG(combobox)
 #include <qcombobox.h>
@@ -92,7 +90,6 @@ void QToolBarPrivate::init()
     q->setBackgroundRole(QPalette::Button);
     q->setAttribute(Qt::WA_Hover);
     q->setAttribute(Qt::WA_X11NetWmWindowTypeToolBar);
-    q->setProperty("_q_platform_MacUseNSWindow", QVariant(true));
 
     QStyle *style = q->style();
     int e = style->pixelMetric(QStyle::PM_ToolBarIconSize, 0, q);
@@ -746,8 +743,6 @@ void QToolBar::clear()
 }
 
 /*!
-    \overload
-
     Creates a new action with the given \a text. This action is added to
     the end of the toolbar.
 */
@@ -804,19 +799,7 @@ QAction *QToolBar::addAction(const QIcon &icon, const QString &text,
     return action;
 }
 
-/*!\fn QAction *QToolBar::addAction(const QString &text, const QObject *receiver, PointerToMemberFunction method)
-
-    \since 5.6
-
-    \overload
-
-    Creates a new action with the given \a text. This action is added to
-    the end of the toolbar. The action's
-    \l{QAction::triggered()}{triggered()} signal is connected to the
-    \a method of the \a receiver.
-*/
-
-/*!\fn QAction *QToolBar::addAction(const QString &text, Functor functor)
+/*!\fn template<typename Functor> QAction *QToolBar::addAction(const QString &text, Functor functor)
 
     \since 5.6
 
@@ -828,33 +811,22 @@ QAction *QToolBar::addAction(const QIcon &icon, const QString &text,
     \a functor.
 */
 
-/*!\fn QAction *QToolBar::addAction(const QString &text, const QObject *context, Functor functor)
+/*!\fn template<typename Functor> QAction *QToolBar::addAction(const QString &text, const QObject *context, Functor functor)
 
     \since 5.6
 
     \overload
 
-    Creates a new action with the given \a text. This action is added to
-    the end of the toolbar. The action's
+    Creates a new action with the given \a text. This action is added
+    to the end of the toolbar. The action's
     \l{QAction::triggered()}{triggered()} signal is connected to the
-    \a functor.
+    \a functor. The \a functor can be a pointer to a member function
+    in the \a context object.
 
-    If \a context is destroyed, the functor will not be called.
+    If the \a context object is destroyed, the \a functor will not be called.
 */
 
-/*!\fn QAction *QToolBar::addAction(const QIcon &icon, const QString &text, const QObject *receiver, PointerToMemberFunction method)
-
-    \since 5.6
-
-    \overload
-
-    Creates a new action with the given \a icon and \a text. This
-    action is added to the end of the toolbar. The action's
-    \l{QAction::triggered()}{triggered()} signal is connected to the
-    \a method of the \a receiver.
-*/
-
-/*!\fn QAction *QToolBar::addAction(const QIcon &icon, const QString &text, Functor functor)
+/*!\fn template<typename Functor> QAction *QToolBar::addAction(const QIcon &icon, const QString &text, Functor functor)
 
     \since 5.6
 
@@ -866,7 +838,7 @@ QAction *QToolBar::addAction(const QIcon &icon, const QString &text,
     \a functor.
 */
 
-/*!\fn QAction *QToolBar::addAction(const QIcon &icon, const QString &text, const QObject *context, Functor functor)
+/*!\fn template<typename Functor> QAction *QToolBar::addAction(const QIcon &icon, const QString &text, const QObject *context, Functor functor)
 
     \since 5.6
 
@@ -875,9 +847,10 @@ QAction *QToolBar::addAction(const QIcon &icon, const QString &text,
     Creates a new action with the given \a icon and \a text. This
     action is added to the end of the toolbar. The action's
     \l{QAction::triggered()}{triggered()} signal is connected to the
-    \a functor.
+    \a functor. The \a functor can be a pointer to a member function
+    of the \a context object.
 
-    If \a context is destroyed, the functor will not be called.
+    If the \a context object is destroyed, the \a functor will not be called.
 */
 
 /*!
@@ -1072,7 +1045,7 @@ void QToolBar::paintEvent(QPaintEvent *)
     if (d->layout->expanded || d->layout->animating || isWindow()) {
         //if the toolbar is expended, we need to fill the background with the window color
         //because some styles may expects that.
-        p.fillRect(opt.rect, palette().background());
+        p.fillRect(opt.rect, palette().window());
         style->drawControl(QStyle::CE_ToolBar, &opt, &p, this);
         style->drawPrimitive(QStyle::PE_FrameMenu, &opt, &p, this);
     } else {
@@ -1289,5 +1262,3 @@ void QToolBar::initStyleOption(QStyleOptionToolBar *option) const
 QT_END_NAMESPACE
 
 #include "moc_qtoolbar.cpp"
-
-#endif // QT_NO_TOOLBAR

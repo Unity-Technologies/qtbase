@@ -31,11 +31,11 @@
 #include "ui4.h"
 #include "utils.h"
 
+#include <utility>
+
 QT_BEGIN_NAMESPACE
 
-CustomWidgetsInfo::CustomWidgetsInfo()
-{
-}
+CustomWidgetsInfo::CustomWidgetsInfo() = default;
 
 void CustomWidgetsInfo::acceptUI(DomUI *node)
 {
@@ -75,6 +75,24 @@ bool CustomWidgetsInfo::extends(const QString &classNameIn, QLatin1String baseCl
     return false;
 }
 
+bool CustomWidgetsInfo::extendsOneOf(const QString &classNameIn,
+                                     const QStringList &baseClassNames) const
+{
+    if (baseClassNames.contains(classNameIn))
+        return true;
+
+    QString className = classNameIn;
+    while (const DomCustomWidget *c = customWidget(className)) {
+        const QString extends = c->elementExtends();
+        if (className == extends) // Faulty legacy custom widget entries exist.
+            return false;
+        if (baseClassNames.contains(extends))
+            return true;
+        className = extends;
+    }
+    return false;
+}
+
 bool CustomWidgetsInfo::isCustomWidgetContainer(const QString &className) const
 {
     if (const DomCustomWidget *dcw = m_customWidgets.value(className, 0))
@@ -91,18 +109,6 @@ QString CustomWidgetsInfo::realClassName(const QString &className) const
     return className;
 }
 
-DomScript *CustomWidgetsInfo::customWidgetScript(const QString &name) const
-{
-    if (m_customWidgets.empty())
-        return 0;
-
-    const NameCustomWidgetMap::const_iterator it = m_customWidgets.constFind(name);
-    if (it == m_customWidgets.constEnd())
-        return 0;
-
-    return it.value()->elementScript();
-}
-
 QString CustomWidgetsInfo::customWidgetAddPageMethod(const QString &name) const
 {
     if (DomCustomWidget *dcw = m_customWidgets.value(name, 0))
@@ -110,5 +116,24 @@ QString CustomWidgetsInfo::customWidgetAddPageMethod(const QString &name) const
     return QString();
 }
 
+// add page methods for simple containers taking only the widget parameter
+QString CustomWidgetsInfo::simpleContainerAddPageMethod(const QString &name) const
+{
+    using AddPageMethod = std::pair<const char *, const char *>;
+
+    static AddPageMethod addPageMethods[] = {
+        {"QStackedWidget", "addWidget"},
+        {"QToolBar", "addWidget"},
+        {"QDockWidget", "setWidget"},
+        {"QScrollArea", "setWidget"},
+        {"QSplitter", "addWidget"},
+        {"QMdiArea", "addSubWindow"}
+    };
+    for (const auto &m : addPageMethods) {
+        if (extends(name, QLatin1String(m.first)))
+            return QLatin1String(m.second);
+    }
+    return QString();
+}
 
 QT_END_NAMESPACE

@@ -76,20 +76,47 @@ public:
     struct AsynchronousDelivery {};
     struct DefaultDelivery {};
 
+#if QT_DEPRECATED_SINCE(5, 11)
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
-    static void handleMouseEvent(QWindow *window, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
+    QT_DEPRECATED static void handleMouseEvent(QWindow *window, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
                                  Qt::KeyboardModifiers mods = Qt::NoModifier,
                                  Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
-    static void handleMouseEvent(QWindow *window, ulong timestamp, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
+    QT_DEPRECATED static void handleMouseEvent(QWindow *window, ulong timestamp, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
                                  Qt::KeyboardModifiers mods = Qt::NoModifier,
                                  Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
-    static void handleFrameStrutMouseEvent(QWindow *window, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
+
+    QT_DEPRECATED static void handleFrameStrutMouseEvent(QWindow *window, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
                                            Qt::KeyboardModifiers mods = Qt::NoModifier,
                                            Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
-    static void handleFrameStrutMouseEvent(QWindow *window, ulong timestamp, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
+    QT_DEPRECATED static void handleFrameStrutMouseEvent(QWindow *window, ulong timestamp, const QPointF &local, const QPointF &global, Qt::MouseButtons b,
                                            Qt::KeyboardModifiers mods = Qt::NoModifier,
                                            Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
+#endif
+    template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
+    static void handleMouseEvent(QWindow *window, const QPointF &local, const QPointF &global,
+                                 Qt::MouseButtons state, Qt::MouseButton button, QEvent::Type type,
+                                 Qt::KeyboardModifiers mods = Qt::NoModifier,
+                                 Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
+    template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
+    static void handleMouseEvent(QWindow *window, ulong timestamp, const QPointF &local,
+                                 const QPointF &global, Qt::MouseButtons state,
+                                 Qt::MouseButton button, QEvent::Type type,
+                                 Qt::KeyboardModifiers mods = Qt::NoModifier,
+                                 Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
+
+    static void handleFrameStrutMouseEvent(QWindow *window, const QPointF &local,
+                                           const QPointF &global, Qt::MouseButtons state,
+                                           Qt::MouseButton button, QEvent::Type type,
+                                           Qt::KeyboardModifiers mods = Qt::NoModifier,
+                                           Qt::MouseEventSource source =
+                                           Qt::MouseEventNotSynthesized);
+    static void handleFrameStrutMouseEvent(QWindow *window, ulong timestamp, const QPointF &local,
+                                           const QPointF &global, Qt::MouseButtons state,
+                                           Qt::MouseButton button, QEvent::Type type,
+                                           Qt::KeyboardModifiers mods = Qt::NoModifier,
+                                           Qt::MouseEventSource source =
+                                           Qt::MouseEventNotSynthesized);
 
     static bool handleShortcutEvent(QWindow *window, ulong timestamp, int k, Qt::KeyboardModifiers mods, quint32 nativeScanCode,
                                       quint32 nativeVirtualKey, quint32 nativeModifiers, const QString & text = QString(), bool autorep = false, ushort count = 1);
@@ -121,9 +148,10 @@ public:
                                  Qt::MouseEventSource source = Qt::MouseEventNotSynthesized,
                                  bool inverted = false);
 
-    // Wheel event compatibility functions. Will be removed: do not use.
-    static void handleWheelEvent(QWindow *window, const QPointF &local, const QPointF &global, int d, Qt::Orientation o, Qt::KeyboardModifiers mods = Qt::NoModifier);
-    static void handleWheelEvent(QWindow *window, ulong timestamp, const QPointF &local, const QPointF &global, int d, Qt::Orientation o, Qt::KeyboardModifiers mods = Qt::NoModifier);
+#if QT_DEPRECATED_SINCE(5, 10)
+    QT_DEPRECATED static void handleWheelEvent(QWindow *window, const QPointF &local, const QPointF &global, int d, Qt::Orientation o, Qt::KeyboardModifiers mods = Qt::NoModifier);
+    QT_DEPRECATED static void handleWheelEvent(QWindow *window, ulong timestamp, const QPointF &local, const QPointF &global, int d, Qt::Orientation o, Qt::KeyboardModifiers mods = Qt::NoModifier);
+#endif
 
     struct TouchPoint {
         TouchPoint() : id(0), uniqueId(-1), pressure(0), rotation(0), state(Qt::TouchPointStationary) { }
@@ -159,13 +187,14 @@ public:
 
     // rect is relative to parent
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
-    static void handleGeometryChange(QWindow *window, const QRect &newRect, const QRect &oldRect = QRect());
+    static void handleGeometryChange(QWindow *window, const QRect &newRect);
 
     // region is in local coordinates, do not confuse with geometry which is parent-relative
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
     static void handleExposeEvent(QWindow *window, const QRegion &region);
 
-    static void handleCloseEvent(QWindow *window, bool *accepted = Q_NULLPTR);
+    template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
+    static void handleCloseEvent(QWindow *window, bool *accepted = nullptr);
 
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
     static void handleEnterEvent(QWindow *window, const QPointF &local = QPointF(), const QPointF& global = QPointF());
@@ -176,7 +205,8 @@ public:
     static void handleWindowActivated(QWindow *window, Qt::FocusReason r = Qt::OtherFocusReason);
 
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
-    static void handleWindowStateChanged(QWindow *window, Qt::WindowState newState, int oldState = -1);
+    static void handleWindowStateChanged(QWindow *window, Qt::WindowStates newState, int oldState = -1);
+    template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
     static void handleWindowScreenChanged(QWindow *window, QScreen *newScreen);
 
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
@@ -185,15 +215,28 @@ public:
     template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
     static void handleApplicationStateChanged(Qt::ApplicationState newState, bool forcePropagate = false);
 
-#ifndef QT_NO_DRAGANDDROP
-    // Drag and drop. These events are sent immediately.
-    static QPlatformDragQtResponse handleDrag(QWindow *window, const QMimeData *dropData, const QPoint &p, Qt::DropActions supportedActions);
-    static QPlatformDropQtResponse handleDrop(QWindow *window, const QMimeData *dropData, const QPoint &p, Qt::DropActions supportedActions);
-#endif
+#if QT_CONFIG(draganddrop)
+#if QT_DEPRECATED_SINCE(5, 11)
+    QT_DEPRECATED static QPlatformDragQtResponse handleDrag(QWindow *window, const QMimeData *dropData,
+                                              const QPoint &p, Qt::DropActions supportedActions);
+    QT_DEPRECATED static QPlatformDropQtResponse handleDrop(QWindow *window, const QMimeData *dropData,
+                                              const QPoint &p, Qt::DropActions supportedActions);
+#endif // #if QT_DEPRECATED_SINCE(5, 11)
+    static QPlatformDragQtResponse handleDrag(QWindow *window, const QMimeData *dropData,
+                                              const QPoint &p, Qt::DropActions supportedActions,
+                                              Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers);
+    static QPlatformDropQtResponse handleDrop(QWindow *window, const QMimeData *dropData,
+                                              const QPoint &p, Qt::DropActions supportedActions,
+                                              Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers);
+#endif // QT_CONFIG(draganddrop)
 
     static bool handleNativeEvent(QWindow *window, const QByteArray &eventType, void *message, long *result);
 
     // Changes to the screen
+    static void handleScreenAdded(QPlatformScreen *screen, bool isPrimary = false);
+    static void handleScreenRemoved(QPlatformScreen *screen);
+    static void handlePrimaryScreenChanged(QPlatformScreen *newPrimary);
+
     static void handleScreenOrientationChange(QScreen *screen, Qt::ScreenOrientation newOrientation);
     static void handleScreenGeometryChange(QScreen *screen, const QRect &newGeometry, const QRect &newAvailableGeometry);
     static void handleScreenLogicalDotsPerInchChange(QScreen *screen, qreal newDpiX, qreal newDpiY);
@@ -212,25 +255,27 @@ public:
                                   int device, int pointerType, Qt::MouseButtons buttons, qreal pressure, int xTilt, int yTilt,
                                   qreal tangentialPressure, qreal rotation, int z, qint64 uid,
                                   Qt::KeyboardModifiers modifiers = Qt::NoModifier);
-    static void handleTabletEvent(QWindow *window, ulong timestamp, bool down, const QPointF &local, const QPointF &global,
-                                  int device, int pointerType, qreal pressure, int xTilt, int yTilt,
-                                  qreal tangentialPressure, qreal rotation, int z, qint64 uid,
-                                  Qt::KeyboardModifiers modifiers = Qt::NoModifier); // ### remove in Qt 6
-    static void handleTabletEvent(QWindow *window, bool down, const QPointF &local, const QPointF &global,
-                                  int device, int pointerType, qreal pressure, int xTilt, int yTilt,
-                                  qreal tangentialPressure, qreal rotation, int z, qint64 uid,
-                                  Qt::KeyboardModifiers modifiers = Qt::NoModifier); // ### remove in Qt 6
+#if QT_DEPRECATED_SINCE(5, 10)
+    QT_DEPRECATED static void handleTabletEvent(QWindow *window, ulong timestamp, bool down, const QPointF &local, const QPointF &global,
+                                                int device, int pointerType, qreal pressure, int xTilt, int yTilt,
+                                                qreal tangentialPressure, qreal rotation, int z, qint64 uid,
+                                                Qt::KeyboardModifiers modifiers = Qt::NoModifier);
+    QT_DEPRECATED static void handleTabletEvent(QWindow *window, bool down, const QPointF &local, const QPointF &global,
+                                                int device, int pointerType, qreal pressure, int xTilt, int yTilt,
+                                                qreal tangentialPressure, qreal rotation, int z, qint64 uid,
+                                                Qt::KeyboardModifiers modifiers = Qt::NoModifier);
+#endif
     static void handleTabletEnterProximityEvent(ulong timestamp, int device, int pointerType, qint64 uid);
     static void handleTabletEnterProximityEvent(int device, int pointerType, qint64 uid);
     static void handleTabletLeaveProximityEvent(ulong timestamp, int device, int pointerType, qint64 uid);
     static void handleTabletLeaveProximityEvent(int device, int pointerType, qint64 uid);
 
 #ifndef QT_NO_GESTURES
-    static void handleGestureEvent(QWindow *window,  ulong timestamp, Qt::NativeGestureType type,
+    static void handleGestureEvent(QWindow *window, QTouchDevice *device,  ulong timestamp, Qt::NativeGestureType type,
                                    QPointF &local, QPointF &global);
-    static void handleGestureEventWithRealValue(QWindow *window,  ulong timestamp, Qt::NativeGestureType type,
+    static void handleGestureEventWithRealValue(QWindow *window, QTouchDevice *device,  ulong timestamp, Qt::NativeGestureType type,
                                                 qreal value, QPointF &local, QPointF &global);
-    static void handleGestureEventWithSequenceIdAndValue(QWindow *window, ulong timestamp,Qt::NativeGestureType type,
+    static void handleGestureEventWithSequenceIdAndValue(QWindow *window, QTouchDevice *device, ulong timestamp,Qt::NativeGestureType type,
                                                          ulong sequenceId, quint64 value, QPointF &local, QPointF &global);
 #endif // QT_NO_GESTURES
 
@@ -251,6 +296,7 @@ public:
     static void deferredFlushWindowSystemEvents(QEventLoop::ProcessEventsFlags flags);
     static int windowSystemEventsQueued();
     static bool nonUserInputEventsQueued();
+    static void setPlatformFiltersEvents(bool enable);
 };
 
 #ifndef QT_NO_DEBUG_STREAM

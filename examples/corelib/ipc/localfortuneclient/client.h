@@ -52,15 +52,13 @@
 #define CLIENT_H
 
 #include <QDialog>
-
-#include <qlocalsocket.h>
+#include <QDataStream>
+#include <QLocalSocket>
 
 QT_BEGIN_NAMESPACE
-class QDialogButtonBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
-class QLocalSocket;
 QT_END_NAMESPACE
 
 class Client : public QDialog
@@ -68,7 +66,7 @@ class Client : public QDialog
     Q_OBJECT
 
 public:
-    Client(QWidget *parent = 0);
+    explicit Client(QWidget *parent = nullptr);
 
 private slots:
     void requestNewFortune();
@@ -77,16 +75,15 @@ private slots:
     void enableGetFortuneButton();
 
 private:
-    QLabel *hostLabel;
     QLineEdit *hostLineEdit;
-    QLabel *statusLabel;
     QPushButton *getFortuneButton;
-    QPushButton *quitButton;
-    QDialogButtonBox *buttonBox;
+    QLabel *statusLabel;
 
     QLocalSocket *socket;
-    QString currentFortune;
+    QDataStream in;
     quint32 blockSize;
+
+    QString currentFortune;
 };
 
 #endif

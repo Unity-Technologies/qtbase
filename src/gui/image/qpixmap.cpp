@@ -248,9 +248,9 @@ QPixmap::QPixmap(const char * const xpm[])
     QImage image(xpm);
     if (!image.isNull()) {
         if (data && data->pixelType() == QPlatformPixmap::BitmapType)
-            *this = QBitmap::fromImage(image);
+            *this = QBitmap::fromImage(std::move(image));
         else
-            *this = fromImage(image);
+            *this = fromImage(std::move(image));
     }
 }
 #endif
@@ -596,44 +596,7 @@ void QPixmap::setMask(const QBitmap &mask)
        return;
 
     detach();
-
-    QImage image = data->toImage();
-    if (mask.size().isEmpty()) {
-        if (image.depth() != 1) { // hw: ????
-            image = image.convertToFormat(QImage::Format_RGB32);
-        }
-    } else {
-        const int w = image.width();
-        const int h = image.height();
-
-        switch (image.depth()) {
-        case 1: {
-            const QImage imageMask = mask.toImage().convertToFormat(image.format());
-            for (int y = 0; y < h; ++y) {
-                const uchar *mscan = imageMask.scanLine(y);
-                uchar *tscan = image.scanLine(y);
-                int bytesPerLine = image.bytesPerLine();
-                for (int i = 0; i < bytesPerLine; ++i)
-                    tscan[i] &= mscan[i];
-            }
-            break;
-        }
-        default: {
-            const QImage imageMask = mask.toImage().convertToFormat(QImage::Format_MonoLSB);
-            image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-            for (int y = 0; y < h; ++y) {
-                const uchar *mscan = imageMask.scanLine(y);
-                QRgb *tscan = (QRgb *)image.scanLine(y);
-                for (int x = 0; x < w; ++x) {
-                    if (!(mscan[x>>3] & (1 << (x&7))))
-                        tscan[x] = 0;
-                }
-            }
-            break;
-        }
-        }
-    }
-    data->fromImage(image, Qt::AutoColor);
+    data->setMask(mask);
 }
 
 /*!
@@ -728,7 +691,7 @@ QBitmap QPixmap::createHeuristicMask(bool clipTight) const
 QBitmap QPixmap::createMaskFromColor(const QColor &maskColor, Qt::MaskMode mode) const
 {
     QImage image = toImage().convertToFormat(QImage::Format_ARGB32);
-    return QBitmap::fromImage(image.createMaskFromColor(maskColor.rgba(), mode));
+    return QBitmap::fromImage(std::move(image).createMaskFromColor(maskColor.rgba(), mode));
 }
 
 /*!
@@ -751,8 +714,8 @@ QBitmap QPixmap::createMaskFromColor(const QColor &maskColor, Qt::MaskMode mode)
     control the conversion.
 
     Note that QPixmaps are automatically added to the QPixmapCache
-    when loaded from a file; the key used is internal and can not
-    be acquired.
+    when loaded from a file in main thread; the key used is internal
+    and cannot be acquired.
 
     \sa loadFromData(), {QPixmap#Reading and Writing Image
     Files}{Reading and Writing Image Files}
@@ -766,6 +729,7 @@ bool QPixmap::load(const QString &fileName, const char *format, Qt::ImageConvers
         // Note: If no extension is provided, we try to match the
         // file against known plugin extensions
         if (info.completeSuffix().isEmpty() || info.exists()) {
+            const bool inGuiThread = qApp->thread() == QThread::currentThread();
 
             QString key = QLatin1String("qt_pixmap")
                     % info.absoluteFilePath()
@@ -773,13 +737,14 @@ bool QPixmap::load(const QString &fileName, const char *format, Qt::ImageConvers
                     % HexString<quint64>(info.size())
                     % HexString<uint>(data ? data->pixelType() : QPlatformPixmap::PixmapType);
 
-            if (QPixmapCache::find(key, this))
+            if (inGuiThread && QPixmapCache::find(key, this))
                 return true;
 
             data = QPlatformPixmap::create(0, 0, data ? data->pixelType() : QPlatformPixmap::PixmapType);
 
             if (data->fromFile(fileName, format, flags)) {
-                QPixmapCache::insert(key, *this);
+                if (inGuiThread)
+                    QPixmapCache::insert(key, *this);
                 return true;
             }
         }
@@ -893,6 +858,7 @@ bool QPixmap::doImageIO(QImageWriter *writer, int quality) const
 }
 
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \obsolete
 
@@ -913,6 +879,14 @@ void QPixmap::fill(const QPaintDevice *device, const QPoint &p)
 
     Use QPainter or the fill(QColor) overload instead.
 */
+void QPixmap::fill(const QPaintDevice *device, int xofs, int yofs)
+{
+    Q_UNUSED(device)
+    Q_UNUSED(xofs)
+    Q_UNUSED(yofs)
+    qWarning("this function is deprecated, ignored");
+}
+#endif
 
 
 /*!
@@ -996,6 +970,7 @@ static void sendResizeEvents(QWidget *target)
 }
 #endif
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \obsolete
 
@@ -1019,6 +994,14 @@ QPixmap QPixmap::grabWidget(QObject *widget, const QRect &rectangle)
 
     Use QWidget::grab() instead.
 */
+QPixmap QPixmap::grabWidget(QObject *widget, int x, int y, int w, int h)
+{
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+    return grabWidget(widget, QRect(x, y, w, h));
+QT_WARNING_POP
+}
+#endif
 
 /*****************************************************************************
   QPixmap stream functions
@@ -1055,9 +1038,9 @@ QDataStream &operator>>(QDataStream &stream, QPixmap &pixmap)
     if (image.isNull()) {
         pixmap = QPixmap();
     } else if (image.depth() == 1) {
-        pixmap = QBitmap::fromImage(image);
+        pixmap = QBitmap::fromImage(std::move(image));
     } else {
-        pixmap = QPixmap::fromImage(image);
+        pixmap = QPixmap::fromImage(std::move(image));
     }
     return stream;
 }
@@ -1393,12 +1376,6 @@ QPixmap QPixmap::transformed(const QMatrix &matrix, Qt::TransformationMode mode)
     The cacheKey() function returns a number that uniquely
     identifies the contents of the QPixmap object.
 
-    The x11Info() function returns information about the configuration
-    of the X display used by the screen to which the pixmap currently
-    belongs. The x11PictureHandle() function returns the X11 Picture
-    handle of the pixmap for XRender support. Note that the two latter
-    functions are only available on x11.
-
     \endtable
 
     \section1 Pixmap Conversion
@@ -1428,9 +1405,6 @@ QPixmap QPixmap::transformed(const QMatrix &matrix, Qt::TransformationMode mode)
     transformed points of the original pixmap. The static trueMatrix()
     function returns the actual matrix used for transforming the
     pixmap.
-
-    \note When using the native X11 graphics system, the pixmap
-    becomes invalid when the QApplication instance is destroyed.
 
     \sa QBitmap, QImage, QImageReader, QImageWriter
 */
@@ -1496,37 +1470,7 @@ QPaintEngine *QPixmap::paintEngine() const
 */
 QBitmap QPixmap::mask() const
 {
-    if (!data || !hasAlphaChannel())
-        return QBitmap();
-
-    const QImage img = toImage();
-    bool shouldConvert = (img.format() != QImage::Format_ARGB32 && img.format() != QImage::Format_ARGB32_Premultiplied);
-    const QImage image = (shouldConvert ? img.convertToFormat(QImage::Format_ARGB32_Premultiplied) : img);
-    const int w = image.width();
-    const int h = image.height();
-
-    QImage mask(w, h, QImage::Format_MonoLSB);
-    if (mask.isNull()) // allocation failed
-        return QBitmap();
-
-    mask.setColorCount(2);
-    mask.setColor(0, QColor(Qt::color0).rgba());
-    mask.setColor(1, QColor(Qt::color1).rgba());
-
-    const int bpl = mask.bytesPerLine();
-
-    for (int y = 0; y < h; ++y) {
-        const QRgb *src = reinterpret_cast<const QRgb*>(image.scanLine(y));
-        uchar *dest = mask.scanLine(y);
-        memset(dest, 0, bpl);
-        for (int x = 0; x < w; ++x) {
-            if (qAlpha(*src) > 0)
-                dest[x >> 3] |= (1 << (x & 7));
-            ++src;
-        }
-    }
-
-    return QBitmap::fromImage(mask);
+    return data ? data->mask() : QBitmap();
 }
 
 /*!
@@ -1608,6 +1552,11 @@ QPixmap QPixmap::fromImage(const QImage &image, Qt::ImageConversionFlags flags)
     if (image.isNull())
         return QPixmap();
 
+    if (Q_UNLIKELY(!qobject_cast<QGuiApplication *>(QCoreApplication::instance()))) {
+        qWarning("QPixmap::fromImage: QPixmap cannot be created without a QGuiApplication");
+        return QPixmap();
+    }
+
     QScopedPointer<QPlatformPixmap> data(QGuiApplicationPrivate::platformIntegration()->createPlatformPixmap(QPlatformPixmap::PixmapType));
     data->fromImage(image, flags);
     return QPixmap(data.take());
@@ -1630,6 +1579,11 @@ QPixmap QPixmap::fromImageInPlace(QImage &image, Qt::ImageConversionFlags flags)
     if (image.isNull())
         return QPixmap();
 
+    if (Q_UNLIKELY(!qobject_cast<QGuiApplication *>(QCoreApplication::instance()))) {
+        qWarning("QPixmap::fromImageInPlace: QPixmap cannot be created without a QGuiApplication");
+        return QPixmap();
+    }
+
     QScopedPointer<QPlatformPixmap> data(QGuiApplicationPrivate::platformIntegration()->createPlatformPixmap(QPlatformPixmap::PixmapType));
     data->fromImageInPlace(image, flags);
     return QPixmap(data.take());
@@ -1649,11 +1603,17 @@ QPixmap QPixmap::fromImageInPlace(QImage &image, Qt::ImageConversionFlags flags)
 */
 QPixmap QPixmap::fromImageReader(QImageReader *imageReader, Qt::ImageConversionFlags flags)
 {
+    if (Q_UNLIKELY(!qobject_cast<QGuiApplication *>(QCoreApplication::instance()))) {
+        qWarning("QPixmap::fromImageReader: QPixmap cannot be created without a QGuiApplication");
+        return QPixmap();
+    }
+
     QScopedPointer<QPlatformPixmap> data(QGuiApplicationPrivate::platformIntegration()->createPlatformPixmap(QPlatformPixmap::PixmapType));
     data->fromImageReader(imageReader, flags);
     return QPixmap(data.take());
 }
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \fn QPixmap QPixmap::grabWindow(WId window, int x, int y, int
     width, int height)
@@ -1707,6 +1667,7 @@ QPixmap QPixmap::grabWindow(WId window, int x, int y, int w, int h)
              " Defaulting to primary screen.");
     return QGuiApplication::primaryScreen()->grabWindow(window, x, y, w, h);
 }
+#endif
 
 /*!
   \internal

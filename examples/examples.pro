@@ -4,8 +4,7 @@ CONFIG += no_docs_target
 SUBDIRS = \
     corelib \
     embedded \
-    qpa \
-    touch
+    qpa
 
 qtHaveModule(dbus): SUBDIRS += dbus
 qtHaveModule(network): SUBDIRS += network
@@ -14,8 +13,11 @@ qtHaveModule(concurrent): SUBDIRS += qtconcurrent
 qtHaveModule(sql): SUBDIRS += sql
 qtHaveModule(widgets): SUBDIRS += widgets
 qtHaveModule(xml): SUBDIRS += xml
-qtHaveModule(gui): SUBDIRS += gui
-qtHaveModule(gui):qtConfig(opengl): SUBDIRS += opengl
+qtHaveModule(gui) {
+    SUBDIRS += gui
+    qtConfig(opengl): SUBDIRS += opengl
+    qtConfig(vulkan): SUBDIRS += vulkan
+}
 
 aggregate.files = aggregate/examples.pro
 aggregate.path = $$[QT_INSTALL_EXAMPLES]

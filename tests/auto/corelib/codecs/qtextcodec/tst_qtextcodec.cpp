@@ -126,6 +126,7 @@ void tst_QTextCodec::toUnicode()
         }
         QVERIFY(!uniString.isEmpty());
         QCOMPARE( ba, c->fromUnicode( uniString ) );
+        QCOMPARE(ba, c->fromUnicode(QStringView(uniString)) );
 
         char ch = '\0';
         QVERIFY(c->toUnicode(&ch, 1).length() == 1);
@@ -262,7 +263,7 @@ void tst_QTextCodec::fromUnicode()
         If the encoding is a superset of ASCII, test that the byte
         array is correct (no off by one, no trailing '\0').
     */
-    QByteArray result = codec->fromUnicode(QString("abc"));
+    QByteArray result = codec->fromUnicode(QStringViewLiteral("abc"));
     if (result.startsWith('a')) {
         QCOMPARE(result.size(), 3);
         QCOMPARE(result, QByteArray("abc"));
@@ -397,6 +398,7 @@ void tst_QTextCodec::asciiToIscii() const
 
         QVERIFY2(textCodec->canEncode(ascii), qPrintable(QString::fromLatin1("Failed for full string with encoding %1")
                                                          .arg(QString::fromLatin1(textCodec->name().constData()))));
+        QVERIFY(textCodec->canEncode(QStringView(ascii)));
     }
 }
 
@@ -404,12 +406,11 @@ void tst_QTextCodec::nonFlaggedCodepointFFFF() const
 {
     //Check that the code point 0xFFFF (=non-character code 0xEFBFBF) is not flagged
     const QChar ch(0xFFFF);
-    QString input(ch);
 
     QTextCodec *const codec = QTextCodec::codecForMib(106); // UTF-8
     QVERIFY(codec);
 
-    const QByteArray asDecoded(codec->fromUnicode(input));
+    const QByteArray asDecoded = codec->fromUnicode(QStringView(&ch, 1));
     QCOMPARE(asDecoded, QByteArray("\357\277\277"));
 
     QByteArray ffff("\357\277\277");
@@ -2091,7 +2092,7 @@ void tst_QTextCodec::toLocal8Bit()
     QSKIP("No qprocess support", SkipAll);
 #else
     QProcess process;
-    process.start("echo/echo");
+    process.start("echo_helper");
     QString string(QChar(0x410));
     process.write((const char*)string.utf16(), string.length()*2);
 
@@ -2405,16 +2406,16 @@ void tst_QTextCodec::shiftJis()
 struct UserCodec : public QTextCodec
 {
     // implement pure virtuals
-    QByteArray name() const Q_DECL_OVERRIDE
+    QByteArray name() const override
     { return "UserCodec"; }
-    QList<QByteArray> aliases() const Q_DECL_OVERRIDE
+    QList<QByteArray> aliases() const override
     { return QList<QByteArray>() << "usercodec" << "user-codec"; }
-    int mibEnum() const Q_DECL_OVERRIDE
+    int mibEnum() const override
     { return 5000; }
 
-    virtual QString convertToUnicode(const char *, int, ConverterState *) const Q_DECL_OVERRIDE
+    virtual QString convertToUnicode(const char *, int, ConverterState *) const override
     { return QString(); }
-    virtual QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const Q_DECL_OVERRIDE
+    virtual QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const override
     { return QByteArray(); }
 };
 
@@ -2428,7 +2429,7 @@ void tst_QTextCodec::userCodec()
     QVERIFY(!QTextCodec::availableCodecs().contains("UserCodec"));
     QVERIFY(!QTextCodec::codecForName("UserCodec"));
 
-    QTextCodec *codec = new UserCodec;
+    UserCodec *codec = new UserCodec;
     executedOnce = true;
 
     QList<QByteArray> availableCodecs = QTextCodec::availableCodecs();
@@ -2447,6 +2448,11 @@ void tst_QTextCodec::userCodec()
 
     pcodec = QTextCodec::codecForMib(5000);
     QCOMPARE(pcodec, codec);
+
+    delete codec;
+
+    pcodec = QTextCodec::codecForName("UserCodec");
+    QCOMPARE(pcodec, nullptr);
 }
 
 struct DontCrashAtExit {

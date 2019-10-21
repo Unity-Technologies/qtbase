@@ -189,7 +189,7 @@ QIODevice *QNetworkDiskCache::prepare(const QNetworkCacheMetaData &metaData)
 
     const auto headers = metaData.rawHeaders();
     for (const auto &header : headers) {
-        if (header.first.toLower() == "content-length") {
+        if (header.first.compare("content-length", Qt::CaseInsensitive) == 0) {
             const qint64 size = header.second.toLongLong();
             if (size > (maximumCacheSize() * 3)/4)
                 return 0;
@@ -537,7 +537,9 @@ qint64 QNetworkDiskCache::expire()
         QFileInfo info = it.fileInfo();
         QString fileName = info.fileName();
         if (fileName.endsWith(CACHE_POSTFIX)) {
-            cacheItems.insert(info.created(), path);
+            const QDateTime birthTime = info.fileTime(QFile::FileBirthTime);
+            cacheItems.insert(birthTime.isValid() ? birthTime
+                              : info.fileTime(QFile::FileMetadataChangeTime), path);
             totalSize += info.size();
         }
     }
@@ -640,7 +642,7 @@ bool QCacheItem::canCompress() const
     bool typeOk = false;
     const auto headers = metaData.rawHeaders();
     for (const auto &header : headers) {
-        if (header.first.toLower() == "content-length") {
+        if (header.first.compare("content-length", Qt::CaseInsensitive) == 0) {
             qint64 size = header.second.toLongLong();
             if (size > MAX_COMPRESSION_SIZE)
                 return false;
@@ -648,7 +650,7 @@ bool QCacheItem::canCompress() const
                 sizeOk = true;
         }
 
-        if (header.first.toLower() == "content-type") {
+        if (header.first.compare("content-type", Qt::CaseInsensitive) == 0) {
             QByteArray type = header.second;
             if (type.startsWith("text/")
                     || (type.startsWith("application/")

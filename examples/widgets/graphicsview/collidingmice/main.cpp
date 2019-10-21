@@ -60,7 +60,6 @@ static const int MouseCount = 7;
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
-    qsrand(QTime(0, 0, 0).secsTo(QTime::currentTime()));
 //! [0]
 
 //! [1]
@@ -93,7 +92,7 @@ int main(int argc, char **argv)
     view.show();
 
     QTimer timer;
-    QObject::connect(&timer, SIGNAL(timeout()), &scene, SLOT(advance()));
+    QObject::connect(&timer, &QTimer::timeout, &scene, &QGraphicsScene::advance);
     timer.start(1000 / 33);
 
     return app.exec();

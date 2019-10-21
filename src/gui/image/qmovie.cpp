@@ -161,6 +161,8 @@
 
     This signal is emitted by QMovie when the error \a error occurred during
     playback.  QMovie will stop the movie, and enter QMovie::NotRunning state.
+
+    \sa lastError(), lastErrorString()
 */
 
 /*! \fn void QMovie::finished()
@@ -328,6 +330,8 @@ int QMoviePrivate::speedAdjustedDelay(int delay) const
 */
 QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
 {
+    Q_Q(QMovie);
+
     if (frameNumber < 0)
         return QFrameInfo(); // Invalid
 
@@ -356,7 +360,8 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
                         reader = new QImageReader(device, format);
                     else
                         reader = new QImageReader(absoluteFilePath, format);
-                    (void)reader->canRead(); // Provoke a device->open() call
+                    if (!reader->canRead()) // Provoke a device->open() call
+                        emit q->error(reader->error());
                     reader->device()->seek(initialDevicePos);
                     reader->setBackgroundColor(bgColor);
                     reader->setScaledSize(scaledSize);
@@ -374,7 +379,7 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
             }
             if (frameNumber > greatestFrameNumber)
                 greatestFrameNumber = frameNumber;
-            QPixmap aPixmap = QPixmap::fromImage(anImage);
+            QPixmap aPixmap = QPixmap::fromImage(std::move(anImage));
             int aDelay = reader->nextImageDelay();
             return QFrameInfo(aPixmap, aDelay);
         } else if (frameNumber != 0) {
@@ -400,7 +405,7 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
                     return QFrameInfo(); // Invalid
                 }
                 greatestFrameNumber = i;
-                QPixmap aPixmap = QPixmap::fromImage(anImage);
+                QPixmap aPixmap = QPixmap::fromImage(std::move(anImage));
                 int aDelay = reader->nextImageDelay();
                 QFrameInfo info(aPixmap, aDelay);
                 // Cache it!
@@ -411,7 +416,7 @@ QFrameInfo QMoviePrivate::infoForFrame(int frameNumber)
             } else {
                 // We've read all frames now. Return an end marker
                 haveReadAll = true;
-                return QFrameInfo::endMarker();
+                return frameNumber == greatestFrameNumber + 1 ? QFrameInfo::endMarker() : QFrameInfo();
             }
         }
     }
@@ -465,6 +470,10 @@ bool QMoviePrivate::next()
         currentPixmap = QPixmap::fromImage( info.pixmap.toImage().scaled(scaledSize) );
     else
         currentPixmap = info.pixmap;
+
+    if (!speed)
+        return true;
+
     nextDelay = speedAdjustedDelay(info.delay);
     // Adjust delay according to the time it took to read the frame
     int processingTime = time.elapsed();
@@ -499,7 +508,7 @@ void QMoviePrivate::_q_loadNextFrame(bool starting)
         emit q->updated(frameRect);
         emit q->frameChanged(currentFrameNumber);
 
-        if (movieState == QMovie::Running)
+        if (speed && movieState == QMovie::Running)
             nextImageTimer.start(nextDelay);
     } else {
         // Could not read another frame
@@ -523,8 +532,20 @@ void QMoviePrivate::_q_loadNextFrame(bool starting)
 */
 bool QMoviePrivate::isValid() const
 {
-    return (greatestFrameNumber >= 0) // have we seen valid data
-        || reader->canRead(); // or does the reader see valid data
+    Q_Q(const QMovie);
+
+    if (greatestFrameNumber >= 0)
+        return true; // have we seen valid data
+    bool canRead = reader->canRead();
+    if (!canRead) {
+        // let the consumer know it's broken
+        //
+        // ### the const_cast here is ugly, but 'const' of this method is
+        // technically wrong right now, since it may cause the underlying device
+        // to open.
+        emit const_cast<QMovie*>(q)->error(reader->error());
+    }
+    return canRead;
 }
 
 /*!
@@ -638,7 +659,7 @@ void QMovie::setDevice(QIODevice *device)
 
 /*!
     Returns the device QMovie reads image data from. If no device has
-    currently been assigned, 0 is returned.
+    currently been assigned, \nullptr is returned.
 
     \sa setDevice(), fileName()
 */
@@ -775,11 +796,36 @@ QImage QMovie::currentImage() const
 /*!
     Returns \c true if the movie is valid (e.g., the image data is readable and
     the image format is supported); otherwise returns \c false.
+
+    For information about why the movie is not valid, see lastError().
 */
 bool QMovie::isValid() const
 {
     Q_D(const QMovie);
     return d->isValid();
+}
+
+/*!
+    Returns the most recent error that occurred while attempting to read image data.
+
+    \sa lastErrorString()
+*/
+QImageReader::ImageReaderError QMovie::lastError() const
+{
+    Q_D(const QMovie);
+    return d->reader->error();
+}
+
+/*!
+     Returns a human-readable representation of the most recent error that occurred
+     while attempting to read image data.
+
+    \sa lastError()
+*/
+QString QMovie::lastErrorString() const
+{
+    Q_D(const QMovie);
+    return d->reader->errorString();
 }
 
 /*!
@@ -884,6 +930,8 @@ void QMovie::setPaused(bool paused)
 void QMovie::setSpeed(int percentSpeed)
 {
     Q_D(QMovie);
+    if (!d->speed && d->movieState == Running)
+        d->nextImageTimer.start(nextFrameDelay());
     d->speed = percentSpeed;
 }
 

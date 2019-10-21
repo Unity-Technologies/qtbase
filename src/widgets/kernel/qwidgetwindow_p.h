@@ -63,22 +63,25 @@ QT_BEGIN_NAMESPACE
 
 class QCloseEvent;
 class QMoveEvent;
+class QWidgetWindowPrivate;
 
 class QWidgetWindow : public QWindow
 {
     Q_OBJECT
+    Q_DECLARE_PRIVATE(QWidgetWindow)
 public:
     QWidgetWindow(QWidget *widget);
     ~QWidgetWindow();
 
     QWidget *widget() const { return m_widget; }
 #ifndef QT_NO_ACCESSIBILITY
-    QAccessibleInterface *accessibleRoot() const Q_DECL_OVERRIDE;
+    QAccessibleInterface *accessibleRoot() const override;
 #endif
 
-    QObject *focusObject() const Q_DECL_OVERRIDE;
+    QObject *focusObject() const override;
+    void setNativeWindowVisibility(bool visible);
 protected:
-    bool event(QEvent *) Q_DECL_OVERRIDE;
+    bool event(QEvent *) override;
 
     void handleCloseEvent(QCloseEvent *);
     void handleEnterLeaveEvent(QEvent *);
@@ -92,14 +95,15 @@ protected:
 #if QT_CONFIG(wheelevent)
     void handleWheelEvent(QWheelEvent *);
 #endif
-#ifndef QT_NO_DRAGANDDROP
-    void handleDragEnterMoveEvent(QDragMoveEvent *);
+#if QT_CONFIG(draganddrop)
+    void handleDragEnterEvent(QDragEnterEvent *, QWidget *widget = nullptr);
+    void handleDragMoveEvent(QDragMoveEvent *);
     void handleDragLeaveEvent(QDragLeaveEvent *);
     void handleDropEvent(QDropEvent *);
 #endif
     void handleExposeEvent(QExposeEvent *);
     void handleWindowStateChangedEvent(QWindowStateChangeEvent *event);
-    bool nativeEvent(const QByteArray &eventType, void *message, long *result) Q_DECL_OVERRIDE;
+    bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
 #if QT_CONFIG(tabletevent)
     void handleTabletEvent(QTabletEvent *);
 #endif
@@ -129,7 +133,7 @@ private:
 
     QPointer<QWidget> m_widget;
     QPointer<QWidget> m_implicit_mouse_grabber;
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     QPointer<QWidget> m_dragTarget;
 #endif
 };

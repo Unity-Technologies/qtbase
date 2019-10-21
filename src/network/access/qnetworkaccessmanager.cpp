@@ -48,6 +48,10 @@
 #include "qhstspolicy.h"
 #include "qhsts_p.h"
 
+#if QT_CONFIG(settings)
+#include "qhstsstore_p.h"
+#endif // QT_CONFIG(settings)
+
 #include "QtNetwork/qnetworksession.h"
 #include "QtNetwork/private/qsharednetworksession_p.h"
 
@@ -81,6 +85,9 @@
 #include <CoreServices/CoreServices.h>
 #include <SystemConfiguration/SystemConfiguration.h>
 #include <Security/SecKeychain.h>
+#endif
+#ifdef Q_OS_WASM
+#include "qnetworkreplywasmimpl_p.h"
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -166,7 +173,7 @@ static void ensureInitialized()
 /*!
     \class QNetworkAccessManager
     \brief The QNetworkAccessManager class allows the application to
-    send network requests and receive replies
+    send network requests and receive replies.
     \since 4.4
 
     \ingroup network
@@ -178,7 +185,9 @@ static void ensureInitialized()
     it sends. It contains the proxy and cache configuration, as well as the
     signals related to such issues, and reply signals that can be used to
     monitor the progress of a network operation. One QNetworkAccessManager
-    should be enough for the whole Qt application.
+    instance should be enough for the whole Qt application. Since
+    QNetworkAccessManager is based on QObject, it can only be used from the
+    thread it belongs to.
 
     Once a QNetworkAccessManager object has been created, the application can
     use it to send requests over the network. A group of standard functions
@@ -485,8 +494,8 @@ QNetworkAccessManager::QNetworkAccessManager(QObject *parent)
     //
     connect(&d->networkConfigurationManager, SIGNAL(onlineStateChanged(bool)),
             SLOT(_q_onlineStateChanged(bool)));
-    connect(&d->networkConfigurationManager, SIGNAL(configurationChanged(const QNetworkConfiguration &)),
-            SLOT(_q_configurationChanged(const QNetworkConfiguration &)));
+    connect(&d->networkConfigurationManager, SIGNAL(configurationChanged(QNetworkConfiguration)),
+            SLOT(_q_configurationChanged(QNetworkConfiguration)));
 
 #endif
 }
@@ -546,7 +555,7 @@ void QNetworkAccessManager::setProxy(const QNetworkProxy &proxy)
     Q_D(QNetworkAccessManager);
     delete d->proxyFactory;
     d->proxy = proxy;
-    d->proxyFactory = 0;
+    d->proxyFactory = nullptr;
 }
 
 /*!
@@ -737,9 +746,62 @@ bool QNetworkAccessManager::isStrictTransportSecurityEnabled() const
 }
 
 /*!
+    \since 5.10
+
+    If \a enabled is \c true, the internal HSTS cache will use a persistent store
+    to read and write HSTS policies. \a storeDir defines where this store will be
+    located. The default location is defined by QStandardPaths::CacheLocation.
+    If there is no writable QStandartPaths::CacheLocation and \a storeDir is an
+    empty string, the store will be located in the program's working directory.
+
+    \note If HSTS cache already contains HSTS policies by the time persistent
+    store is enabled, these policies will be preserved in the store. In case both
+    cache and store contain the same known hosts, policies from cache are considered
+    to be more up-to-date (and thus will overwrite the previous values in the store).
+    If this behavior is undesired, enable HSTS store before enabling Strict Tranport
+    Security. By default, the persistent store of HSTS policies is disabled.
+
+    \sa isStrictTransportSecurityStoreEnabled(), setStrictTransportSecurityEnabled(),
+    QStandardPaths::standardLocations()
+*/
+
+void QNetworkAccessManager::enableStrictTransportSecurityStore(bool enabled, const QString &storeDir)
+{
+#if QT_CONFIG(settings)
+    Q_D(QNetworkAccessManager);
+    d->stsStore.reset(enabled ? new QHstsStore(storeDir) : nullptr);
+    d->stsCache.setStore(d->stsStore.data());
+#else
+    Q_UNUSED(enabled) Q_UNUSED(storeDir)
+    qWarning("HSTS permanent store requires the feature 'settings' enabled");
+#endif // QT_CONFIG(settings)
+}
+
+/*!
+    \since 5.10
+
+    Returns true if HSTS cache uses a permanent store to load and store HSTS
+    policies.
+
+    \sa enableStrictTransportSecurityStore()
+*/
+
+bool QNetworkAccessManager::isStrictTransportSecurityStoreEnabled() const
+{
+#if QT_CONFIG(settings)
+    Q_D(const QNetworkAccessManager);
+    return bool(d->stsStore.data());
+#else
+    return false;
+#endif // QT_CONFIG(settings)
+}
+
+/*!
     \since 5.9
 
     Adds HTTP Strict Transport Security policies into HSTS cache.
+    \a knownHosts contains the known hosts that have QHstsPolicy
+    information.
 
     \note An expired policy will remove a known host from the cache, if previously
     present.
@@ -751,7 +813,7 @@ bool QNetworkAccessManager::isStrictTransportSecurityEnabled() const
     policies, but this information can be overridden by "Strict-Transport-Security"
     response headers.
 
-    \sa addStrictTransportSecurityHosts(), QHstsPolicy
+    \sa addStrictTransportSecurityHosts(), enableStrictTransportSecurityStore(), QHstsPolicy
 */
 
 void QNetworkAccessManager::addStrictTransportSecurityHosts(const QVector<QHstsPolicy> &knownHosts)
@@ -881,7 +943,7 @@ QNetworkReply *QNetworkAccessManager::put(const QNetworkRequest &request, QHttpM
 
 /*!
     Uploads the contents of \a data to the destination \a request and
-    returnes a new QNetworkReply object that will be open for reply.
+    returns a new QNetworkReply object that will be open for reply.
 
     \a data must be opened for reading when this function is called
     and must remain valid until the finished() signal is emitted for
@@ -1119,8 +1181,36 @@ QSharedPointer<QNetworkSession> QNetworkAccessManagerPrivate::getNetworkSession(
 
     \sa connectToHost(), get(), post(), put(), deleteResource()
 */
+
 void QNetworkAccessManager::connectToHostEncrypted(const QString &hostName, quint16 port,
                                                    const QSslConfiguration &sslConfiguration)
+{
+    connectToHostEncrypted(hostName, port, sslConfiguration, QString());
+}
+
+/*!
+    \since 5.13
+    \overload
+
+    Initiates a connection to the host given by \a hostName at port \a port, using
+    \a sslConfiguration with \a peerName set to be the hostName used for certificate
+    validation. This function is useful to complete the TCP and SSL handshake
+    to a host before the HTTPS request is made, resulting in a lower network latency.
+
+    \note Preconnecting a SPDY connection can be done by calling setAllowedNextProtocols()
+    on \a sslConfiguration with QSslConfiguration::NextProtocolSpdy3_0 contained in
+    the list of allowed protocols. When using SPDY, one single connection per host is
+    enough, i.e. calling this method multiple times per host will not result in faster
+    network transactions.
+
+    \note This function has no possibility to report errors.
+
+    \sa connectToHost(), get(), post(), put(), deleteResource()
+*/
+
+void QNetworkAccessManager::connectToHostEncrypted(const QString &hostName, quint16 port,
+                                                   const QSslConfiguration &sslConfiguration,
+                                                   const QString &peerName)
 {
     QUrl url;
     url.setHost(hostName);
@@ -1130,12 +1220,14 @@ void QNetworkAccessManager::connectToHostEncrypted(const QString &hostName, quin
     if (sslConfiguration != QSslConfiguration::defaultConfiguration())
         request.setSslConfiguration(sslConfiguration);
 
-    // There is no way to enable SPDY via a request, so we need to check
-    // the ssl configuration whether SPDY is allowed here.
-    if (sslConfiguration.allowedNextProtocols().contains(
-                QSslConfiguration::NextProtocolSpdy3_0))
+    // There is no way to enable SPDY/HTTP2 via a request, so we need to check
+    // the ssl configuration whether SPDY/HTTP2 is allowed here.
+    if (sslConfiguration.allowedNextProtocols().contains(QSslConfiguration::ALPNProtocolHTTP2))
+        request.setAttribute(QNetworkRequest::HTTP2AllowedAttribute, true);
+    else if (sslConfiguration.allowedNextProtocols().contains(QSslConfiguration::NextProtocolSpdy3_0))
         request.setAttribute(QNetworkRequest::SpdyAllowedAttribute, true);
 
+    request.setPeerVerifyName(peerName);
     get(request);
 }
 #endif
@@ -1297,6 +1389,17 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
 
     bool isLocalFile = req.url().isLocalFile();
     QString scheme = req.url().scheme();
+
+#ifdef Q_OS_WASM
+    // Support http, https, and relateive urls
+    if (scheme == QLatin1String("http") || scheme == QLatin1String("https") || scheme.isEmpty()) {
+        QNetworkReplyWasmImpl *reply = new QNetworkReplyWasmImpl(this);
+        QNetworkReplyWasmImplPrivate *priv = reply->d_func();
+        priv->manager = this;
+        priv->setup(op, req, outgoingData);
+        return reply;
+    }
+#endif
 
     // fast path for GET on file:// URLs
     // The QNetworkAccessFileBackend will right now only be used for PUT
@@ -1758,7 +1861,7 @@ void QNetworkAccessManagerPrivate::destroyThread()
             delete thread;
         else
             QObject::connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
-        thread = 0;
+        thread = nullptr;
     }
 }
 
@@ -1776,6 +1879,7 @@ void QNetworkAccessManagerPrivate::createSession(const QNetworkConfiguration &co
     if (config.isValid())
         newSession = QSharedNetworkSessionManager::getSession(config);
 
+    QNetworkSession::State oldState = QNetworkSession::Invalid;
     if (networkSessionStrongRef) {
         //do nothing if new and old session are the same
         if (networkSessionStrongRef == newSession)
@@ -1787,6 +1891,7 @@ void QNetworkAccessManagerPrivate::createSession(const QNetworkConfiguration &co
             q, SLOT(_q_networkSessionStateChanged(QNetworkSession::State)));
         QObject::disconnect(networkSessionStrongRef.data(), SIGNAL(error(QNetworkSession::SessionError)),
                             q, SLOT(_q_networkSessionFailed(QNetworkSession::SessionError)));
+        oldState = networkSessionStrongRef->state();
     }
 
     //switch to new session (null if config was invalid)
@@ -1812,7 +1917,11 @@ void QNetworkAccessManagerPrivate::createSession(const QNetworkConfiguration &co
     QObject::connect(networkSessionStrongRef.data(), SIGNAL(error(QNetworkSession::SessionError)),
                         q, SLOT(_q_networkSessionFailed(QNetworkSession::SessionError)));
 
-    _q_networkSessionStateChanged(networkSessionStrongRef->state());
+    const QNetworkSession::State newState = networkSessionStrongRef->state();
+    if (newState != oldState) {
+        QMetaObject::invokeMethod(q, "_q_networkSessionStateChanged", Qt::QueuedConnection,
+                                  Q_ARG(QNetworkSession::State, newState));
+    }
 }
 
 void QNetworkAccessManagerPrivate::_q_networkSessionClosed()

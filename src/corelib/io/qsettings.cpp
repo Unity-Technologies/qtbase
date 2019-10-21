@@ -41,8 +41,6 @@
 #include "qplatformdefs.h"
 #include "qsettings.h"
 
-#ifndef QT_NO_SETTINGS
-
 #include "qsettings_p.h"
 #include "qcache.h"
 #include "qfile.h"
@@ -54,7 +52,7 @@
 #include "qstandardpaths.h"
 #include <qdatastream.h>
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
 #  include "qtextcodec.h"
 #endif
 
@@ -64,8 +62,8 @@
 #include "qrect.h"
 #endif // !QT_NO_GEOM_VARIANT
 
-#ifndef QT_NO_QOBJECT
-#include "qcoreapplication.h"
+#ifndef QT_BUILD_QMAKE
+#  include "qcoreapplication.h"
 #endif
 
 #ifndef QT_BOOTSTRAPPED
@@ -75,6 +73,10 @@
 
 #ifdef Q_OS_VXWORKS
 #  include <ioLib.h>
+#endif
+
+#ifdef Q_OS_WASM
+#include <emscripten.h>
 #endif
 
 #include <algorithm>
@@ -677,7 +679,7 @@ void QSettingsPrivate::iniEscapedString(const QString &str, QByteArray &result, 
             if (ch <= 0x1F || (ch >= 0x7F && !useCodec)) {
                 result += "\\x" + QByteArray::number(ch, 16);
                 escapeNextIfDigit = true;
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
             } else if (useCodec) {
                 // slow
                 result += codec->fromUnicode(&unicode[i], 1);
@@ -830,7 +832,7 @@ StNormal:
                 ++j;
             }
 
-#ifdef QT_NO_TEXTCODEC
+#if !QT_CONFIG(textcodec)
             Q_UNUSED(codec)
 #else
             if (codec) {
@@ -1405,6 +1407,11 @@ void QConfFileSettingsPrivate::syncConfFile(QConfFile *confFile)
             return;
     }
 
+    if (!readOnly && !confFile->isWritable()) {
+        setStatus(QSettings::AccessError);
+        return;
+    }
+
 #ifndef QT_BOOTSTRAPPED
     /*
         Use a lockfile in order to protect us against other QSettings instances
@@ -1414,17 +1421,11 @@ void QConfFileSettingsPrivate::syncConfFile(QConfFile *confFile)
         Concurrent read and write are not a problem because the writing operation is atomic.
     */
     QLockFile lockFile(confFile->name + QLatin1String(".lock"));
-#endif
-    if (!readOnly) {
-        if (!confFile->isWritable()
-#ifndef QT_BOOTSTRAPPED
-            || !lockFile.lock()
-#endif
-            ) {
-            setStatus(QSettings::AccessError);
-            return;
-        }
+    if (!readOnly && !lockFile.lock() && atomicSyncOnly) {
+        setStatus(QSettings::AccessError);
+        return;
     }
+#endif
 
     /*
         We hold the lock. Let's reread the file if it has changed
@@ -1452,7 +1453,7 @@ void QConfFileSettingsPrivate::syncConfFile(QConfFile *confFile)
             Files that we can't read (because of permissions or
             because they don't exist) are treated as empty files.
         */
-        if (file.isReadable() && fileInfo.size() != 0) {
+        if (file.isReadable() && file.size() != 0) {
             bool ok = false;
 #ifdef Q_OS_MAC
             if (format == QSettings::NativeFormat) {
@@ -1496,6 +1497,7 @@ void QConfFileSettingsPrivate::syncConfFile(QConfFile *confFile)
 
 #if !defined(QT_BOOTSTRAPPED) && QT_CONFIG(temporaryfile)
         QSaveFile sf(confFile->name);
+        sf.setDirectWriteFallback(!atomicSyncOnly);
 #else
         QFile sf(confFile->name);
 #endif
@@ -1544,6 +1546,13 @@ void QConfFileSettingsPrivate::syncConfFile(QConfFile *confFile)
                     perms |= QFile::ReadGroup | QFile::ReadOther;
                 QFile(confFile->name).setPermissions(perms);
             }
+#ifdef Q_OS_WASM
+        EM_ASM(
+            // Sync sandbox filesystem to persistent database filesystem. See QTBUG-70002
+            FS.syncfs(false, function(err) {
+            });
+        );
+#endif
         } else {
             setStatus(QSettings::AccessError);
         }
@@ -1590,12 +1599,14 @@ bool QConfFileSettingsPrivate::readIniLine(const QByteArray &data, int &dataPos,
 
     int i = lineStart;
     while (i < dataLen) {
-        while (!(charTraits[uint(uchar(data.at(i)))] & Special)) {
+        char ch = data.at(i);
+        while (!(charTraits[uchar(ch)] & Special)) {
             if (++i == dataLen)
                 goto break_out_of_outer_loop;
+            ch = data.at(i);
         }
 
-        char ch = data.at(i++);
+        ++i;
         if (ch == '=') {
             if (!inQuotes && equalsPos == -1)
                 equalsPos = i - 1;
@@ -1622,8 +1633,9 @@ bool QConfFileSettingsPrivate::readIniLine(const QByteArray &data, int &dataPos,
             Q_ASSERT(ch == ';');
 
             if (i == lineStart + 1) {
-                char ch;
                 while (i < dataLen && (((ch = data.at(i)) != '\n') && ch != '\r'))
+                    ++i;
+                while (i < dataLen && charTraits[uchar(data.at(i))] & Space)
                     ++i;
                 lineStart = i;
             } else if (!inQuotes) {
@@ -1668,7 +1680,7 @@ bool QConfFileSettingsPrivate::readIniFile(const QByteArray &data,
     int sectionPosition = 0;
     bool ok = true;
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
     // detect utf8 BOM
     const uchar *dd = (const uchar *)data.constData();
     if (data.size() >= 3 && dd[0] == 0xef && dd[1] == 0xbb && dd[2] == 0xbf) {
@@ -1694,10 +1706,10 @@ bool QConfFileSettingsPrivate::readIniFile(const QByteArray &data,
 
             iniSection = iniSection.trimmed();
 
-            if (qstricmp(iniSection.constData(), "general") == 0) {
+            if (iniSection.compare("general", Qt::CaseInsensitive) == 0) {
                 currentSection.clear();
             } else {
-                if (qstricmp(iniSection.constData(), "%general") == 0) {
+                if (iniSection.compare("%general", Qt::CaseInsensitive) == 0) {
                     currentSection = QLatin1String(iniSection.constData() + 1);
                 } else {
                     currentSection.clear();
@@ -1802,6 +1814,8 @@ struct QSettingsIniSection
     inline QSettingsIniSection() : position(-1) {}
 };
 
+Q_DECLARE_TYPEINFO(QSettingsIniSection, Q_MOVABLE_TYPE);
+
 typedef QMap<QString, QSettingsIniSection> IniMap;
 
 /*
@@ -1855,7 +1869,7 @@ bool QConfFileSettingsPrivate::writeIniFile(QIODevice &device, const ParsedSetti
 
         if (realSection.isEmpty()) {
             realSection = "[General]";
-        } else if (qstricmp(realSection.constData(), "general") == 0) {
+        } else if (realSection.compare("general", Qt::CaseInsensitive) == 0) {
             realSection = "[%General]";
         } else {
             realSection.prepend('[');
@@ -2153,6 +2167,9 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
 
     \snippet settings/settings.cpp 15
 
+    Note that type information is not preserved when reading settings from INI
+    files; all values will be returned as QString.
+
     The \l{tools/settingseditor}{Settings Editor} example lets you
     experiment with different settings location and with fallbacks
     turned on or off.
@@ -2199,10 +2216,16 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
     QSettings can safely be used from different processes (which can
     be different instances of your application running at the same
     time or different applications altogether) to read and write to
-    the same system locations. It uses advisory file locking and a
-    smart merging algorithm to ensure data integrity. Note that sync()
-    imports changes made by other processes (in addition to writing
-    the changes from this QSettings).
+    the same system locations, provided certain conditions are met. For
+    QSettings::IniFormat, it uses advisory file locking and a smart merging
+    algorithm to ensure data integrity. The condition for that to work is that
+    the writeable configuration file must be a regular file and must reside in
+    a directory that the current user can create new, temporary files in. If
+    that is not the case, then one must use setAtomicSyncRequired() to turn the
+    safety off.
+
+    Note that sync() imports changes made by other processes (in addition to
+    writing the changes from this QSettings).
 
     \section1 Platform-Specific Notes
 
@@ -2428,7 +2451,10 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
                             On 32-bit Windows or from a 64-bit application on 64-bit Windows,
                             this works the same as specifying NativeFormat.
                             This enum value was added in Qt 5.7.
-    \value IniFormat        Store the settings in INI files.
+    \value IniFormat        Store the settings in INI files. Note that type information
+                            is not preserved when reading settings from INI files;
+                            all values will be returned as QString.
+
     \value InvalidFormat    Special value returned by registerFormat().
     \omitvalue CustomFormat1
     \omitvalue CustomFormat2
@@ -2641,9 +2667,10 @@ QSettings::QSettings(const QString &fileName, Format format, QObject *parent)
     called, the QSettings object will not be able to read or write
     any settings, and status() will return AccessError.
 
-    On \macos and iOS, if both a name and an Internet domain are specified
-    for the organization, the domain is preferred over the name. On
-    other platforms, the name is preferred over the domain.
+    You should supply both the domain (used by default on \macos and iOS) and
+    the name (used by default elsewhere), although the code will cope if you
+    supply only one, which will then be used (on all platforms), at odds with
+    the usual naming of the file on platforms for which it isn't the default.
 
     \sa QCoreApplication::setOrganizationName(),
         QCoreApplication::setOrganizationDomain(),
@@ -2651,8 +2678,21 @@ QSettings::QSettings(const QString &fileName, Format format, QObject *parent)
         setDefaultFormat()
 */
 QSettings::QSettings(QObject *parent)
-    : QObject(*QSettingsPrivate::create(globalDefaultFormat, UserScope,
-#ifdef Q_OS_MAC
+    : QSettings(UserScope, parent)
+{
+}
+
+/*!
+    \since 5.13
+
+    Constructs a QSettings object in the same way as
+    QSettings(QObject *parent) but with the given \a scope.
+
+    \sa QSettings(QObject *parent)
+*/
+QSettings::QSettings(Scope scope, QObject *parent)
+    : QObject(*QSettingsPrivate::create(globalDefaultFormat, scope,
+#ifdef Q_OS_DARWIN
                                         QCoreApplication::organizationDomain().isEmpty()
                                             ? QCoreApplication::organizationName()
                                             : QCoreApplication::organizationDomain()
@@ -2691,6 +2731,25 @@ QSettings::QSettings(const QString &fileName, Format format)
 {
     d_ptr->q_ptr = this;
 }
+
+# ifndef QT_BUILD_QMAKE
+QSettings::QSettings(Scope scope)
+    : d_ptr(QSettingsPrivate::create(globalDefaultFormat, scope,
+#  ifdef Q_OS_DARWIN
+                                     QCoreApplication::organizationDomain().isEmpty()
+                                         ? QCoreApplication::organizationName()
+                                         : QCoreApplication::organizationDomain()
+#  else
+                                     QCoreApplication::organizationName().isEmpty()
+                                         ? QCoreApplication::organizationDomain()
+                                         : QCoreApplication::organizationName()
+#  endif
+                                     , QCoreApplication::applicationName())
+              )
+{
+    d_ptr->q_ptr = this;
+}
+# endif
 #endif
 
 /*!
@@ -2816,7 +2875,7 @@ QString QSettings::applicationName() const
     return d->applicationName;
 }
 
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
 
 /*!
     \since 4.5
@@ -2860,7 +2919,7 @@ void QSettings::setIniCodec(const char *codecName)
     \since 4.5
 
     Returns the codec that is used for accessing INI files. By default,
-    no codec is used, so a null pointer is returned.
+    no codec is used, so \nullptr is returned.
 */
 
 QTextCodec *QSettings::iniCodec() const
@@ -2869,7 +2928,7 @@ QTextCodec *QSettings::iniCodec() const
     return d->iniCodec;
 }
 
-#endif // QT_NO_TEXTCODEC
+#endif // textcodec
 
 /*!
     Returns a status code indicating the first error that was met by
@@ -2885,6 +2944,50 @@ QSettings::Status QSettings::status() const
 {
     Q_D(const QSettings);
     return d->status;
+}
+
+/*!
+    \since 5.10
+
+    Returns \c true if QSettings is only allowed to perform atomic saving and
+    reloading (synchronization) of the settings. Returns \c false if it is
+    allowed to save the settings contents directly to the configuration file.
+
+    The default is \c true.
+
+    \sa setAtomicSyncRequired(), QSaveFile
+*/
+bool QSettings::isAtomicSyncRequired() const
+{
+    Q_D(const QSettings);
+    return d->atomicSyncOnly;
+}
+
+/*!
+    \since 5.10
+
+    Configures whether QSettings is required to perform atomic saving and
+    reloading (synchronization) of the settings. If the \a enable argument is
+    \c true (the default), sync() will only perform synchronization operations
+    that are atomic. If this is not possible, sync() will fail and status()
+    will be an error condition.
+
+    Setting this property to \c false will allow QSettings to write directly to
+    the configuration file and ignore any errors trying to lock it against
+    other processes trying to write at the same time. Because of the potential
+    for corruption, this option should be used with care, but is required in
+    certain conditions, like a QSettings::IniFormat configuration file that
+    exists in an otherwise non-writeable directory or NTFS Alternate Data
+    Streams.
+
+    See \l QSaveFile for more information on the feature.
+
+    \sa isAtomicSyncRequired(), QSaveFile
+*/
+void QSettings::setAtomicSyncRequired(bool enable)
+{
+    Q_D(QSettings);
+    d->atomicSyncOnly = enable;
 }
 
 /*!
@@ -3347,6 +3450,7 @@ QSettings::Format QSettings::defaultFormat()
     return globalDefaultFormat;
 }
 
+#if QT_DEPRECATED_SINCE(5, 13)
 /*!
     \obsolete
 
@@ -3380,7 +3484,7 @@ void QSettings::setUserIniPath(const QString &dir)
     setPath(NativeFormat, UserScope, dir);
 #endif
 }
-
+#endif
 /*!
     \since 4.1
 
@@ -3521,5 +3625,3 @@ QT_END_NAMESPACE
 #ifndef QT_BOOTSTRAPPED
 #include "moc_qsettings.cpp"
 #endif
-
-#endif // QT_NO_SETTINGS

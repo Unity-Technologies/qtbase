@@ -111,8 +111,6 @@ public:
     void sync();
     void flush(QWidget *widget = 0);
 
-    inline QPoint topLevelOffset() const { return tlwOffset; }
-
     QBackingStore *backingStore() const { return store; }
 
     inline bool isDirty() const
@@ -120,10 +118,8 @@ public:
         return !(dirtyWidgets.isEmpty() && dirty.isEmpty() && dirtyRenderToTextureWidgets.isEmpty());
     }
 
-    // ### Qt 4.6: Merge into a template function (after MSVC isn't supported anymore).
-    void markDirty(const QRegion &rgn, QWidget *widget, UpdateTime updateTime = UpdateLater,
-                   BufferState bufferState = BufferValid);
-    void markDirty(const QRect &rect, QWidget *widget, UpdateTime updateTime = UpdateLater,
+    template <class T>
+    void markDirty(const T &r, QWidget *widget, UpdateTime updateTime = UpdateLater,
                    BufferState bufferState = BufferValid);
 
 private:
@@ -138,8 +134,6 @@ private:
     QBackingStore *store;
     uint updateRequestSent : 1;
 
-    QPoint tlwOffset;
-
     QPlatformTextureListWatcher *textureListWatcher;
     QElapsedTimer perfTime;
     int perfFrames;
@@ -149,7 +143,7 @@ private:
     static bool flushPaint(QWidget *widget, const QRegion &rgn);
     static void unflushPaint(QWidget *widget, const QRegion &rgn);
     static void qt_flush(QWidget *widget, const QRegion &region, QBackingStore *backingStore,
-                         QWidget *tlw, const QPoint &tlwOffset,
+                         QWidget *tlw,
                          QPlatformTextureList *widgetTextures,
                          QWidgetBackingStore *widgetBackingStore);
 
@@ -309,7 +303,7 @@ private:
     friend class QWidget;
     friend class QBackingStore;
 
-    Q_DISABLE_COPY(QWidgetBackingStore)
+    Q_DISABLE_COPY_MOVE(QWidgetBackingStore)
 };
 
 QT_END_NAMESPACE

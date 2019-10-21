@@ -75,7 +75,8 @@ class Q_PRINTSUPPORT_EXPORT QPrinterPrivate
     Q_DECLARE_PUBLIC(QPrinter)
 public:
     QPrinterPrivate(QPrinter *printer)
-        : printEngine(0),
+        : pdfVersion(QPrinter::PdfVersion_1_4),
+          printEngine(0),
           paintEngine(0),
           realPrintEngine(0),
           realPaintEngine(0),
@@ -93,6 +94,10 @@ public:
 
     }
 
+    static QPrinterPrivate *get(QPrinter *printer) {
+        return printer->d_ptr.get();
+    }
+
     void init(const QPrinterInfo &printer, QPrinter::PrinterMode mode);
 
     QPrinterInfo findValidPrinter(const QPrinterInfo &printer = QPrinterInfo());
@@ -107,6 +112,7 @@ public:
 
     QPrinter::PrinterMode printerMode;
     QPrinter::OutputFormat outputFormat;
+    QPrinter::PdfVersion pdfVersion;
     QPrintEngine *printEngine;
     QPaintEngine *paintEngine;
 

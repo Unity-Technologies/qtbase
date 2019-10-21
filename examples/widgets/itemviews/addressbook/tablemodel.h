@@ -52,17 +52,38 @@
 #define TABLEMODEL_H
 
 #include <QAbstractTableModel>
-#include <QList>
-#include <QPair>
+#include <QVector>
 
 //! [0]
+
+struct Contact
+{
+    QString name;
+    QString address;
+
+    bool operator==(const Contact &other) const
+    {
+        return name == other.name && address == other.address;
+    }
+};
+
+inline QDataStream &operator<<(QDataStream &stream, const Contact &contact)
+{
+    return stream << contact.name << contact.address;
+}
+
+inline QDataStream &operator>>(QDataStream &stream, Contact &contact)
+{
+    return stream >> contact.name >> contact.address;
+}
+
 class TableModel : public QAbstractTableModel
 {
     Q_OBJECT
 
 public:
-    TableModel(QObject *parent = 0);
-    TableModel(QList<QPair<QString, QString> > listofPairs, QObject *parent = 0);
+    TableModel(QObject *parent = nullptr);
+    TableModel(const QVector<Contact> &contacts, QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parent) const override;
     int columnCount(const QModelIndex &parent) const override;
@@ -72,10 +93,10 @@ public:
     bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
     bool insertRows(int position, int rows, const QModelIndex &index = QModelIndex()) override;
     bool removeRows(int position, int rows, const QModelIndex &index = QModelIndex()) override;
-    QList<QPair<QString, QString> > getList();
+    const QVector<Contact> &getContacts() const;
 
 private:
-    QList<QPair<QString, QString> > listOfPairs;
+    QVector<Contact> contacts;
 };
 //! [0]
 

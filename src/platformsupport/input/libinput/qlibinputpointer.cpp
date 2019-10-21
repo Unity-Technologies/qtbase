@@ -39,6 +39,7 @@
 
 #include "qlibinputpointer_p.h"
 #include <libinput.h>
+#include <QtCore/QEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 #include <QtGui/private/qguiapplication_p.h>
@@ -80,8 +81,10 @@ void QLibInputPointer::processButton(libinput_event_pointer *e)
 
     m_buttons.setFlag(button, pressed);
 
-    QWindowSystemInterface::handleMouseEvent(Q_NULLPTR, m_pos, m_pos, m_buttons,
-                                             QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers());
+    QEvent::Type type = pressed ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease;
+    Qt::KeyboardModifiers mods = QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers();
+
+    QWindowSystemInterface::handleMouseEvent(nullptr, m_pos, m_pos, m_buttons, button, type, mods);
 }
 
 void QLibInputPointer::processMotion(libinput_event_pointer *e)
@@ -94,30 +97,36 @@ void QLibInputPointer::processMotion(libinput_event_pointer *e)
     m_pos.setX(qBound(g.left(), qRound(m_pos.x() + dx), g.right()));
     m_pos.setY(qBound(g.top(), qRound(m_pos.y() + dy), g.bottom()));
 
-    QWindowSystemInterface::handleMouseEvent(Q_NULLPTR, m_pos, m_pos, m_buttons,
-                                             QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers());
+    Qt::KeyboardModifiers mods = QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers();
+
+    QWindowSystemInterface::handleMouseEvent(nullptr, m_pos, m_pos, m_buttons,
+                                             Qt::NoButton, QEvent::MouseMove, mods);
 }
 
 void QLibInputPointer::processAxis(libinput_event_pointer *e)
 {
+    double value; // default axis value is 15 degrees per wheel click
+    QPoint angleDelta;
 #if !QT_CONFIG(libinput_axis_api)
-    const double v = libinput_event_pointer_get_axis_value(e) * 120;
-    const Qt::Orientation ori = libinput_event_pointer_get_axis(e) == LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL
-        ? Qt::Vertical : Qt::Horizontal;
-    QWindowSystemInterface::handleWheelEvent(Q_NULLPTR, m_pos, m_pos, qRound(-v), ori,
-                                             QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers());
+    value = libinput_event_pointer_get_axis_value(e);
+    if (libinput_event_pointer_get_axis(e) == LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL)
+        angleDelta.setY(qRound(value));
+    else
+        angleDelta.setX(qRound(value));
 #else
     if (libinput_event_pointer_has_axis(e, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL)) {
-        const double v = libinput_event_pointer_get_axis_value(e, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL) * 120;
-        QWindowSystemInterface::handleWheelEvent(Q_NULLPTR, m_pos, m_pos, qRound(-v), Qt::Vertical,
-                                                 QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers());
+        value = libinput_event_pointer_get_axis_value(e, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL);
+        angleDelta.setY(qRound(value));
     }
     if (libinput_event_pointer_has_axis(e, LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL)) {
-        const double v = libinput_event_pointer_get_axis_value(e, LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL) * 120;
-        QWindowSystemInterface::handleWheelEvent(Q_NULLPTR, m_pos, m_pos, qRound(-v), Qt::Horizontal,
-                                                 QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers());
+        value = libinput_event_pointer_get_axis_value(e, LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL);
+        angleDelta.setX(qRound(value));
     }
 #endif
+    const int factor = 8;
+    angleDelta *= -factor;
+    Qt::KeyboardModifiers mods = QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers();
+    QWindowSystemInterface::handleWheelEvent(nullptr, m_pos, m_pos, QPoint(), angleDelta, mods);
 }
 
 void QLibInputPointer::setPos(const QPoint &pos)

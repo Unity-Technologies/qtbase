@@ -77,6 +77,9 @@ private slots:
     void saveWithNoFormat();
 
     void saveToTemporaryFile();
+
+    void writeEmpty();
+
 private:
     QTemporaryDir m_temporaryDir;
     QString prefix;
@@ -236,7 +239,7 @@ void tst_QImageWriter::writeImage2_data()
         // QLatin1String("jpeg"),
     };
 
-    QImage image0(70, 70, QImage::Format_ARGB32);
+    QImage image0(70, 70, QImage::Format_RGB32);
     image0.fill(QColor(Qt::red).rgb());
 
     QImage::Format imgFormat = QImage::Format_Mono;
@@ -301,10 +304,10 @@ void tst_QImageWriter::writeImage2()
     if (!equalImageContents(written, image)) {
         qDebug() << "image" << image.format() << image.width()
                  << image.height() << image.depth()
-                 << hex << image.pixel(0, 0);
+                 << image.pixelColor(0, 0);
         qDebug() << "written" << written.format() << written.width()
                  << written.height() << written.depth()
-                 << hex << written.pixel(0, 0);
+                 << written.pixelColor(0, 0);
     }
     QVERIFY(equalImageContents(written, image));
 
@@ -405,6 +408,7 @@ void tst_QImageWriter::supportsOption_data()
                          << (QIntList() << QImageIOHandler::Gamma
                               << QImageIOHandler::Description
                               << QImageIOHandler::Quality
+                              << QImageIOHandler::CompressionRatio
                               << QImageIOHandler::Size
                               << QImageIOHandler::ScaledSize);
 }
@@ -463,7 +467,7 @@ void tst_QImageWriter::saveWithNoFormat()
     SKIP_IF_UNSUPPORTED(format);
 
     QImage niceImage(64, 64, QImage::Format_ARGB32);
-    memset(niceImage.bits(), 0, niceImage.byteCount());
+    memset(niceImage.bits(), 0, niceImage.sizeInBytes());
 
     QImageWriter writer(fileName /* , 0 - no format! */);
     if (error != 0) {
@@ -527,6 +531,19 @@ void tst_QImageWriter::saveToTemporaryFile()
         QVERIFY(tmp.load(&file, "PNG"));
         QCOMPARE(tmp, image);
     }
+}
+
+void tst_QImageWriter::writeEmpty()
+{
+    // check writing a null QImage errors gracefully
+    QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+    QString fileName(dir.path() + QLatin1String("/testimage.bmp"));
+    QVERIFY(!QFileInfo(fileName).exists());
+    QImageWriter writer(fileName);
+    QVERIFY(!writer.write(QImage()));
+    QCOMPARE(writer.error(), QImageWriter::InvalidImageError);
+    QVERIFY(!QFileInfo(fileName).exists());
 }
 
 QTEST_MAIN(tst_QImageWriter)

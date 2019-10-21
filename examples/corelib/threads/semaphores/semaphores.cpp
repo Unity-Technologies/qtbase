@@ -70,10 +70,9 @@ class Producer : public QThread
 public:
     void run() override
     {
-        qsrand(QTime(0,0,0).secsTo(QTime::currentTime()));
         for (int i = 0; i < DataSize; ++i) {
             freeBytes.acquire();
-            buffer[i % BufferSize] = "ACGT"[(int)qrand() % 4];
+            buffer[i % BufferSize] = "ACGT"[QRandomGenerator::global()->bounded(4)];
             usedBytes.release();
         }
     }
@@ -95,12 +94,6 @@ public:
         }
         fprintf(stderr, "\n");
     }
-
-signals:
-    void stringConsumed(const QString &text);
-
-protected:
-    bool finish;
 };
 //! [4]
 

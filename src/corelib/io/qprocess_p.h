@@ -108,8 +108,7 @@ using QProcEnvKey = QByteArray;
 class QProcEnvValue
 {
 public:
-    QProcEnvValue() {}
-    QProcEnvValue(const QProcEnvValue &other) { *this = other; }
+    QProcEnvValue() = default;
     explicit QProcEnvValue(const QString &value) : stringValue(value) {}
     explicit QProcEnvValue(const QByteArray &value) : byteValue(value) {}
     bool operator==(const QProcEnvValue &other) const
@@ -350,9 +349,9 @@ public:
     void start(QIODevice::OpenMode mode);
     void startProcess();
 #if defined(Q_OS_UNIX)
-    void execChild(const char *workingDirectory, char **path, char **argv, char **envp);
+    void execChild(const char *workingDirectory, char **argv, char **envp);
 #endif
-    bool processStarted(QString *errorMessage = Q_NULLPTR);
+    bool processStarted(QString *errorMessage = nullptr);
     void terminateProcess();
     void killProcess();
     void findExitCode();
@@ -360,13 +359,13 @@ public:
     bool waitForDeadChild();
 #endif
 #ifdef Q_OS_WIN
+    bool callCreateProcess(QProcess::CreateProcessArguments *cpargs);
     bool drainOutputPipes();
     void flushPipeWriter();
     qint64 pipeWriterBytesToWrite() const;
 #endif
 
-    static bool startDetached(const QString &program, const QStringList &arguments, const QString &workingDirectory = QString(),
-                              qint64 *pid = 0);
+    bool startDetached(qint64 *pPid);
 
     int exitCode;
     QProcess::ExitStatus exitStatus;

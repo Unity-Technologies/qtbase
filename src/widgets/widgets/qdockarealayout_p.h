@@ -160,7 +160,7 @@ public:
     void fitItems();
     bool expansive(Qt::Orientation o) const;
     int changeSize(int index, int size, bool below);
-    QRect itemRect(int index) const;
+    QRect itemRect(int index, bool isGap = false) const;
     QRect itemRect(const QList<int> &path) const;
     QRect separatorRect(int index) const;
     QRect separatorRect(const QList<int> &path) const;
@@ -182,6 +182,7 @@ public:
                             const QPoint &mouse) const;
     QRegion separatorRegion() const;
     int separatorMove(int index, int delta);
+    int separatorMove(const QList<int> &separator, const QPoint &origin, const QPoint &dest);
 
     QLayoutItem *itemAt(int *x, int index) const;
     QLayoutItem *takeAt(int *x, int index);
@@ -246,7 +247,7 @@ public:
 
     QList<int> indexOfPlaceHolder(const QString &objectName) const;
     QList<int> indexOf(QWidget *dockWidget) const;
-    QList<int> gapIndex(const QPoint &pos) const;
+    QList<int> gapIndex(const QPoint &pos, bool disallowTabs) const;
     QList<int> findSeparator(const QPoint &pos) const;
 
     QDockAreaLayoutItem &item(const QList<int> &path);

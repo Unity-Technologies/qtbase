@@ -37,6 +37,9 @@
 **
 ****************************************************************************/
 
+#include "qglobal.h"
+#if QT_DEPRECATED_SINCE(5, 10)
+
 #include "qsignalmapper.h"
 #include "qhash.h"
 #include "qobject_p.h"
@@ -58,10 +61,10 @@ public:
 
 };
 
-
 /*!
     \class QSignalMapper
     \inmodule QtCore
+    \obsolete The recommended solution is connecting the signal to a lambda.
     \brief The QSignalMapper class bundles signals from identifiable senders.
 
     \ingroup objectmodel
@@ -107,6 +110,12 @@ public:
     clicked() signal. When the user clicks a button, the custom
     widget will emit a single \c clicked() signal whose argument is
     the text of the button the user clicked.
+
+    This class was mostly useful before lambda functions could be used as
+    slots. The example above can be rewritten simpler without QSignalMapper
+    by connecting to a lambda function.
+
+    \snippet qsignalmapper/buttonwidget.cpp 3
 
     \sa QObject, QButtonGroup, QActionGroup
 */
@@ -306,3 +315,4 @@ QT_END_NAMESPACE
 
 #include "moc_qsignalmapper.cpp"
 
+#endif

@@ -53,14 +53,17 @@
 //
 
 #include "QtCore/qmutex.h"
+#include "QtCore/qthread.h"
 #include "QtCore/qwaitcondition.h"
 #include "QtCore/qset.h"
 #include "QtCore/qqueue.h"
 #include "private/qobject_p.h"
 
-#ifndef QT_NO_THREAD
+QT_REQUIRE_CONFIG(thread);
 
 QT_BEGIN_NAMESPACE
+
+class QDeadlineTimer;
 
 class QueuePage {
 public:
@@ -162,25 +165,25 @@ public:
     void startThread(QRunnable *runnable = 0);
     void reset();
     bool waitForDone(int msecs);
+    bool waitForDone(const QDeadlineTimer &timer);
     void clear();
     void stealAndRunRunnable(QRunnable *runnable);
     void deletePageIfFinished(QueuePage *page);
 
     mutable QMutex mutex;
-    QList<QThreadPoolThread *> allThreads;
+    QSet<QThreadPoolThread *> allThreads;
     QQueue<QThreadPoolThread *> waitingThreads;
     QQueue<QThreadPoolThread *> expiredThreads;
     QVector<QueuePage*> queue;
     QWaitCondition noActiveThreads;
 
-    bool isExiting;
-    int expiryTimeout;
-    int maxThreadCount;
-    int reservedThreads;
-    int activeThreads;
+    int expiryTimeout = 30000;
+    int maxThreadCount = QThread::idealThreadCount();
+    int reservedThreads = 0;
+    int activeThreads = 0;
+    uint stackSize = 0;
 };
 
 QT_END_NAMESPACE
 
-#endif // QT_NO_THREAD
 #endif

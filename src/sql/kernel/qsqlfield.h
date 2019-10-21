@@ -56,6 +56,8 @@ public:
 
     explicit QSqlField(const QString& fieldName = QString(),
                        QVariant::Type type = QVariant::Invalid);
+    QSqlField(const QString &fieldName, QVariant::Type type,
+              const QString &tableName);
 
     QSqlField(const QSqlField& other);
     QSqlField& operator=(const QSqlField& other);
@@ -68,6 +70,8 @@ public:
     { return val; }
     void setName(const QString& name);
     QString name() const;
+    void setTableName(const QString &tableName);
+    QString tableName() const;
     bool isNull() const;
     void setReadOnly(bool readOnly);
     bool isReadOnly() const;

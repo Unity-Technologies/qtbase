@@ -111,7 +111,7 @@ QT_BEGIN_NAMESPACE
 
     Depending on the type of configuration some states are transient in nature. A GPRS/UMTS
     connection may almost always be \l Discovered if the GSM/UMTS network is available.
-    However if the GSM/UMTS network looses the connection the associated configuration may change its state
+    However if the GSM/UMTS network loses the connection the associated configuration may change its state
     from \l Discovered to \l Defined as well. A similar use case might be triggered by
     WLAN availability. QNetworkConfigurationManager::updateConfigurations() can be used to
     manually trigger updates of states. Note that some platforms do not require such updates
@@ -347,6 +347,8 @@ int QNetworkConfiguration::connectTimeout() const
     This allows control of the timeout used by \c QAbstractSocket
     to establish a connection.
 
+    \note \a timeout is in millisecond.
+
     \warning This will have no effect if the bearer plugin doesn't have
     the CanStartAndStopInterfaces capability.
 
@@ -516,7 +518,7 @@ QNetworkConfiguration::BearerType QNetworkConfiguration::bearerTypeFamily() cons
 /*!
     Returns the type of bearer used by this network configuration as a string.
 
-    The string is not translated and therefore can not be shown to the user. The subsequent table
+    The string is not translated and therefore cannot be shown to the user. The subsequent table
     shows the fixed mappings between BearerType and the bearer type name for known types.  If the
     BearerType is unknown this function may return additional information if it is available;
     otherwise an empty string will be returned.

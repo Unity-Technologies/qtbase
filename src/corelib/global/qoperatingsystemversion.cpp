@@ -43,6 +43,7 @@
 #endif
 
 #include <qversionnumber.h>
+#include <qdebug.h>
 
 #if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
 #include <private/qjni_p.h>
@@ -105,20 +106,12 @@ QT_BEGIN_NAMESPACE
     major version number component of the object on the left hand side of the expression (10) is
     greater than that of the object on the right (9):
 
-    \code
-    QOperatingSystemVersion::current() >= QOperatingSystemVersion(QOperatingSystemVersion::IOS, 9)
-    \endcode
+    \snippet code/src_corelib_global_qoperatingsystemversion.cpp 0
 
     This allows expressions for multiple operating systems to be joined with a logical OR operator
     and still work as expected. For example:
 
-    \code
-    auto current = QOperatingSystemVersion::current();
-    if (current >= QOperatingSystemVersion::OSXYosemite ||
-        current >= QOperatingSystemVersion(QOperatingSystemVersion::IOS, 8)) {
-        // returns true on macOS >= 10.10 and iOS >= 8.0, but false on macOS < 10.10 and iOS < 8.0
-    }
-    \endcode
+    \snippet code/src_corelib_global_qoperatingsystemversion.cpp 1
 
     A more naive comparison algorithm might incorrectly return true on all versions of macOS,
     including Mac OS 9. This behavior is achieved by overloading the comparison operators to return
@@ -154,6 +147,8 @@ QT_BEGIN_NAMESPACE
     \fn QOperatingSystemVersion QOperatingSystemVersion::current()
 
     Returns a QOperatingSystemVersion indicating the current OS and its version number.
+
+    \sa currentType()
 */
 #if !defined(Q_OS_DARWIN) && !defined(Q_OS_WIN)
 QOperatingSystemVersion QOperatingSystemVersion::current()
@@ -300,6 +295,14 @@ int QOperatingSystemVersion::compare(const QOperatingSystemVersion &v1,
 */
 
 /*!
+    \fn QOperatingSystemVersion::OSType QOperatingSystemVersion::currentType()
+
+    Returns the current OS type without constructing a QOperatingSystemVersion instance.
+
+    \sa current()
+*/
+
+/*!
     \fn QString QOperatingSystemVersion::name() const
 
     Returns a string representation of the OS type identified by the QOperatingSystemVersion.
@@ -427,6 +430,22 @@ const QOperatingSystemVersion QOperatingSystemVersion::MacOSHighSierra =
     QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 10, 13);
 
 /*!
+    \variable QOperatingSystemVersion::MacOSMojave
+    \brief a version corresponding to macOS Mojave (version 10.14).
+    \since 5.11.2
+ */
+const QOperatingSystemVersion QOperatingSystemVersion::MacOSMojave =
+    QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 10, 14);
+
+/*!
+    \variable QOperatingSystemVersion::MacOSCatalina
+    \brief a version corresponding to macOS Catalina (version 10.15).
+    \since 5.12.5
+ */
+const QOperatingSystemVersion QOperatingSystemVersion::MacOSCatalina =
+    QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 10, 15);
+
+/*!
     \variable QOperatingSystemVersion::AndroidJellyBean
     \brief a version corresponding to Android Jelly Bean (version 4.1, API level 16).
     \since 5.9
@@ -509,5 +528,17 @@ const QOperatingSystemVersion QOperatingSystemVersion::AndroidNougat_MR1 =
  */
 const QOperatingSystemVersion QOperatingSystemVersion::AndroidOreo =
     QOperatingSystemVersion(QOperatingSystemVersion::Android, 8, 0);
+
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug debug, const QOperatingSystemVersion &ov)
+{
+    QDebugStateSaver saver(debug);
+    debug.nospace();
+    debug << "QOperatingSystemVersion(" << ov.name()
+        << ", " << ov.majorVersion() << '.' << ov.minorVersion()
+        << '.' << ov.microVersion() << ')';
+    return debug;
+}
+#endif // !QT_NO_DEBUG_STREAM
 
 QT_END_NAMESPACE

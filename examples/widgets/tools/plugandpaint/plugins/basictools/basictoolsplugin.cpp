@@ -48,20 +48,17 @@
 **
 ****************************************************************************/
 
-#include <QtWidgets>
-
-#include <cmath>
-#include <stdlib.h>
-
 #include "basictoolsplugin.h"
 
-const float Pi = 3.14159f;
+#include <QtMath>
+#include <QtWidgets>
+
+#include <stdlib.h>
 
 //! [0]
 QStringList BasicToolsPlugin::brushes() const
 {
-    return QStringList() << tr("Pencil") << tr("Air Brush")
-                         << tr("Random Letters");
+    return {tr("Pencil"), tr("Air Brush"), tr("Random Letters")};
 }
 //! [0]
 
@@ -103,7 +100,7 @@ QRect BasicToolsPlugin::mouseMove(const QString &brush, QPainter &painter,
                                 thickness, thickness);
         }
     } else if (brush == tr("Random Letters")) {
-        QChar ch('A' + (qrand() % 26));
+        QChar ch(QRandomGenerator::global()->bounded('A', 'Z' + 1));
 
         QFont biggerFont = painter.font();
         biggerFont.setBold(true);
@@ -134,7 +131,7 @@ QRect BasicToolsPlugin::mouseRelease(const QString & /* brush */,
 //! [5]
 QStringList BasicToolsPlugin::shapes() const
 {
-    return QStringList() << tr("Circle") << tr("Star") << tr("Text...");
+    return {tr("Circle"), tr("Star"), tr("Text...")};
 }
 //! [5]
 
@@ -149,8 +146,8 @@ QPainterPath BasicToolsPlugin::generateShape(const QString &shape,
     } else if (shape == tr("Star")) {
         path.moveTo(90, 50);
         for (int i = 1; i < 5; ++i) {
-            path.lineTo(50 + 40 * std::cos(0.8 * i * Pi),
-                        50 + 40 * std::sin(0.8 * i * Pi));
+            path.lineTo(50 + 40 * std::cos(0.8 * i * M_PI),
+                        50 + 40 * std::sin(0.8 * i * M_PI));
         }
         path.closeSubpath();
     } else if (shape == tr("Text...")) {
@@ -171,8 +168,7 @@ QPainterPath BasicToolsPlugin::generateShape(const QString &shape,
 //! [7]
 QStringList BasicToolsPlugin::filters() const
 {
-    return QStringList() << tr("Invert Pixels") << tr("Swap RGB")
-                         << tr("Grayscale");
+    return {tr("Invert Pixels"), tr("Swap RGB"), tr("Grayscale")};
 }
 //! [7]
 
@@ -189,7 +185,7 @@ QImage BasicToolsPlugin::filterImage(const QString &filter, const QImage &image,
     } else if (filter == tr("Grayscale")) {
         for (int y = 0; y < result.height(); ++y) {
             for (int x = 0; x < result.width(); ++x) {
-                int pixel = result.pixel(x, y);
+                QRgb pixel = result.pixel(x, y);
                 int gray = qGray(pixel);
                 int alpha = qAlpha(pixel);
                 result.setPixel(x, y, qRgba(gray, gray, gray, alpha));

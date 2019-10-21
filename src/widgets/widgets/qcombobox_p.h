@@ -215,7 +215,7 @@ private:
     bool fast;
 };
 
-class Q_AUTOTEST_EXPORT QComboBoxPrivateContainer : public QFrame
+class Q_WIDGETS_EXPORT QComboBoxPrivateContainer : public QFrame
 {
     Q_OBJECT
 
@@ -234,6 +234,7 @@ public:
 
 public Q_SLOTS:
     void scrollItemView(int action);
+    void hideScrollers();
     void updateScrollers();
     void viewDestroyed();
 
@@ -247,6 +248,7 @@ protected:
     void timerEvent(QTimerEvent *timerEvent) override;
     void leaveEvent(QEvent *e) override;
     void resizeEvent(QResizeEvent *e) override;
+    void paintEvent(QPaintEvent *e) override;
     QStyleOptionComboBox comboStyleOption() const;
 
 Q_SIGNALS:
@@ -275,7 +277,7 @@ protected:
                const QStyleOptionViewItem &option,
                const QModelIndex &index) const override {
         QStyleOptionMenuItem opt = getStyleOption(option, index);
-        painter->fillRect(option.rect, opt.palette.background());
+        painter->fillRect(option.rect, opt.palette.window());
         mCombo->style()->drawControl(QStyle::CE_MenuItem, &opt, painter, mCombo);
     }
     QSize sizeHint(const QStyleOptionViewItem &option,
@@ -291,6 +293,7 @@ private:
     QComboBox *mCombo;
 };
 
+// ### Qt6: QStyledItemDelegate ?
 // Note that this class is intentionally not using QStyledItemDelegate
 // Vista does not use the new theme for combo boxes and there might
 // be other side effects from using the new class

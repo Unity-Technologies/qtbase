@@ -72,7 +72,10 @@ public:
     inline QColor(int r, int g, int b, int a = 255);
     QColor(QRgb rgb) Q_DECL_NOTHROW;
     QColor(QRgba64 rgba64) Q_DECL_NOTHROW;
+#if QT_STRINGVIEW_LEVEL < 2
     inline QColor(const QString& name);
+#endif
+    explicit inline QColor(QStringView name);
     inline QColor(const char *aname) : QColor(QLatin1String(aname)) {}
     inline QColor(QLatin1String name);
     QColor(Spec spec) Q_DECL_NOTHROW;
@@ -95,7 +98,10 @@ public:
     QString name() const;
     QString name(NameFormat format) const;
 
+#if QT_STRINGVIEW_LEVEL < 2
     void setNamedColor(const QString& name);
+#endif
+    void setNamedColor(QStringView name);
     void setNamedColor(QLatin1String name);
 
     static QStringList colorNames();
@@ -123,10 +129,10 @@ public:
     void setGreenF(qreal green);
     void setBlueF(qreal blue);
 
-    void getRgb(int *r, int *g, int *b, int *a = Q_NULLPTR) const;
+    void getRgb(int *r, int *g, int *b, int *a = nullptr) const;
     void setRgb(int r, int g, int b, int a = 255);
 
-    void getRgbF(qreal *r, qreal *g, qreal *b, qreal *a = Q_NULLPTR) const;
+    void getRgbF(qreal *r, qreal *g, qreal *b, qreal *a = nullptr) const;
     void setRgbF(qreal r, qreal g, qreal b, qreal a = 1.0);
 
     QRgba64 rgba64() const Q_DECL_NOTHROW;
@@ -150,10 +156,10 @@ public:
     qreal hsvSaturationF() const Q_DECL_NOTHROW;
     qreal valueF() const Q_DECL_NOTHROW;
 
-    void getHsv(int *h, int *s, int *v, int *a = Q_NULLPTR) const;
+    void getHsv(int *h, int *s, int *v, int *a = nullptr) const;
     void setHsv(int h, int s, int v, int a = 255);
 
-    void getHsvF(qreal *h, qreal *s, qreal *v, qreal *a = Q_NULLPTR) const;
+    void getHsvF(qreal *h, qreal *s, qreal *v, qreal *a = nullptr) const;
     void setHsvF(qreal h, qreal s, qreal v, qreal a = 1.0);
 
     int cyan() const Q_DECL_NOTHROW;
@@ -166,10 +172,12 @@ public:
     qreal yellowF() const Q_DECL_NOTHROW;
     qreal blackF() const Q_DECL_NOTHROW;
 
-    void getCmyk(int *c, int *m, int *y, int *k, int *a = Q_NULLPTR);
+    void getCmyk(int *c, int *m, int *y, int *k, int *a = nullptr); // ### Qt 6: remove
+    void getCmyk(int *c, int *m, int *y, int *k, int *a = nullptr) const;
     void setCmyk(int c, int m, int y, int k, int a = 255);
 
-    void getCmykF(qreal *c, qreal *m, qreal *y, qreal *k, qreal *a = Q_NULLPTR);
+    void getCmykF(qreal *c, qreal *m, qreal *y, qreal *k, qreal *a = nullptr); // ### Qt 6: remove
+    void getCmykF(qreal *c, qreal *m, qreal *y, qreal *k, qreal *a = nullptr) const;
     void setCmykF(qreal c, qreal m, qreal y, qreal k, qreal a = 1.0);
 
     int hslHue() const Q_DECL_NOTHROW; // 0 <= hue < 360
@@ -180,10 +188,10 @@ public:
     qreal hslSaturationF() const Q_DECL_NOTHROW;
     qreal lightnessF() const Q_DECL_NOTHROW;
 
-    void getHsl(int *h, int *s, int *l, int *a = Q_NULLPTR) const;
+    void getHsl(int *h, int *s, int *l, int *a = nullptr) const;
     void setHsl(int h, int s, int l, int a = 255);
 
-    void getHslF(qreal *h, qreal *s, qreal *l, qreal *a = Q_NULLPTR) const;
+    void getHslF(qreal *h, qreal *s, qreal *l, qreal *a = nullptr) const;
     void setHslF(qreal h, qreal s, qreal l, qreal a = 1.0);
 
     QColor toRgb() const Q_DECL_NOTHROW;
@@ -211,9 +219,13 @@ public:
     static QColor fromHsl(int h, int s, int l, int a = 255);
     static QColor fromHslF(qreal h, qreal s, qreal l, qreal a = 1.0);
 
+#if QT_DEPRECATED_SINCE(5, 13)
+    QT_DEPRECATED_X("Use QColor::lighter() instead")
     Q_REQUIRED_RESULT QColor light(int f = 150) const Q_DECL_NOTHROW;
-    Q_REQUIRED_RESULT QColor lighter(int f = 150) const Q_DECL_NOTHROW;
+    QT_DEPRECATED_X("Use QColor::darker() instead")
     Q_REQUIRED_RESULT QColor dark(int f = 200) const Q_DECL_NOTHROW;
+#endif
+    Q_REQUIRED_RESULT QColor lighter(int f = 150) const Q_DECL_NOTHROW;
     Q_REQUIRED_RESULT QColor darker(int f = 200) const Q_DECL_NOTHROW;
 
     bool operator==(const QColor &c) const Q_DECL_NOTHROW;
@@ -221,14 +233,17 @@ public:
 
     operator QVariant() const;
 
+#if QT_STRINGVIEW_LEVEL < 2
     static bool isValidColor(const QString &name);
+#endif
+    static bool isValidColor(QStringView) Q_DECL_NOTHROW;
     static bool isValidColor(QLatin1String) Q_DECL_NOTHROW;
 
 private:
 
     void invalidate() Q_DECL_NOTHROW;
     template <typename String>
-    bool setColorFromString(const String &name);
+    bool setColorFromString(String name);
 
     Spec cspec;
     union {
@@ -280,8 +295,13 @@ inline QColor::QColor(int r, int g, int b, int a)
 inline QColor::QColor(QLatin1String aname)
 { setNamedColor(aname); }
 
+inline QColor::QColor(QStringView aname)
+{ setNamedColor(aname); }
+
+#if QT_STRINGVIEW_LEVEL < 2
 inline QColor::QColor(const QString& aname)
 { setNamedColor(aname); }
+#endif
 
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
 inline QColor::QColor(const QColor &acolor) Q_DECL_NOTHROW
@@ -291,12 +311,6 @@ inline QColor::QColor(const QColor &acolor) Q_DECL_NOTHROW
 
 inline bool QColor::isValid() const Q_DECL_NOTHROW
 { return cspec != Invalid; }
-
-inline QColor QColor::lighter(int f) const Q_DECL_NOTHROW
-{ return light(f); }
-
-inline QColor QColor::darker(int f) const Q_DECL_NOTHROW
-{ return dark(f); }
 
 QT_END_NAMESPACE
 

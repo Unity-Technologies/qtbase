@@ -85,17 +85,13 @@ QXcbSystemTrayTracker::QXcbSystemTrayTracker(QXcbConnection *connection,
 
 xcb_window_t QXcbSystemTrayTracker::locateTrayWindow(const QXcbConnection *connection, xcb_atom_t selection)
 {
-    xcb_get_selection_owner_cookie_t cookie = xcb_get_selection_owner(connection->xcb_connection(), selection);
-    xcb_get_selection_owner_reply_t *reply = xcb_get_selection_owner_reply(connection->xcb_connection(), cookie, 0);
+    auto reply = Q_XCB_REPLY(xcb_get_selection_owner, connection->xcb_connection(), selection);
     if (!reply)
         return 0;
-    const xcb_window_t result = reply->owner;
-    free(reply);
-    return result;
+    return reply->owner;
 }
 
-// API for QPlatformNativeInterface/QPlatformSystemTrayIcon: Request a window
-// to be docked on the tray.
+// Request a window to be docked on the tray.
 void QXcbSystemTrayTracker::requestSystemTrayWindowDock(xcb_window_t window) const
 {
     xcb_client_message_event_t trayRequest;
@@ -119,34 +115,10 @@ xcb_window_t QXcbSystemTrayTracker::trayWindow()
             m_connection->addWindowEventListener(m_trayWindow, this);
             const quint32 mask = XCB_CW_EVENT_MASK;
             const quint32 value = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-            Q_XCB_CALL2(xcb_change_window_attributes(m_connection->xcb_connection(), m_trayWindow, mask, &value), m_connection);
+            xcb_change_window_attributes(m_connection->xcb_connection(), m_trayWindow, mask, &value);
         }
     }
     return m_trayWindow;
-}
-
-// API for QPlatformNativeInterface/QPlatformSystemTrayIcon: Return the geometry of a
-// a window parented on the tray. Determines the global geometry via XCB since mapToGlobal
-// does not work for the QWindow parented on the tray.
-QRect QXcbSystemTrayTracker::systemTrayWindowGlobalGeometry(xcb_window_t window) const
-{
-
-    xcb_connection_t *conn = m_connection->xcb_connection();
-    xcb_get_geometry_reply_t *geomReply =
-        xcb_get_geometry_reply(conn, xcb_get_geometry(conn, window), 0);
-    if (!geomReply)
-        return QRect();
-
-    xcb_translate_coordinates_reply_t *translateReply =
-        xcb_translate_coordinates_reply(conn, xcb_translate_coordinates(conn, window, m_connection->rootWindow(), 0, 0), 0);
-    if (!translateReply) {
-        free(geomReply);
-        return QRect();
-    }
-
-    const QRect result(QPoint(translateReply->dst_x, translateReply->dst_y), QSize(geomReply->width, geomReply->height));
-    free(translateReply);
-    return result;
 }
 
 inline void QXcbSystemTrayTracker::emitSystemTrayWindowChanged()
@@ -172,38 +144,35 @@ void QXcbSystemTrayTracker::handleDestroyNotifyEvent(const xcb_destroy_notify_ev
     }
 }
 
-bool QXcbSystemTrayTracker::visualHasAlphaChannel()
+xcb_visualid_t QXcbSystemTrayTracker::visualId()
+{
+    xcb_visualid_t visual = netSystemTrayVisual();
+    if (visual == XCB_NONE)
+        visual = m_connection->primaryScreen()->screen()->root_visual;
+    return visual;
+}
+
+xcb_visualid_t QXcbSystemTrayTracker::netSystemTrayVisual()
 {
     if (m_trayWindow == XCB_WINDOW_NONE)
-        return false;
+        return XCB_NONE;
 
     xcb_atom_t tray_atom = m_connection->atom(QXcbAtom::_NET_SYSTEM_TRAY_VISUAL);
 
     // Get the xcb property for the _NET_SYSTEM_TRAY_VISUAL atom
-    xcb_get_property_cookie_t systray_atom_cookie;
-    xcb_get_property_reply_t *systray_atom_reply;
-
-    systray_atom_cookie = xcb_get_property_unchecked(m_connection->xcb_connection(), false, m_trayWindow,
+    auto systray_atom_reply = Q_XCB_REPLY_UNCHECKED(xcb_get_property, m_connection->xcb_connection(),
+                                                    false, m_trayWindow,
                                                     tray_atom, XCB_ATOM_VISUALID, 0, 1);
-    systray_atom_reply = xcb_get_property_reply(m_connection->xcb_connection(), systray_atom_cookie, 0);
-
     if (!systray_atom_reply)
-        return false;
+        return XCB_NONE;
 
     xcb_visualid_t systrayVisualId = XCB_NONE;
-    if (systray_atom_reply->value_len > 0 && xcb_get_property_value_length(systray_atom_reply) > 0) {
-        xcb_visualid_t * vids = (uint32_t *)xcb_get_property_value(systray_atom_reply);
+    if (systray_atom_reply->value_len > 0 && xcb_get_property_value_length(systray_atom_reply.get()) > 0) {
+        xcb_visualid_t * vids = (uint32_t *)xcb_get_property_value(systray_atom_reply.get());
         systrayVisualId = vids[0];
     }
 
-    free(systray_atom_reply);
-
-    if (systrayVisualId != XCB_NONE) {
-        quint8 depth = m_connection->primaryScreen()->depthOfVisual(systrayVisualId);
-        return depth == 32;
-    }
-
-    return false;
+    return systrayVisualId;
 }
 
 QT_END_NAMESPACE

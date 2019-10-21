@@ -2,7 +2,6 @@ QT_FOR_CONFIG += widgets
 
 TEMPLATE      = subdirs
 SUBDIRS       = classwizard \
-                configdialog \
                 extension \
                 findfiles \
                 licensewizard \
@@ -14,4 +13,3 @@ SUBDIRS       = classwizard \
 !qtConfig(wizard) {
     SUBDIRS -= trivialwizard licensewizard classwizard
 }
-wince: SUBDIRS += sipdialog

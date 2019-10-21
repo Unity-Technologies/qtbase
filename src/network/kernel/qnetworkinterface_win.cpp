@@ -56,39 +56,17 @@
 // (http://sourceforge.net/p/mingw-w64/mailman/message/32935366/)
 #include <winsock2.h>
 #include <ws2ipdef.h>
+#include <wincrypt.h>
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
 
 #include <qt_windows.h>
 
+// In case these aren't defined
+#define IF_TYPE_IEEE80216_WMAN  237
+#define IF_TYPE_IEEE802154      259
+
 QT_BEGIN_NAMESPACE
-
-typedef NETIO_STATUS (WINAPI *PtrConvertInterfaceIndexToLuid)(NET_IFINDEX, PNET_LUID);
-typedef NETIO_STATUS (WINAPI *PtrConvertInterfaceLuidToName)(const NET_LUID *, PWSTR, SIZE_T);
-typedef NETIO_STATUS (WINAPI *PtrConvertInterfaceLuidToIndex)(const NET_LUID *, PNET_IFINDEX);
-typedef NETIO_STATUS (WINAPI *PtrConvertInterfaceNameToLuid)(const WCHAR *, PNET_LUID);
-static PtrConvertInterfaceIndexToLuid ptrConvertInterfaceIndexToLuid = 0;
-static PtrConvertInterfaceLuidToName ptrConvertInterfaceLuidToName = 0;
-static PtrConvertInterfaceLuidToIndex ptrConvertInterfaceLuidToIndex = 0;
-static PtrConvertInterfaceNameToLuid ptrConvertInterfaceNameToLuid = 0;
-
-static void resolveLibs()
-{
-    // try to find the functions we need from Iphlpapi.dll
-    static bool done = false;
-
-    if (!done) {
-        HINSTANCE iphlpapiHnd = GetModuleHandle(L"iphlpapi");
-        Q_ASSERT(iphlpapiHnd);
-
-        // since Windows Vista
-        ptrConvertInterfaceIndexToLuid = (PtrConvertInterfaceIndexToLuid)GetProcAddress(iphlpapiHnd, "ConvertInterfaceIndexToLuid");
-        ptrConvertInterfaceLuidToName = (PtrConvertInterfaceLuidToName)GetProcAddress(iphlpapiHnd, "ConvertInterfaceLuidToNameW");
-        ptrConvertInterfaceLuidToIndex = (PtrConvertInterfaceLuidToIndex)GetProcAddress(iphlpapiHnd, "ConvertInterfaceLuidToIndex");
-        ptrConvertInterfaceNameToLuid = (PtrConvertInterfaceNameToLuid)GetProcAddress(iphlpapiHnd, "ConvertInterfaceNameToLuidW");
-        done = true;
-    }
-}
 
 static QHostAddress addressFromSockaddr(sockaddr *sa)
 {
@@ -96,102 +74,55 @@ static QHostAddress addressFromSockaddr(sockaddr *sa)
     if (!sa)
         return address;
 
-    if (sa->sa_family == AF_INET)
-        address.setAddress(htonl(((sockaddr_in *)sa)->sin_addr.s_addr));
-    else if (sa->sa_family == AF_INET6) {
-        address.setAddress(((sockaddr_in6 *)sa)->sin6_addr.s6_addr);
-        int scope = ((sockaddr_in6 *)sa)->sin6_scope_id;
-        if (scope)
-            address.setScopeId(QNetworkInterfaceManager::interfaceNameFromIndex(scope));
-    } else
+    if (sa->sa_family == AF_INET) {
+        address.setAddress(htonl(reinterpret_cast<const sockaddr_in *>(sa)->sin_addr.s_addr));
+    } else if (sa->sa_family == AF_INET6) {
+        auto sai6 = reinterpret_cast<const sockaddr_in6 *>(sa);
+        address.setAddress(sai6->sin6_addr.s6_addr);
+        if (sai6->sin6_scope_id)
+            address.setScopeId(QNetworkInterfaceManager::interfaceNameFromIndex(sai6->sin6_scope_id));
+    } else {
         qWarning("Got unknown socket family %d", sa->sa_family);
+    }
     return address;
 
 }
 
 uint QNetworkInterfaceManager::interfaceIndexFromName(const QString &name)
 {
-    resolveLibs();
-    if (!ptrConvertInterfaceNameToLuid || !ptrConvertInterfaceLuidToIndex)
-        return 0;
-
     NET_IFINDEX id;
     NET_LUID luid;
-    if (ptrConvertInterfaceNameToLuid(reinterpret_cast<const wchar_t *>(name.constData()), &luid) == NO_ERROR
-            && ptrConvertInterfaceLuidToIndex(&luid, &id) == NO_ERROR)
+    if (ConvertInterfaceNameToLuidW(reinterpret_cast<const wchar_t *>(name.constData()), &luid) == NO_ERROR
+            && ConvertInterfaceLuidToIndex(&luid, &id) == NO_ERROR)
         return uint(id);
     return 0;
 }
 
 QString QNetworkInterfaceManager::interfaceNameFromIndex(uint index)
 {
-    resolveLibs();
-    if (ptrConvertInterfaceIndexToLuid && ptrConvertInterfaceLuidToName) {
-        NET_LUID luid;
-        if (ptrConvertInterfaceIndexToLuid(index, &luid) == NO_ERROR) {
-            WCHAR buf[IF_MAX_STRING_SIZE + 1];
-            if (ptrConvertInterfaceLuidToName(&luid, buf, sizeof(buf)/sizeof(buf[0])) == NO_ERROR)
-                return QString::fromWCharArray(buf);
-        }
+    NET_LUID luid;
+    if (ConvertInterfaceIndexToLuid(index, &luid) == NO_ERROR) {
+        WCHAR buf[IF_MAX_STRING_SIZE + 1];
+        if (ConvertInterfaceLuidToNameW(&luid, buf, sizeof(buf)/sizeof(buf[0])) == NO_ERROR)
+            return QString::fromWCharArray(buf);
     }
-
     return QString::number(index);
 }
 
-static QHash<QHostAddress, QHostAddress> ipv4Netmasks()
-{
-    //Retrieve all the IPV4 addresses & netmasks
-    IP_ADAPTER_INFO staticBuf[2]; // 2 is arbitrary
-    PIP_ADAPTER_INFO pAdapter = staticBuf;
-    ULONG bufSize = sizeof staticBuf;
-    QHash<QHostAddress, QHostAddress> ipv4netmasks;
-
-    DWORD retval = GetAdaptersInfo(pAdapter, &bufSize);
-    if (retval == ERROR_BUFFER_OVERFLOW) {
-        // need more memory
-        pAdapter = (IP_ADAPTER_INFO *)malloc(bufSize);
-        if (!pAdapter)
-            return ipv4netmasks;
-        // try again
-        if (GetAdaptersInfo(pAdapter, &bufSize) != ERROR_SUCCESS) {
-            free(pAdapter);
-            return ipv4netmasks;
-        }
-    } else if (retval != ERROR_SUCCESS) {
-        // error
-        return ipv4netmasks;
-    }
-
-    // iterate over the list and add the entries to our listing
-    for (PIP_ADAPTER_INFO ptr = pAdapter; ptr; ptr = ptr->Next) {
-        for (PIP_ADDR_STRING addr = &ptr->IpAddressList; addr; addr = addr->Next) {
-            QHostAddress address(QLatin1String(addr->IpAddress.String));
-            QHostAddress mask(QLatin1String(addr->IpMask.String));
-            ipv4netmasks[address] = mask;
-        }
-    }
-    if (pAdapter != staticBuf)
-        free(pAdapter);
-
-    return ipv4netmasks;
-
-}
-
-static QList<QNetworkInterfacePrivate *> interfaceListingWinXP()
+static QList<QNetworkInterfacePrivate *> interfaceListing()
 {
     QList<QNetworkInterfacePrivate *> interfaces;
     IP_ADAPTER_ADDRESSES staticBuf[2]; // 2 is arbitrary
     PIP_ADAPTER_ADDRESSES pAdapter = staticBuf;
     ULONG bufSize = sizeof staticBuf;
 
-    const QHash<QHostAddress, QHostAddress> &ipv4netmasks = ipv4Netmasks();
     ULONG flags = GAA_FLAG_INCLUDE_PREFIX |
                   GAA_FLAG_SKIP_DNS_SERVER |
                   GAA_FLAG_SKIP_MULTICAST;
     ULONG retval = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, pAdapter, &bufSize);
     if (retval == ERROR_BUFFER_OVERFLOW) {
         // need more memory
-        pAdapter = (IP_ADAPTER_ADDRESSES *)malloc(bufSize);
+        pAdapter = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(malloc(bufSize));
         if (!pAdapter)
             return interfaces;
         // try again
@@ -206,15 +137,22 @@ static QList<QNetworkInterfacePrivate *> interfaceListingWinXP()
 
     // iterate over the list and add the entries to our listing
     for (PIP_ADAPTER_ADDRESSES ptr = pAdapter; ptr; ptr = ptr->Next) {
+        // the structure grows over time, so let's make sure the fields
+        // introduced in Windows Vista are present (Luid is the furthest
+        // field we access from IP_ADAPTER_ADDRESSES_LH)
+        Q_ASSERT(ptr->Length >= offsetof(IP_ADAPTER_ADDRESSES, Luid));
+        Q_ASSERT(ptr->Length >= offsetof(IP_ADAPTER_ADDRESSES, Ipv6IfIndex));
+
         QNetworkInterfacePrivate *iface = new QNetworkInterfacePrivate;
         interfaces << iface;
 
         iface->index = 0;
-        if (ptr->Length >= offsetof(IP_ADAPTER_ADDRESSES, Ipv6IfIndex) && ptr->Ipv6IfIndex != 0)
+        if (ptr->Ipv6IfIndex != 0)
             iface->index = ptr->Ipv6IfIndex;
         else if (ptr->IfIndex != 0)
             iface->index = ptr->IfIndex;
 
+        iface->mtu = qMin<qint64>(ptr->Mtu, INT_MAX);
         iface->flags = QNetworkInterface::CanBroadcast;
         if (ptr->OperStatus == IfOperStatusUp)
             iface->flags |= QNetworkInterface::IsUp | QNetworkInterface::IsRunning;
@@ -223,13 +161,50 @@ static QList<QNetworkInterfacePrivate *> interfaceListingWinXP()
         if (ptr->IfType == IF_TYPE_PPP)
             iface->flags |= QNetworkInterface::IsPointToPoint;
 
-        if (ptrConvertInterfaceLuidToName && ptr->Length >= offsetof(IP_ADAPTER_ADDRESSES, Luid)) {
-            // use ConvertInterfaceLuidToName because that returns a friendlier name, though not
-            // as friendly as FriendlyName below
-            WCHAR buf[IF_MAX_STRING_SIZE + 1];
-            if (ptrConvertInterfaceLuidToName(&ptr->Luid, buf, sizeof(buf)/sizeof(buf[0])) == NO_ERROR)
-                iface->name = QString::fromWCharArray(buf);
+        switch (ptr->IfType) {
+        case IF_TYPE_ETHERNET_CSMACD:
+            iface->type = QNetworkInterface::Ethernet;
+            break;
+
+        case IF_TYPE_FDDI:
+            iface->type = QNetworkInterface::Fddi;
+            break;
+
+        case IF_TYPE_PPP:
+            iface->type = QNetworkInterface::Ppp;
+            break;
+
+        case IF_TYPE_SLIP:
+            iface->type = QNetworkInterface::Slip;
+            break;
+
+        case IF_TYPE_SOFTWARE_LOOPBACK:
+            iface->type = QNetworkInterface::Loopback;
+            iface->flags |= QNetworkInterface::IsLoopBack;
+            break;
+
+        case IF_TYPE_IEEE80211:
+            iface->type = QNetworkInterface::Ieee80211;
+            break;
+
+        case IF_TYPE_IEEE1394:
+            iface->type = QNetworkInterface::Ieee1394;
+            break;
+
+        case IF_TYPE_IEEE80216_WMAN:
+            iface->type = QNetworkInterface::Ieee80216;
+            break;
+
+        case IF_TYPE_IEEE802154:
+            iface->type = QNetworkInterface::Ieee802154;
+            break;
         }
+
+        // use ConvertInterfaceLuidToNameW because that returns a friendlier name, though not
+        // as "friendly" as FriendlyName below
+        WCHAR buf[IF_MAX_STRING_SIZE + 1];
+        if (ConvertInterfaceLuidToNameW(&ptr->Luid, buf, sizeof(buf)/sizeof(buf[0])) == NO_ERROR)
+            iface->name = QString::fromWCharArray(buf);
         if (iface->name.isEmpty())
             iface->name = QString::fromLocal8Bit(ptr->AdapterName);
 
@@ -237,32 +212,29 @@ static QList<QNetworkInterfacePrivate *> interfaceListingWinXP()
         if (ptr->PhysicalAddressLength)
             iface->hardwareAddress = iface->makeHwAddress(ptr->PhysicalAddressLength,
                                                           ptr->PhysicalAddress);
-        else
-            // loopback if it has no address
-            iface->flags |= QNetworkInterface::IsLoopBack;
 
-        // The GetAdaptersAddresses call has an interesting semantic:
-        // It can return a number N of addresses and a number M of prefixes.
-        // But if you have IPv6 addresses, generally N > M.
-        // I cannot find a way to relate the Address to the Prefix, aside from stopping
-        // the iteration at the last Prefix entry and assume that it applies to all addresses
-        // from that point on.
-        PIP_ADAPTER_PREFIX pprefix = 0;
-        if (ptr->Length >= offsetof(IP_ADAPTER_ADDRESSES, FirstPrefix))
-            pprefix = ptr->FirstPrefix;
+        // parse the IP (unicast) addresses
         for (PIP_ADAPTER_UNICAST_ADDRESS addr = ptr->FirstUnicastAddress; addr; addr = addr->Next) {
+            Q_ASSERT(addr->Length >= offsetof(IP_ADAPTER_UNICAST_ADDRESS, OnLinkPrefixLength));
+
+            // skip addresses in invalid state
+            if (addr->DadState == IpDadStateInvalid)
+                continue;
+
             QNetworkAddressEntry entry;
             entry.setIp(addressFromSockaddr(addr->Address.lpSockaddr));
-            if (pprefix) {
-                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
-                    entry.setNetmask(ipv4netmasks[entry.ip()]);
+            entry.setPrefixLength(addr->OnLinkPrefixLength);
 
-                    // broadcast address is set on postProcess()
-                } else { //IPV6
-                    entry.setPrefixLength(pprefix->PrefixLength);
-                }
-                pprefix = pprefix->Next ? pprefix->Next : pprefix;
-            }
+            auto toDeadline = [](ULONG lifetime) -> QDeadlineTimer {
+                if (lifetime == 0xffffffffUL)
+                    return QDeadlineTimer::Forever;
+                return QDeadlineTimer(lifetime * 1000);
+            };
+            entry.setAddressLifetime(toDeadline(addr->ValidLifetime), toDeadline(addr->PreferredLifetime));
+            entry.setDnsEligibility(addr->Flags & IP_ADAPTER_ADDRESS_DNS_ELIGIBLE ?
+                                        QNetworkAddressEntry::DnsEligible :
+                                        QNetworkAddressEntry::DnsIneligible);
+
             iface->addressEntries << entry;
         }
     }
@@ -275,19 +247,16 @@ static QList<QNetworkInterfacePrivate *> interfaceListingWinXP()
 
 QList<QNetworkInterfacePrivate *> QNetworkInterfaceManager::scan()
 {
-    resolveLibs();
-    return interfaceListingWinXP();
+    return interfaceListing();
 }
 
 QString QHostInfo::localDomainName()
 {
-    resolveLibs();
-
     FIXED_INFO info, *pinfo;
     ULONG bufSize = sizeof info;
     pinfo = &info;
     if (GetNetworkParams(pinfo, &bufSize) == ERROR_BUFFER_OVERFLOW) {
-        pinfo = (FIXED_INFO *)malloc(bufSize);
+        pinfo = reinterpret_cast<FIXED_INFO *>(malloc(bufSize));
         if (!pinfo)
             return QString();
         // try again

@@ -289,10 +289,10 @@ void QCosmeticStroker::setup()
     drawCaps = state->lastPen.capStyle() != Qt::FlatCap;
 
     if (strokeSelection & FastDraw) {
-        color = multiplyAlpha256(state->penData.solid.color, opacity).toArgb32();
+        color = multiplyAlpha256(state->penData.solidColor, opacity).toArgb32();
         QRasterBuffer *buffer = state->penData.rasterBuffer;
         pixels = (uint *)buffer->buffer();
-        ppl = buffer->bytesPerLine()>>2;
+        ppl = buffer->stride<quint32>();
     }
 
     // line drawing produces different results with different clips, so

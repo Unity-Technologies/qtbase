@@ -68,6 +68,7 @@ public:
         Monospace,
         Fantasy
     };
+    Q_ENUM(StyleHint)
 
     enum StyleStrategy {
         PreferDefault       = 0x0001,
@@ -82,6 +83,7 @@ public:
         OpenGLCompatible    = 0x0200,
         ForceIntegerMetrics = 0x0400,
         NoSubpixelAntialias = 0x0800,
+        PreferNoShaping     = 0x1000,
         NoFontMerging       = 0x8000
     };
     Q_ENUM(StyleStrategy)
@@ -92,6 +94,7 @@ public:
         PreferVerticalHinting       = 2,
         PreferFullHinting           = 3
     };
+    Q_ENUM(HintingPreference)
 
     // Mapping OpenType weight value.
     enum Weight {
@@ -105,12 +108,14 @@ public:
         ExtraBold = 81,  // 800
         Black    = 87    // 900
     };
+    Q_ENUM(Weight)
 
     enum Style {
         StyleNormal,
         StyleItalic,
         StyleOblique
     };
+    Q_ENUM(Style)
 
     enum Stretch {
         AnyStretch     =   0,
@@ -124,6 +129,7 @@ public:
         ExtraExpanded  = 150,
         UltraExpanded  = 200
     };
+    Q_ENUM(Stretch)
 
     enum Capitalization {
         MixedCase,
@@ -132,11 +138,13 @@ public:
         SmallCaps,
         Capitalize
     };
+    Q_ENUM(Capitalization)
 
     enum SpacingType {
         PercentageSpacing,
         AbsoluteSpacing
     };
+    Q_ENUM(SpacingType)
 
     enum ResolveProperties {
         FamilyResolved              = 0x0001,
@@ -156,13 +164,17 @@ public:
         WordSpacingResolved         = 0x4000,
         HintingPreferenceResolved   = 0x8000,
         StyleNameResolved           = 0x10000,
-        AllPropertiesResolved       = 0x1ffff
+        FamiliesResolved            = 0x20000,
+        AllPropertiesResolved       = 0x3ffff
     };
 
     QFont();
     QFont(const QString &family, int pointSize = -1, int weight = -1, bool italic = false);
-    QFont(const QFont &, QPaintDevice *pd);
-    QFont(const QFont &);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QFont(const QFont &font, QPaintDevice *pd);
+#endif
+    QFont(const QFont &font, const QPaintDevice *pd);
+    QFont(const QFont &font);
     ~QFont();
 
     void swap(QFont &other)
@@ -170,6 +182,9 @@ public:
 
     QString family() const;
     void setFamily(const QString &);
+
+    QStringList families() const;
+    void setFamilies(const QStringList &);
 
     QString styleName() const;
     void setStyleName(const QString &);
@@ -274,8 +289,10 @@ public:
     static void cacheStatistics();
 
     QString defaultFamily() const;
-    QString lastResortFamily() const;
-    QString lastResortFont() const;
+#if QT_DEPRECATED_SINCE(5, 13)
+    QT_DEPRECATED QString lastResortFamily() const;
+    QT_DEPRECATED QString lastResortFont() const;
+#endif
 
     QFont resolve(const QFont &) const;
     inline uint resolve() const { return resolve_mask; }

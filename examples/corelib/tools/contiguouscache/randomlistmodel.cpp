@@ -48,7 +48,7 @@
 **
 ****************************************************************************/
 #include "randomlistmodel.h"
-#include <stdlib.h>
+#include <QRandomGenerator>
 
 static const int bufferSize(500);
 static const int lookAhead(100);
@@ -101,6 +101,6 @@ void RandomListModel::cacheRows(int from, int to) const
 //![1]
 QString RandomListModel::fetchRow(int position) const
 {
-    return QString::number(rand() % ++position);
+    return QString::number(QRandomGenerator::global()->bounded(++position));
 }
 //![1]

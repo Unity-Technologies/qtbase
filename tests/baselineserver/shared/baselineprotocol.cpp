@@ -235,7 +235,7 @@ quint64 ImageItem::computeChecksum(const QImage &image)
 
     quint32 h1 = 0xfeedbacc;
     quint32 h2 = 0x21604894;
-    hashword2((const quint32 *)img.constBits(), img.byteCount()/4, &h1, &h2);
+    hashword2((const quint32 *)img.constBits(), img.sizeInBytes()/4, &h1, &h2);
     return (quint64(h1) << 32) | h2;
 }
 
@@ -366,7 +366,7 @@ bool BaselineProtocol::connect(const QString &testCase, bool *dryrun, const Plat
     if (!socket.waitForConnected(Timeout)) {
         sysSleep(3000);  // Wait a bit and try again, the server might just be restarting
         if (!socket.waitForConnected(Timeout)) {
-            errMsg += QLS("TCP connectToHost failed. Host:") + serverName + QLS(" port:") + QString::number(ServerPort);
+            errMsg += QLS("TCP connectToHost failed. Host:") + QLS(serverName) + QLS(" port:") + QString::number(ServerPort);
             return false;
         }
     }

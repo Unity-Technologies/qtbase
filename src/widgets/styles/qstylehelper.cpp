@@ -403,12 +403,25 @@ QColor backgroundColor(const QPalette &pal, const QWidget* widget)
     return pal.color(QPalette::Base);
 }
 
-QWindow *styleObjectWindow(QObject *so)
+WidgetSizePolicy widgetSizePolicy(const QWidget *widget, const QStyleOption *opt)
 {
-    if (so)
-        return so->property("_q_styleObjectWindow").value<QWindow *>();
+    while (widget) {
+        if (widget->testAttribute(Qt::WA_MacMiniSize)) {
+            return SizeMini;
+        } else if (widget->testAttribute(Qt::WA_MacSmallSize)) {
+            return SizeSmall;
+        } else if (widget->testAttribute(Qt::WA_MacNormalSize)) {
+            return SizeLarge;
+        }
+        widget = widget->parentWidget();
+    }
 
-    return 0;
+    if (opt && opt->state & QStyle::State_Mini)
+        return SizeMini;
+    else if (opt && opt->state & QStyle::State_Small)
+        return SizeSmall;
+
+    return SizeDefault;
 }
 
 }

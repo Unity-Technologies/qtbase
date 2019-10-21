@@ -69,7 +69,7 @@ static inline QString moduleHeader(const QString &module, const QString &header)
 namespace CPP {
 
 WriteIncludes::WriteIncludes(Uic *uic)
-    : m_uic(uic), m_output(uic->output()), m_scriptsActivated(false), m_laidOut(false)
+    : m_uic(uic), m_output(uic->output()), m_laidOut(false)
 {
     // When possible (no namespace) use the "QtModule/QClass" convention
     // and create a re-mapping of the old header "qclass.h" to it. Do not do this
@@ -92,7 +92,6 @@ WriteIncludes::WriteIncludes(Uic *uic)
 
 void WriteIncludes::acceptUI(DomUI *node)
 {
-    m_scriptsActivated = false;
     m_laidOut = false;
     m_localIncludes.clear();
     m_globalIncludes.clear();
@@ -107,10 +106,9 @@ void WriteIncludes::acceptUI(DomUI *node)
 
     add(QLatin1String("QApplication"));
     add(QLatin1String("QVariant"));
-    add(QLatin1String("QAction"));
 
-    add(QLatin1String("QButtonGroup")); // ### only if it is really necessary
-    add(QLatin1String("QHeaderView"));
+    if (node->elementButtonGroups())
+        add(QLatin1String("QButtonGroup"));
 
     TreeWalker::acceptUI(node);
 
@@ -121,7 +119,7 @@ void WriteIncludes::acceptUI(DomUI *node)
     writeHeaders(m_globalIncludes, true);
     writeHeaders(m_localIncludes, false);
 
-    m_output << QLatin1Char('\n');
+    m_output << '\n';
 }
 
 void WriteIncludes::acceptWidget(DomWidget *node)
@@ -152,6 +150,8 @@ void WriteIncludes::acceptProperty(DomProperty *node)
         add(QLatin1String("QDate"));
     if (node->kind() == DomProperty::Locale)
         add(QLatin1String("QLocale"));
+    if (node->kind() == DomProperty::IconSet)
+        add(QLatin1String("QIcon"));
     TreeWalker::acceptProperty(node);
 }
 
@@ -213,7 +213,15 @@ void WriteIncludes::add(const QString &className, bool determineHeader, const QS
 
     m_knownClasses.insert(className);
 
-    if (!m_laidOut && m_uic->customWidgetsInfo()->extends(className, QLatin1String("QToolBox")))
+    const CustomWidgetsInfo *cwi = m_uic->customWidgetsInfo();
+    static const QStringList treeViewsWithHeaders = {
+        QLatin1String("QTreeView"), QLatin1String("QTreeWidget"),
+        QLatin1String("QTableView"), QLatin1String("QTableWidget")
+    };
+    if (cwi->extendsOneOf(className, treeViewsWithHeaders))
+        add(QLatin1String("QHeaderView"));
+
+    if (!m_laidOut && cwi->extends(className, QLatin1String("QToolBox")))
         add(QLatin1String("QLayout")); // spacing property of QToolBox)
 
     if (className == QLatin1String("Line")) { // ### hmm, deprecate me!
@@ -231,10 +239,6 @@ void WriteIncludes::acceptCustomWidget(DomCustomWidget *node)
     if (className.isEmpty())
         return;
 
-    if (const DomScript *domScript = node->elementScript())
-        if (!domScript->text().isEmpty())
-            activateScripts();
-
     if (!node->elementHeader() || node->elementHeader()->text().isEmpty()) {
         add(className, false); // no header specified
     } else {
@@ -247,6 +251,24 @@ void WriteIncludes::acceptCustomWidget(DomCustomWidget *node)
         }
         add(className, true, header, global);
     }
+}
+
+void WriteIncludes::acceptActionGroup(DomActionGroup *node)
+{
+    add(QLatin1String("QAction"));
+    TreeWalker::acceptActionGroup(node);
+}
+
+void WriteIncludes::acceptAction(DomAction *node)
+{
+    add(QLatin1String("QAction"));
+    TreeWalker::acceptAction(node);
+}
+
+void WriteIncludes::acceptActionRef(DomActionRef *node)
+{
+    add(QLatin1String("QAction"));
+    TreeWalker::acceptActionRef(node);
 }
 
 void WriteIncludes::acceptCustomWidgets(DomCustomWidgets *node)
@@ -292,25 +314,10 @@ void WriteIncludes::writeHeaders(const OrderedSet &headers, bool global)
         const QString value = m_oldHeaderToNewHeader.value(header, header);
         const auto trimmed = QStringRef(&value).trimmed();
         if (!trimmed.isEmpty())
-            m_output << "#include " << openingQuote << trimmed << closingQuote << QLatin1Char('\n');
+            m_output << "#include " << openingQuote << trimmed << closingQuote << '\n';
     }
 }
 
-void WriteIncludes::acceptWidgetScripts(const DomScripts &scripts, DomWidget *, const  DomWidgets &)
-{
-    if (!scripts.empty()) {
-        activateScripts();
-    }
-}
-
-void WriteIncludes::activateScripts()
-{
-    if (!m_scriptsActivated) {
-        add(QLatin1String("QScriptEngine"));
-        add(QLatin1String("QDebug"));
-        m_scriptsActivated = true;
-    }
-}
 } // namespace CPP
 
 QT_END_NAMESPACE

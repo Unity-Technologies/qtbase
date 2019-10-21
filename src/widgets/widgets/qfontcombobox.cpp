@@ -47,6 +47,7 @@
 #include <qapplication.h>
 #include <private/qcombobox_p.h>
 #include <QDesktopWidget>
+#include <private/qdesktopwidget_p.h>
 #include <qdebug.h>
 
 QT_BEGIN_NAMESPACE
@@ -188,10 +189,10 @@ public:
     // painting
     void paint(QPainter *painter,
                const QStyleOptionViewItem &option,
-               const QModelIndex &index) const Q_DECL_OVERRIDE;
+               const QModelIndex &index) const override;
 
     QSize sizeHint(const QStyleOptionViewItem &option,
-                   const QModelIndex &index) const Q_DECL_OVERRIDE;
+                   const QModelIndex &index) const override;
 
     const QIcon truetype;
     const QIcon bitmap;
@@ -235,9 +236,10 @@ void QFontFamilyDelegate::paint(QPainter *painter,
     if (QFontDatabase().isSmoothlyScalable(text)) {
         icon = &truetype;
     }
-    QSize actualSize = icon->actualSize(r.size());
-
-    icon->paint(painter, r, Qt::AlignLeft|Qt::AlignVCenter);
+    const QSize actualSize = icon->actualSize(r.size());
+    const QRect iconRect = QStyle::alignedRect(option.direction, option.displayAlignment,
+                                               actualSize, r);
+    icon->paint(painter, iconRect, Qt::AlignLeft|Qt::AlignVCenter);
     if (option.direction == Qt::RightToLeft)
         r.setRight(r.right() - actualSize.width() - 4);
     else
@@ -246,6 +248,7 @@ void QFontFamilyDelegate::paint(QPainter *painter,
     QFont old = painter->font();
     painter->setFont(font);
 
+    const Qt::Alignment textAlign = QStyle::visualAlignment(option.direction, option.displayAlignment);
     // If the ascent of the font is larger than the height of the rect,
     // we will clip the text, so it's better to align the tight bounding rect in this case
     // This is specifically for fonts where the ascent is very large compared to
@@ -253,23 +256,25 @@ void QFontFamilyDelegate::paint(QPainter *painter,
     QFontMetricsF fontMetrics(font);
     if (fontMetrics.ascent() > r.height()) {
         QRectF tbr = fontMetrics.tightBoundingRect(text);
-        painter->drawText(r.x(), r.y() + (r.height() + tbr.height()) / 2.0, text);
+        QRect textRect(r);
+        textRect.setHeight(textRect.height() + (r.height() - tbr.height()));
+        painter->drawText(textRect, Qt::AlignBottom|Qt::TextSingleLine|textAlign, text);
     } else {
-        painter->drawText(r, Qt::AlignVCenter|Qt::AlignLeading|Qt::TextSingleLine, text);
+        painter->drawText(r, Qt::AlignVCenter|Qt::TextSingleLine|textAlign, text);
     }
 
     if (writingSystem != QFontDatabase::Any)
         system = writingSystem;
 
     if (system != QFontDatabase::Any) {
-        int w = painter->fontMetrics().width(text + QLatin1String("  "));
+        int w = painter->fontMetrics().horizontalAdvance(text + QLatin1String("  "));
         painter->setFont(font2);
         QString sample = QFontDatabase().writingSystemSample(system);
         if (option.direction == Qt::RightToLeft)
             r.setRight(r.right() - w);
         else
             r.setLeft(r.left() + w);
-        painter->drawText(r, Qt::AlignVCenter|Qt::AlignLeading|Qt::TextSingleLine, sample);
+        painter->drawText(r, Qt::AlignVCenter|Qt::TextSingleLine|textAlign, sample);
     }
     painter->setFont(old);
 
@@ -286,7 +291,7 @@ QSize QFontFamilyDelegate::sizeHint(const QStyleOptionViewItem &option,
 //     font.setFamily(text);
     font.setPointSize(QFontInfo(font).pointSize() * 3/2);
     QFontMetrics fontMetrics(font);
-    return QSize(fontMetrics.width(text), fontMetrics.height());
+    return QSize(fontMetrics.horizontalAdvance(text), fontMetrics.height());
 }
 
 
@@ -523,7 +528,7 @@ void QFontComboBox::setCurrentFont(const QFont &font)
 }
 
 /*!
-    \fn QFontComboBox::currentFontChanged(const QFont &font)
+    \fn void QFontComboBox::currentFontChanged(const QFont &font)
 
     This signal is emitted whenever the current font changes, with
     the new \a font.
@@ -540,7 +545,7 @@ bool QFontComboBox::event(QEvent *e)
         QListView *lview = qobject_cast<QListView*>(view());
         if (lview) {
             lview->window()->setFixedWidth(qMin(width() * 5 / 3,
-                               QApplication::desktop()->availableGeometry(lview).width()));
+                               QDesktopWidgetPrivate::availableGeometry(lview).width()));
         }
     }
     return QComboBox::event(e);
@@ -553,7 +558,7 @@ QSize QFontComboBox::sizeHint() const
 {
     QSize sz = QComboBox::sizeHint();
     QFontMetrics fm(font());
-    sz.setWidth(fm.width(QLatin1Char('m'))*14);
+    sz.setWidth(fm.horizontalAdvance(QLatin1Char('m'))*14);
     return sz;
 }
 

@@ -186,6 +186,8 @@ QT_BEGIN_NAMESPACE
     \value Unicode_6_3  Version 6.3  Since Qt 5.3
     \value Unicode_7_0  Version 7.0  Since Qt 5.5
     \value Unicode_8_0  Version 8.0  Since Qt 5.6
+    \value Unicode_9_0  Version 9.0  Since Qt 5.11
+    \value Unicode_10_0 Version 10.0 Since Qt 5.11
     \value Unicode_Unassigned  The value is not assigned to any character
                                in version 8.0 of Unicode.
 
@@ -414,6 +416,16 @@ QT_BEGIN_NAMESPACE
     \value Script_Multani
     \value Script_OldHungarian
     \value Script_SignWriting
+    \value Script_Adlam
+    \value Script_Bhaiksuki
+    \value Script_Marchen
+    \value Script_Newa
+    \value Script_Osage
+    \value Script_Tangut
+    \value Script_MasaramGondi
+    \value Script_Nushu
+    \value Script_Soyombo
+    \value Script_ZanabazarSquare
 
     \omitvalue ScriptCount
 
@@ -608,6 +620,22 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+    \fn QChar::QChar(char16_t ch)
+    \since 5.10
+
+    Constructs a QChar corresponding to the UTF-16 character \a ch.
+*/
+
+/*!
+    \fn QChar::QChar(wchar_t ch)
+    \since 5.10
+
+    Constructs a QChar corresponding to the wide character \a ch.
+
+    \note This constructor is only available on Windows.
+*/
+
+/*!
     \fn QChar::QChar(char ch)
 
     Constructs a QChar corresponding to ASCII/Latin-1 character \a ch.
@@ -624,7 +652,7 @@ QT_BEGIN_NAMESPACE
     Constructs a QChar corresponding to ASCII/Latin-1 character \a ch.
 
     \note This constructor is not available when \c QT_NO_CAST_FROM_ASCII
-    or QT_RESTRICTED_CAST_FROM_ASCII is defined.
+    or \c QT_RESTRICTED_CAST_FROM_ASCII is defined.
 
     \sa QT_NO_CAST_FROM_ASCII, QT_RESTRICTED_CAST_FROM_ASCII
 */
@@ -1530,6 +1558,11 @@ static inline uint foldCase(uint ch, uint &last) Q_DECL_NOTHROW
 static inline ushort foldCase(ushort ch) Q_DECL_NOTHROW
 {
     return convertCase_helper<QUnicodeTables::CasefoldTraits>(ch);
+}
+
+static inline QChar foldCase(QChar ch) Q_DECL_NOTHROW
+{
+    return QChar(foldCase(ch.unicode()));
 }
 
 /*!

@@ -29,14 +29,10 @@
 #include <qtest.h>
 #include <QPainter>
 #include <QPixmap>
-#include <QDialog>
 #include <QImage>
 #include <QPaintEngine>
 #include <QTileRules>
-#include <math.h>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include <qmath.h>
 
 #include <private/qpixmap_raster_p.h>
 
@@ -131,7 +127,7 @@ QPixmap rasterPixmap(const QImage &image)
     QPlatformPixmap *data =
         new QRasterPlatformPixmap(QPlatformPixmap::PixmapType);
 
-    data->fromImage(image, Qt::AutoColor);
+    data->fromImage(image, Qt::AutoColor | Qt::NoFormatConversion);
 
     return QPixmap(data);
 }
@@ -617,9 +613,7 @@ void tst_QPainter::drawPixmapImage_data_helper(bool pixmaps)
     QTest::addColumn<int>("type"); // 0 = circle, 1 = diag line, 2 = solid rect, 3 = alpharect
 
     QList<QSize> sizes;
-    sizes << QSize(1, 1)
-          << QSize(10, 10)
-          << QSize(100, 100)
+    sizes << QSize(10, 10)
           << QSize(1000, 1000);
 
     const char *typeNames[] = {
@@ -655,13 +649,15 @@ void tst_QPainter::drawPixmapImage_data_helper(bool pixmaps)
         "A2RGB30_pm",
         "Alpha8",
         "Grayscale8",
+        "RGBx64",
+        "RGBA64",
+        "RGBA64_pm",
     };
 
     const QImage::Format pixmapFormats[] = {
         QImage::Format_RGB32,
         QImage::Format_ARGB32_Premultiplied,
         QImage::Format_RGB16,
-        QImage::Format_ARGB8565_Premultiplied,
         QImage::Format_BGR30,
         QImage::Format_Invalid
     };
@@ -686,12 +682,9 @@ void tst_QPainter::drawPixmapImage_data_helper(bool pixmaps)
         QImage::Format_ARGB32,
         QImage::Format_ARGB32_Premultiplied,
         QImage::Format_RGB16,
-        QImage::Format_ARGB8565_Premultiplied,
         QImage::Format_RGB888,
         QImage::Format_RGBX8888,
         QImage::Format_RGBA8888,
-        QImage::Format_RGBA8888_Premultiplied,
-        QImage::Format_A2BGR30_Premultiplied,
         QImage::Format_RGB30,
         QImage::Format_Grayscale8,
         QImage::Format_Invalid
@@ -1232,7 +1225,7 @@ QTransform tst_QPainter::transformForAngle(qreal angle)
     QTransform rotTrans2;
     rotTrans2.translate(40, 0);
 
-    qreal rad = angle * 2. * M_PI / 360.;
+    qreal rad = qDegreesToRadians(angle);
     qreal c = ::cos(rad);
     qreal s = ::sin(rad);
 

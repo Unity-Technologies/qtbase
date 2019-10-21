@@ -62,6 +62,7 @@ private slots:
 #ifndef QT_NO_WIDGETS
     void infiniteLoop();
 #endif
+    void emptyMovie();
 };
 
 // Testing get/set functions
@@ -170,6 +171,16 @@ void tst_QMovie::playMovie()
     QCOMPARE(movie.state(), QMovie::NotRunning);
     QCOMPARE(movie.frameCount(), frameCount);
 #endif
+
+    movie.stop();
+    QSignalSpy finishedSpy(&movie, &QMovie::finished);
+    movie.setSpeed(0);
+    movie.start();
+    QCOMPARE(movie.state(), QMovie::Running);
+    QTestEventLoop::instance().enterLoop(2);
+    QCOMPARE(finishedSpy.count(), 0);
+    QCOMPARE(movie.state(), QMovie::Running);
+    QCOMPARE(movie.currentFrameNumber(), 0);
 }
 
 void tst_QMovie::jumpToFrame_data()
@@ -209,6 +220,14 @@ void tst_QMovie::infiniteLoop()
     QTestEventLoop::instance().timeout();
 }
 #endif
+
+void tst_QMovie::emptyMovie()
+{
+    QMovie movie;
+    movie.setCacheMode(QMovie::CacheAll);
+    movie.jumpToFrame(100);
+    QCOMPARE(movie.currentFrameNumber(), -1);
+}
 
 QTEST_MAIN(tst_QMovie)
 #include "tst_qmovie.moc"

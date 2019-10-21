@@ -50,11 +50,11 @@
 
 #include "glbuffers.h"
 #include <QtGui/qmatrix4x4.h>
-
+#include <QtCore/qmath.h>
 
 void qgluPerspective(GLdouble fovy, GLdouble aspect, GLdouble zNear, GLdouble zFar)
 {
-    const GLdouble ymax = zNear * tan(fovy * M_PI / 360.0);
+    const GLdouble ymax = zNear * tan(qDegreesToRadians(fovy) / 2.0);
     const GLdouble ymin = -ymax;
     const GLdouble xmin = ymin * aspect;
     const GLdouble xmax = ymax * aspect;
@@ -218,14 +218,14 @@ GLTextureCube::GLTextureCube(int size)
     glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }
 
-GLTextureCube::GLTextureCube(const QStringList& fileNames, int size)
+GLTextureCube::GLTextureCube(const QStringList &fileNames, int size)
 {
     // TODO: Add error handling.
 
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_texture);
 
     int index = 0;
-    foreach (QString file, fileNames) {
+    for (const QString &file : fileNames) {
         QImage image(file);
         if (image.isNull()) {
             m_failed = true;

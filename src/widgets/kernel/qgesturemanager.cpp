@@ -124,7 +124,7 @@ QGestureManager::~QGestureManager()
 
 Qt::GestureType QGestureManager::registerGestureRecognizer(QGestureRecognizer *recognizer)
 {
-    QGesture *dummy = recognizer->create(0);
+    const QScopedPointer<QGesture> dummy(recognizer->create(nullptr));
     if (Q_UNLIKELY(!dummy)) {
         qWarning("QGestureManager::registerGestureRecognizer: "
                  "the recognizer fails to create a gesture object, skipping registration.");
@@ -136,20 +136,14 @@ Qt::GestureType QGestureManager::registerGestureRecognizer(QGestureRecognizer *r
         ++m_lastCustomGestureId;
         type = Qt::GestureType(m_lastCustomGestureId);
     }
-    m_recognizers.insertMulti(type, recognizer);
-    delete dummy;
+    m_recognizers.insert(type, recognizer);
     return type;
 }
 
 void QGestureManager::unregisterGestureRecognizer(Qt::GestureType type)
 {
     QList<QGestureRecognizer *> list = m_recognizers.values(type);
-    while (QGestureRecognizer *recognizer = m_recognizers.take(type)) {
-        if (!m_obsoleteGestures.contains(recognizer)) {
-            // inserting even an empty QSet will cause the recognizer to be deleted on destruction of the manager
-            m_obsoleteGestures.insert(recognizer, QSet<QGesture *>());
-        }
-    }
+    m_recognizers.remove(type);
     foreach (QGesture *g, m_gestureToRecognizer.keys()) {
         QGestureRecognizer *recognizer = m_gestureToRecognizer.value(g);
         if (list.contains(recognizer)) {
@@ -524,7 +518,7 @@ bool QGestureManager::filterEvent(QWidget *receiver, QEvent *event)
         for(ContextIterator it = w->d_func()->gestureContext.constBegin(),
             e = w->d_func()->gestureContext.constEnd(); it != e; ++it) {
             types.insert(it.key(), 0);
-            contexts.insertMulti(w, it.key());
+            contexts.insert(w, it.key());
         }
     }
     // find all gesture contexts for the widget tree
@@ -536,7 +530,7 @@ bool QGestureManager::filterEvent(QWidget *receiver, QEvent *event)
             if (!(it.value() & Qt::DontStartGestureOnChildren)) {
                 if (!types.contains(it.key())) {
                     types.insert(it.key(), 0);
-                    contexts.insertMulti(w, it.key());
+                    contexts.insert(w, it.key());
                 }
             }
         }
@@ -558,7 +552,7 @@ bool QGestureManager::filterEvent(QGraphicsObject *receiver, QEvent *event)
         for(ContextIterator it = item->QGraphicsItem::d_func()->gestureContext.constBegin(),
             e = item->QGraphicsItem::d_func()->gestureContext.constEnd(); it != e; ++it) {
             types.insert(it.key(), 0);
-            contexts.insertMulti(item, it.key());
+            contexts.insert(item, it.key());
         }
     }
     // find all gesture contexts for the graphics object tree
@@ -571,7 +565,7 @@ bool QGestureManager::filterEvent(QGraphicsObject *receiver, QEvent *event)
             if (!(it.value() & Qt::DontStartGestureOnChildren)) {
                 if (!types.contains(it.key())) {
                     types.insert(it.key(), 0);
-                    contexts.insertMulti(item, it.key());
+                    contexts.insert(item, it.key());
                 }
             }
         }
@@ -775,7 +769,7 @@ void QGestureManager::recycle(QGesture *gesture)
 
 bool QGestureManager::gesturePending(QObject *o)
 {
-    const QGestureManager *gm = QGestureManager::instance();
+    const QGestureManager *gm = QGestureManager::instance(DontForceCreation);
     return gm && gm->m_gestureOwners.key(o);
 }
 

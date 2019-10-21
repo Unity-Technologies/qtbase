@@ -50,6 +50,8 @@
 #include "qelapsedtimer.h"
 #include "qdebug.h"
 
+#include <private/qdesktopwidget_p.h>
+
 QT_BEGIN_NAMESPACE
 
 /*
@@ -69,10 +71,10 @@ public:
     void run(int time);
 
 protected:
-    void paintEvent(QPaintEvent* e) Q_DECL_OVERRIDE;
-    void closeEvent(QCloseEvent*) Q_DECL_OVERRIDE;
+    void paintEvent(QPaintEvent* e) override;
+    void closeEvent(QCloseEvent*) override;
     void alphaBlend();
-    bool eventFilter(QObject *, QEvent *) Q_DECL_OVERRIDE;
+    bool eventFilter(QObject *, QEvent *) override;
 
 protected slots:
     void render();
@@ -96,9 +98,12 @@ static QAlphaWidget* q_blend = 0;
 /*
   Constructs a QAlphaWidget.
 */
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED // QDesktopWidget::screen()
 QAlphaWidget::QAlphaWidget(QWidget* w, Qt::WindowFlags f)
-    : QWidget(QApplication::desktop()->screen(QApplication::desktop()->screenNumber(w)), f)
+    : QWidget(QApplication::desktop()->screen(QDesktopWidgetPrivate::screenNumber(w)), f)
 {
+QT_WARNING_POP
 #ifndef Q_OS_WIN
     setEnabled(false);
 #endif
@@ -346,8 +351,8 @@ public:
     void run(int time);
 
 protected:
-    void paintEvent(QPaintEvent*) Q_DECL_OVERRIDE;
-    void closeEvent(QCloseEvent*) Q_DECL_OVERRIDE;
+    void paintEvent(QPaintEvent*) override;
+    void closeEvent(QCloseEvent*) override;
 
 private slots:
     void scroll();

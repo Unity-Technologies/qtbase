@@ -43,19 +43,13 @@
 #include "qeglfskmsgbmdevice.h"
 #include "qeglfskmsgbmscreen.h"
 #include "qeglfskmsgbmcursor.h"
+#include "qeglfskmsgbmwindow.h"
 #include "private/qeglfscursor_p.h"
 
-#include <QtDeviceDiscoverySupport/private/qdevicediscovery_p.h>
 #include <QtCore/QLoggingCategory>
-#include <QtCore/QJsonDocument>
-#include <QtCore/QJsonObject>
-#include <QtCore/QJsonArray>
-#include <QtGui/qpa/qplatformwindow.h>
-#include <QtGui/qpa/qplatformcursor.h>
 #include <QtGui/QScreen>
+#include <QtDeviceDiscoverySupport/private/qdevicediscovery_p.h>
 
-#include <xf86drm.h>
-#include <xf86drmMode.h>
 #include <gbm.h>
 
 QT_BEGIN_NAMESPACE
@@ -67,20 +61,34 @@ QEglFSKmsGbmIntegration::QEglFSKmsGbmIntegration()
     qCDebug(qLcEglfsKmsDebug, "New DRM/KMS via GBM integration created");
 }
 
-EGLNativeWindowType QEglFSKmsGbmIntegration::createNativeWindow(QPlatformWindow *platformWindow,
-                                                     const QSize &size,
-                                                     const QSurfaceFormat &format)
-{
-    Q_UNUSED(size);
-    Q_UNUSED(format);
+#ifndef EGL_EXT_platform_base
+typedef EGLDisplay (EGLAPIENTRYP PFNEGLGETPLATFORMDISPLAYEXTPROC) (EGLenum platform, void *native_display, const EGLint *attrib_list);
+#endif
 
-    QEglFSKmsGbmScreen *screen = static_cast<QEglFSKmsGbmScreen *>(platformWindow->screen());
-    if (screen->surface()) {
-        qWarning("Only single window per screen supported!");
-        return 0;
+#ifndef EGL_PLATFORM_GBM_KHR
+#define EGL_PLATFORM_GBM_KHR 0x31D7
+#endif
+
+EGLDisplay QEglFSKmsGbmIntegration::createDisplay(EGLNativeDisplayType nativeDisplay)
+{
+    qCDebug(qLcEglfsKmsDebug, "Querying EGLDisplay");
+    EGLDisplay display;
+
+    PFNEGLGETPLATFORMDISPLAYEXTPROC getPlatformDisplay = nullptr;
+    const char *extensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+    if (extensions && (strstr(extensions, "EGL_KHR_platform_gbm") || strstr(extensions, "EGL_MESA_platform_gbm"))) {
+        getPlatformDisplay = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
+            eglGetProcAddress("eglGetPlatformDisplayEXT"));
     }
 
-    return reinterpret_cast<EGLNativeWindowType>(screen->createSurface());
+    if (getPlatformDisplay) {
+        display = getPlatformDisplay(EGL_PLATFORM_GBM_KHR, nativeDisplay, nullptr);
+    } else {
+        qCDebug(qLcEglfsKmsDebug, "No eglGetPlatformDisplay for GBM, falling back to eglGetDisplay");
+        display = eglGetDisplay(nativeDisplay);
+    }
+
+    return display;
 }
 
 EGLNativeWindowType QEglFSKmsGbmIntegration::createNativeOffscreenWindow(const QSurfaceFormat &format)
@@ -88,7 +96,6 @@ EGLNativeWindowType QEglFSKmsGbmIntegration::createNativeOffscreenWindow(const Q
     Q_UNUSED(format);
     Q_ASSERT(device());
 
-    qCDebug(qLcEglfsKmsDebug) << "Creating native off screen window";
     gbm_surface *surface = gbm_surface_create(static_cast<QEglFSKmsGbmDevice *>(device())->gbmDevice(),
                                               1, 1,
                                               GBM_FORMAT_XRGB8888,
@@ -110,6 +117,8 @@ QPlatformCursor *QEglFSKmsGbmIntegration::createCursor(QPlatformScreen *screen) 
         qCDebug(qLcEglfsKmsDebug, "Using plain OpenGL mouse cursor");
         return new QEglFSCursor(screen);
     }
+#else
+    Q_UNUSED(screen);
 #endif
     return nullptr;
 }
@@ -117,8 +126,7 @@ QPlatformCursor *QEglFSKmsGbmIntegration::createCursor(QPlatformScreen *screen) 
 void QEglFSKmsGbmIntegration::presentBuffer(QPlatformSurface *surface)
 {
     QWindow *window = static_cast<QWindow *>(surface->surface());
-    QEglFSKmsScreen *screen = static_cast<QEglFSKmsScreen *>(window->screen()->handle());
-
+    QEglFSKmsGbmScreen *screen = static_cast<QEglFSKmsGbmScreen *>(window->screen()->handle());
     screen->flip();
 }
 
@@ -141,6 +149,11 @@ QKmsDevice *QEglFSKmsGbmIntegration::createDevice()
     }
 
     return new QEglFSKmsGbmDevice(screenConfig(), path);
+}
+
+QEglFSWindow *QEglFSKmsGbmIntegration::createWindow(QWindow *window) const
+{
+    return new QEglFSKmsGbmWindow(window, this);
 }
 
 QT_END_NAMESPACE

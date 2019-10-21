@@ -72,6 +72,15 @@ QPainterState *QEmulationPaintEngine::createState(QPainterState *orig) const
     return real_engine->createState(orig);
 }
 
+static inline void combineXForm(QBrush *brush, const QRectF &r)
+{
+    QTransform t(r.width(), 0, 0, r.height(), r.x(), r.y());
+    if (brush->gradient() && brush->gradient()->coordinateMode() != QGradient::ObjectMode)
+        brush->setTransform(t * brush->transform()); // compat mode
+    else
+        brush->setTransform(brush->transform() * t);
+}
+
 void QEmulationPaintEngine::fill(const QVectorPath &path, const QBrush &brush)
 {
     QPainterState *s = state();
@@ -84,26 +93,22 @@ void QEmulationPaintEngine::fill(const QVectorPath &path, const QBrush &brush)
 
     Qt::BrushStyle style = qbrush_style(brush);
     if (style >= Qt::LinearGradientPattern && style <= Qt::ConicalGradientPattern) {
-        const QGradient *g = brush.gradient();
-
-        if (g->coordinateMode() > QGradient::LogicalMode) {
-            if (g->coordinateMode() == QGradient::StretchToDeviceMode) {
-                QBrush copy = brush;
-                QTransform mat = copy.transform();
-                mat.scale(real_engine->painter()->device()->width(), real_engine->painter()->device()->height());
-                copy.setTransform(mat);
-                real_engine->fill(path, copy);
-                return;
-            } else if (g->coordinateMode() == QGradient::ObjectBoundingMode) {
-                QBrush copy = brush;
-                QTransform mat = copy.transform();
-                QRectF r = path.controlPointRect();
-                mat.translate(r.x(), r.y());
-                mat.scale(r.width(), r.height());
-                copy.setTransform(mat);
-                real_engine->fill(path, copy);
-                return;
-            }
+        QGradient::CoordinateMode coMode = brush.gradient()->coordinateMode();
+        if (coMode > QGradient::LogicalMode) {
+            QBrush copy = brush;
+            const QPaintDevice *d = real_engine->painter()->device();
+            QRectF r = (coMode == QGradient::StretchToDeviceMode) ? QRectF(0, 0, d->width(), d->height()) : path.controlPointRect();
+            combineXForm(&copy, r);
+            real_engine->fill(path, copy);
+            return;
+        }
+    } else if (style == Qt::TexturePattern) {
+        qreal dpr = qHasPixmapTexture(brush) ? brush.texture().devicePixelRatioF() : brush.textureImage().devicePixelRatioF();
+        if (!qFuzzyCompare(dpr, 1.0)) {
+            QBrush copy = brush;
+            combineXForm(&copy, QRectF(0, 0, 1.0/dpr, 1.0/dpr));
+            real_engine->fill(path, copy);
+            return;
         }
     }
 
@@ -124,27 +129,15 @@ void QEmulationPaintEngine::stroke(const QVectorPath &path, const QPen &pen)
     QBrush brush = pen.brush();
     QPen copy = pen;
     Qt::BrushStyle style = qbrush_style(brush);
-    if (style >= Qt::LinearGradientPattern && style <= Qt::ConicalGradientPattern) {
-        const QGradient *g = brush.gradient();
-
-        if (g->coordinateMode() > QGradient::LogicalMode) {
-            if (g->coordinateMode() == QGradient::StretchToDeviceMode) {
-                QTransform mat = brush.transform();
-                mat.scale(real_engine->painter()->device()->width(), real_engine->painter()->device()->height());
-                brush.setTransform(mat);
-                copy.setBrush(brush);
-                real_engine->stroke(path, copy);
-                return;
-            } else if (g->coordinateMode() == QGradient::ObjectBoundingMode) {
-                QTransform mat = brush.transform();
-                QRectF r = path.controlPointRect();
-                mat.translate(r.x(), r.y());
-                mat.scale(r.width(), r.height());
-                brush.setTransform(mat);
-                copy.setBrush(brush);
-                real_engine->stroke(path, copy);
-                return;
-            }
+    if (style >= Qt::LinearGradientPattern && style <= Qt::ConicalGradientPattern ) {
+        QGradient::CoordinateMode coMode = brush.gradient()->coordinateMode();
+        if (coMode > QGradient::LogicalMode) {
+            const QPaintDevice *d = real_engine->painter()->device();
+            QRectF r = (coMode == QGradient::StretchToDeviceMode) ? QRectF(0, 0, d->width(), d->height()) : path.controlPointRect();
+            combineXForm(&brush, r);
+            copy.setBrush(brush);
+            real_engine->stroke(path, copy);
+            return;
         }
     }
 
@@ -179,18 +172,16 @@ void QEmulationPaintEngine::drawTextItem(const QPointF &p, const QTextItem &text
         QGradient g = *s->pen.brush().gradient();
 
         if (g.coordinateMode() > QGradient::LogicalMode) {
-            QTransform mat = s->pen.brush().transform();
-            if (g.coordinateMode() == QGradient::StretchToDeviceMode) {
-                mat.scale(real_engine->painter()->device()->width(), real_engine->painter()->device()->height());
-            } else if (g.coordinateMode() == QGradient::ObjectBoundingMode) {
-                const QTextItemInt &ti = static_cast<const QTextItemInt &>(textItem);
-                QRectF r(p.x(), p.y() - ti.ascent.toReal(), ti.width.toReal(), (ti.ascent + ti.descent + 1).toReal());
-                mat.translate(r.x(), r.y());
-                mat.scale(r.width(), r.height());
-            }
+            QBrush copy = s->pen.brush();
+            const QPaintDevice *d = real_engine->painter()->device();
+            const QTextItemInt &ti = static_cast<const QTextItemInt &>(textItem);
+            QRectF r = (g.coordinateMode() == QGradient::StretchToDeviceMode) ?
+                        QRectF(0, 0, d->width(), d->height()) :
+                        QRectF(p.x(), p.y() - ti.ascent.toReal(), ti.width.toReal(), (ti.ascent + ti.descent + 1).toReal());
+            combineXForm(&copy, r);
             g.setCoordinateMode(QGradient::LogicalMode);
             QBrush brush(g);
-            brush.setTransform(mat);
+            brush.setTransform(copy.transform());
             s->pen.setBrush(brush);
             penChanged();
             real_engine->drawTextItem(p, textItem);

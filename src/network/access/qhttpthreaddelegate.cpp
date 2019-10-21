@@ -44,6 +44,7 @@
 #include <QTimer>
 #include <QAuthenticator>
 #include <QEventLoop>
+#include <QCryptographicHash>
 
 #include "private/qhttpnetworkreply_p.h"
 #include "private/qnetworkaccesscache_p.h"
@@ -122,12 +123,13 @@ static QNetworkReply::NetworkError statusCodeFromHttp(int httpStatusCode, const 
 }
 
 
-static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy)
+static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy, const QString &peerVerifyName)
 {
     QString result;
     QUrl copy = url;
     QString scheme = copy.scheme();
-    bool isEncrypted = scheme == QLatin1String("https");
+    bool isEncrypted = scheme == QLatin1String("https")
+                       || scheme == QLatin1String("preconnect-https");
     copy.setPort(copy.port(isEncrypted ? 443 : 80));
     if (scheme == QLatin1String("preconnect-http")) {
         copy.setScheme(QLatin1String("http"));
@@ -156,7 +158,10 @@ static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy)
         }
 
         if (!key.scheme().isEmpty()) {
+            const QByteArray obfuscatedPassword = QCryptographicHash::hash(proxy->password().toUtf8(),
+                                                                           QCryptographicHash::Sha1).toHex();
             key.setUserName(proxy->user());
+            key.setPassword(QString::fromUtf8(obfuscatedPassword));
             key.setHost(proxy->hostName());
             key.setPort(proxy->port());
             key.setQuery(result);
@@ -166,7 +171,8 @@ static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy)
 #else
     Q_UNUSED(proxy)
 #endif
-
+    if (!peerVerifyName.isEmpty())
+        result += QLatin1Char(':') + peerVerifyName;
     return "http-connection:" + std::move(result).toLatin1();
 }
 
@@ -191,7 +197,7 @@ public:
         setShareable(true);
     }
 
-    virtual void dispose() Q_DECL_OVERRIDE
+    virtual void dispose() override
     {
 #if 0  // sample code; do this right with the API
         Q_ASSERT(!isWorking());
@@ -286,36 +292,57 @@ void QHttpThreadDelegate::startRequest()
     QHttpNetworkConnection::ConnectionType connectionType
         = httpRequest.isHTTP2Allowed() ? QHttpNetworkConnection::ConnectionTypeHTTP2
                                        : QHttpNetworkConnection::ConnectionTypeHTTP;
+    if (httpRequest.isHTTP2Direct()) {
+        Q_ASSERT(!httpRequest.isHTTP2Allowed());
+        connectionType = QHttpNetworkConnection::ConnectionTypeHTTP2Direct;
+    }
+
+#if QT_CONFIG(ssl)
+    // See qnetworkreplyhttpimpl, delegate's initialization code.
+    Q_ASSERT(!ssl || incomingSslConfiguration.data());
+#endif // QT_CONFIG(ssl)
+
+    const bool isH2 = httpRequest.isHTTP2Allowed() || httpRequest.isHTTP2Direct();
+    if (isH2) {
+#if QT_CONFIG(ssl)
+        if (ssl) {
+            if (!httpRequest.isHTTP2Direct()) {
+                QList<QByteArray> protocols;
+                protocols << QSslConfiguration::ALPNProtocolHTTP2
+                          << QSslConfiguration::NextProtocolHttp1_1;
+                incomingSslConfiguration->setAllowedNextProtocols(protocols);
+            }
+            urlCopy.setScheme(QStringLiteral("h2s"));
+        } else
+#endif // QT_CONFIG(ssl)
+        {
+            urlCopy.setScheme(QStringLiteral("h2"));
+        }
+    }
 
 #ifndef QT_NO_SSL
-    if (httpRequest.isHTTP2Allowed() && ssl) {
-        QList<QByteArray> protocols;
-        protocols << QSslConfiguration::ALPNProtocolHTTP2
-                  << QSslConfiguration::NextProtocolHttp1_1;
-        incomingSslConfiguration.setAllowedNextProtocols(protocols);
-    } else if (httpRequest.isSPDYAllowed() && ssl) {
+    if (!isH2 && httpRequest.isSPDYAllowed() && ssl) {
         connectionType = QHttpNetworkConnection::ConnectionTypeSPDY;
         urlCopy.setScheme(QStringLiteral("spdy")); // to differentiate SPDY requests from HTTPS requests
         QList<QByteArray> nextProtocols;
         nextProtocols << QSslConfiguration::NextProtocolSpdy3_0
                       << QSslConfiguration::NextProtocolHttp1_1;
-        incomingSslConfiguration.setAllowedNextProtocols(nextProtocols);
+        incomingSslConfiguration->setAllowedNextProtocols(nextProtocols);
     }
 #endif // QT_NO_SSL
 
 #ifndef QT_NO_NETWORKPROXY
     if (transparentProxy.type() != QNetworkProxy::NoProxy)
-        cacheKey = makeCacheKey(urlCopy, &transparentProxy);
+        cacheKey = makeCacheKey(urlCopy, &transparentProxy, httpRequest.peerVerifyName());
     else if (cacheProxy.type() != QNetworkProxy::NoProxy)
-        cacheKey = makeCacheKey(urlCopy, &cacheProxy);
+        cacheKey = makeCacheKey(urlCopy, &cacheProxy, httpRequest.peerVerifyName());
     else
 #endif
-        cacheKey = makeCacheKey(urlCopy, 0);
-
+        cacheKey = makeCacheKey(urlCopy, nullptr, httpRequest.peerVerifyName());
 
     // the http object is actually a QHttpNetworkConnection
     httpConnection = static_cast<QNetworkAccessCachedHttpConnection *>(connections.localData()->requestEntryNow(cacheKey));
-    if (httpConnection == 0) {
+    if (!httpConnection) {
         // no entry in cache; create an object
         // the http object is actually a QHttpNetworkConnection
 #ifdef QT_NO_BEARERMANAGEMENT
@@ -325,24 +352,27 @@ void QHttpThreadDelegate::startRequest()
         httpConnection = new QNetworkAccessCachedHttpConnection(urlCopy.host(), urlCopy.port(), ssl,
                                                                 connectionType,
                                                                 networkSession);
-#endif
+#endif // QT_NO_BEARERMANAGEMENT
+        if (connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2
+            && http2Parameters.validate()) {
+            httpConnection->setHttp2Parameters(http2Parameters);
+        } // else we ignore invalid parameters and use our own defaults.
 #ifndef QT_NO_SSL
         // Set the QSslConfiguration from this QNetworkRequest.
-        if (ssl && incomingSslConfiguration != QSslConfiguration::defaultConfiguration()) {
-            httpConnection->setSslConfiguration(incomingSslConfiguration);
-        }
+        if (ssl)
+            httpConnection->setSslConfiguration(*incomingSslConfiguration);
 #endif
 
 #ifndef QT_NO_NETWORKPROXY
         httpConnection->setTransparentProxy(transparentProxy);
         httpConnection->setCacheProxy(cacheProxy);
 #endif
-
+        httpConnection->setPeerVerifyName(httpRequest.peerVerifyName());
         // cache the QHttpNetworkConnection corresponding to this cache key
         connections.localData()->addEntry(cacheKey, httpConnection);
     } else {
         if (httpRequest.withCredentials()) {
-            QNetworkAuthenticationCredential credential = authenticationManager->fetchCachedCredentials(httpRequest.url(), 0);
+            QNetworkAuthenticationCredential credential = authenticationManager->fetchCachedCredentials(httpRequest.url(), nullptr);
             if (!credential.user.isEmpty() && !credential.password.isEmpty()) {
                 QAuthenticator auth;
                 auth.setUser(credential.user);
@@ -351,7 +381,6 @@ void QHttpThreadDelegate::startRequest()
             }
         }
     }
-
 
     // Send the request to the connection
     httpReply = httpConnection->sendRequest(httpRequest);

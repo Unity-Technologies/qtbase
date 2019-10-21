@@ -70,6 +70,8 @@ public:
     static const QOperatingSystemVersion OSXElCapitan;
     static const QOperatingSystemVersion MacOSSierra;
     static const QOperatingSystemVersion MacOSHighSierra;
+    static const QOperatingSystemVersion MacOSMojave;
+    static const QOperatingSystemVersion MacOSCatalina;
 
     static const QOperatingSystemVersion AndroidJellyBean;
     static const QOperatingSystemVersion AndroidJellyBean_MR1;
@@ -91,6 +93,25 @@ public:
     { }
 
     static QOperatingSystemVersion current();
+
+    static Q_DECL_CONSTEXPR OSType currentType()
+    {
+#if defined(Q_OS_WIN)
+        return Windows;
+#elif defined(Q_OS_MACOS)
+        return MacOS;
+#elif defined(Q_OS_IOS)
+        return IOS;
+#elif defined(Q_OS_TVOS)
+        return TvOS;
+#elif defined(Q_OS_WATCHOS)
+        return WatchOS;
+#elif defined(Q_OS_ANDROID)
+        return Android;
+#else
+        return Unknown;
+#endif
+    }
 
     Q_DECL_CONSTEXPR int majorVersion() const { return m_major; }
     Q_DECL_CONSTEXPR int minorVersion() const { return m_minor; }
@@ -127,6 +148,11 @@ private:
     static int compare(const QOperatingSystemVersion &v1, const QOperatingSystemVersion &v2);
 };
 Q_DECLARE_TYPEINFO(QOperatingSystemVersion, QT_VERSION < QT_VERSION_CHECK(6, 0, 0) ? Q_RELOCATABLE_TYPE : Q_PRIMITIVE_TYPE);
+
+#ifndef QT_NO_DEBUG_STREAM
+class QDebug;
+Q_CORE_EXPORT QDebug operator<<(QDebug debug, const QOperatingSystemVersion &ov);
+#endif
 
 QT_END_NAMESPACE
 

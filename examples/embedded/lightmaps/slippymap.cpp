@@ -48,15 +48,10 @@
 **
 ****************************************************************************/
 
-#include <math.h>
-
 #include <QtWidgets>
 #include <QtNetwork>
 #include "slippymap.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "qmath.h"
 
 uint qHash(const QPoint& p)
 {
@@ -68,10 +63,10 @@ const int tdim = 256;
 
 QPointF tileForCoordinate(qreal lat, qreal lng, int zoom)
 {
+    qreal radianLat = qDegreesToRadians(lat);
     qreal zn = static_cast<qreal>(1 << zoom);
     qreal tx = (lng + 180.0) / 360.0;
-    qreal ty = (1.0 - log(tan(lat * M_PI / 180.0) +
-                          1.0 / cos(lat * M_PI / 180.0)) / M_PI) / 2.0;
+    qreal ty = 0.5 - log(tan(radianLat) + 1.0 / cos(radianLat)) / M_PI / 2.0;
     return QPointF(tx * zn, ty * zn);
 }
 
@@ -86,8 +81,7 @@ qreal latitudeFromTile(qreal ty, int zoom)
 {
     qreal zn = static_cast<qreal>(1 << zoom);
     qreal n = M_PI - 2 * M_PI * ty / zn;
-    qreal lng = 180.0 / M_PI * atan(0.5 * (exp(n) - exp(-n)));
-    return lng;
+    return qRadiansToDegrees(atan(sinh(n)));
 }
 
 
@@ -168,7 +162,6 @@ void SlippyMap::handleNetworkData(QNetworkReply *reply)
 {
     QImage img;
     QPoint tp = reply->request().attribute(QNetworkRequest::User).toPoint();
-    QUrl url = reply->url();
     if (!reply->error())
         if (!img.load(reply, 0))
             img = QImage();
@@ -179,10 +172,12 @@ void SlippyMap::handleNetworkData(QNetworkReply *reply)
     emit updated(tileRect(tp));
 
     // purge unused spaces
-    QRect bound = m_tilesRect.adjusted(-2, -2, 2, 2);
-    foreach(QPoint tp, m_tilePixmaps.keys())
-    if (!bound.contains(tp))
-        m_tilePixmaps.remove(tp);
+    const QRect bound = m_tilesRect.adjusted(-2, -2, 2, 2);
+    for (auto it = m_tilePixmaps.keyBegin(); it != m_tilePixmaps.keyEnd(); ++it) {
+        const QPoint &tp = *it;
+        if (!bound.contains(tp))
+            m_tilePixmaps.remove(tp);
+    }
 
     download();
 }

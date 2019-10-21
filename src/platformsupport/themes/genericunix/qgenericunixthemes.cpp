@@ -49,9 +49,13 @@
 #include <QtCore/QFile>
 #include <QtCore/QDebug>
 #include <QtCore/QHash>
+#if QT_CONFIG(mimetype)
 #include <QtCore/QMimeDatabase>
+#endif
 #include <QtCore/QLoggingCategory>
+#if QT_CONFIG(settings)
 #include <QtCore/QSettings>
+#endif
 #include <QtCore/QVariant>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QStringList>
@@ -72,6 +76,7 @@
 QT_BEGIN_NAMESPACE
 
 Q_DECLARE_LOGGING_CATEGORY(qLcTray)
+Q_LOGGING_CATEGORY(lcQpaFonts, "qt.qpa.fonts")
 
 ResourceHelper::ResourceHelper()
 {
@@ -87,19 +92,12 @@ void ResourceHelper::clear()
     std::fill(fonts, fonts + QPlatformTheme::NFonts, static_cast<QFont *>(0));
 }
 
-/*!
-    \class QGenericX11ThemeQKdeTheme
-    \brief QGenericX11Theme is a generic theme implementation for X11.
-    \since 5.0
-    \internal
-    \ingroup qpa
-*/
-
 const char *QGenericUnixTheme::name = "generic";
 
 // Default system font, corresponding to the value returned by 4.8 for
 // XRender/FontConfig which we can now assume as default.
 static const char defaultSystemFontNameC[] = "Sans Serif";
+static const char defaultFixedFontNameC[] = "monospace";
 enum { defaultSystemFontSize = 9 };
 
 #if !defined(QT_NO_DBUS) && !defined(QT_NO_SYSTEMTRAYICON)
@@ -140,9 +138,10 @@ public:
     QGenericUnixThemePrivate()
         : QPlatformThemePrivate()
         , systemFont(QLatin1String(defaultSystemFontNameC), defaultSystemFontSize)
-        , fixedFont(QStringLiteral("monospace"), systemFont.pointSize())
+        , fixedFont(QLatin1String(defaultFixedFontNameC), systemFont.pointSize())
     {
         fixedFont.setStyleHint(QFont::TypeWriter);
+        qCDebug(lcQpaFonts) << "default fonts: system" << systemFont << "fixed" << fixedFont;
     }
 
     const QFont systemFont;
@@ -186,6 +185,12 @@ QStringList QGenericUnixTheme::xdgIconThemePaths()
             paths.append(xdgIconsDir.absoluteFilePath());
     }
 
+    return paths;
+}
+
+QStringList QGenericUnixTheme::iconFallbackPaths()
+{
+    QStringList paths;
     const QFileInfo pixmapsIconsDir(QStringLiteral("/usr/share/pixmaps"));
     if (pixmapsIconsDir.isDir())
         paths.append(pixmapsIconsDir.absoluteFilePath());
@@ -207,7 +212,7 @@ QPlatformSystemTrayIcon *QGenericUnixTheme::createPlatformSystemTrayIcon() const
 {
     if (isDBusTrayAvailable())
         return new QDBusTrayIcon();
-    return Q_NULLPTR;
+    return nullptr;
 }
 #endif
 
@@ -218,6 +223,8 @@ QVariant QGenericUnixTheme::themeHint(ThemeHint hint) const
         return QVariant(QString(QStringLiteral("hicolor")));
     case QPlatformTheme::IconThemeSearchPaths:
         return xdgIconThemePaths();
+    case QPlatformTheme::IconFallbackSearchPaths:
+        return iconFallbackPaths();
     case QPlatformTheme::DialogButtonBoxButtonsHaveIcons:
         return QVariant(true);
     case QPlatformTheme::StyleNames: {
@@ -259,7 +266,7 @@ static QIcon xdgFileIcon(const QFileInfo &fileInfo)
 }
 #endif
 
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
 class QKdeThemePrivate : public QPlatformThemePrivate
 {
 public:
@@ -386,7 +393,7 @@ void QKdeThemePrivate::refresh()
     if (QFont *fixedFont = kdeFont(readKdeSetting(QStringLiteral("fixed"), kdeDirs, kdeVersion, kdeSettings))) {
         resources.fonts[QPlatformTheme::FixedFont] = fixedFont;
     } else {
-        fixedFont = new QFont(QLatin1String(defaultSystemFontNameC), defaultSystemFontSize);
+        fixedFont = new QFont(QLatin1String(defaultFixedFontNameC), defaultSystemFontSize);
         fixedFont->setStyleHint(QFont::TypeWriter);
         resources.fonts[QPlatformTheme::FixedFont] = fixedFont;
     }
@@ -399,6 +406,8 @@ void QKdeThemePrivate::refresh()
     if (QFont *toolBarFont = kdeFont(readKdeSetting(QStringLiteral("toolBarFont"), kdeDirs, kdeVersion, kdeSettings)))
         resources.fonts[QPlatformTheme::ToolButtonFont] = toolBarFont;
 
+    qCDebug(lcQpaFonts) << "default fonts: system" << resources.fonts[QPlatformTheme::SystemFont]
+                        << "fixed" << resources.fonts[QPlatformTheme::FixedFont];
     qDeleteAll(kdeSettings);
 }
 
@@ -682,11 +691,11 @@ QPlatformSystemTrayIcon *QKdeTheme::createPlatformSystemTrayIcon() const
 {
     if (isDBusTrayAvailable())
         return new QDBusTrayIcon();
-    return Q_NULLPTR;
+    return nullptr;
 }
 #endif
 
-#endif // QT_NO_SETTINGS
+#endif // settings
 
 /*!
     \class QGnomeTheme
@@ -701,7 +710,7 @@ const char *QGnomeTheme::name = "gnome";
 class QGnomeThemePrivate : public QPlatformThemePrivate
 {
 public:
-    QGnomeThemePrivate() : systemFont(Q_NULLPTR), fixedFont(Q_NULLPTR) {}
+    QGnomeThemePrivate() : systemFont(nullptr), fixedFont(nullptr) {}
     ~QGnomeThemePrivate() { delete systemFont; delete fixedFont; }
 
     void configureFonts(const QString &gtkFontName) const
@@ -712,8 +721,9 @@ public:
         QString fontName = gtkFontName.left(split);
 
         systemFont = new QFont(fontName, size);
-        fixedFont = new QFont(QLatin1String("monospace"), systemFont->pointSize());
+        fixedFont = new QFont(QLatin1String(defaultFixedFontNameC), systemFont->pointSize());
         fixedFont->setStyleHint(QFont::TypeWriter);
+        qCDebug(lcQpaFonts) << "default fonts: system" << systemFont << "fixed" << fixedFont;
     }
 
     mutable QFont *systemFont;
@@ -801,7 +811,7 @@ QPlatformSystemTrayIcon *QGnomeTheme::createPlatformSystemTrayIcon() const
 {
     if (isDBusTrayAvailable())
         return new QDBusTrayIcon();
-    return Q_NULLPTR;
+    return nullptr;
 }
 #endif
 
@@ -832,14 +842,14 @@ QPlatformTheme *QGenericUnixTheme::createUnixTheme(const QString &name)
 {
     if (name == QLatin1String(QGenericUnixTheme::name))
         return new QGenericUnixTheme;
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
     if (name == QLatin1String(QKdeTheme::name))
         if (QPlatformTheme *kdeTheme = QKdeTheme::createKdeTheme())
             return kdeTheme;
 #endif
     if (name == QLatin1String(QGnomeTheme::name))
         return new QGnomeTheme;
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QStringList QGenericUnixTheme::themeNames()
@@ -857,7 +867,7 @@ QStringList QGenericUnixTheme::themeNames()
         const QList<QByteArray> desktopNames = desktopEnvironment.split(':');
         for (const QByteArray &desktopName : desktopNames) {
             if (desktopEnvironment == "KDE") {
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
                 result.push_back(QLatin1String(QKdeTheme::name));
 #endif
             } else if (gtkBasedEnvironments.contains(desktopName)) {

@@ -49,6 +49,8 @@
 
 QT_BEGIN_NAMESPACE
 
+#ifndef QT_NO_PDF
+
 // This map is used for symbol fonts to get the correct glyph names for the latin range
 static const unsigned short symbol_map[0x100] = {
     0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007,
@@ -90,7 +92,7 @@ static const unsigned short symbol_map[0x100] = {
 
 // ---------------------------- PS/PDF helper methods -----------------------------------
 
-#ifndef QT_NO_PDF
+
 
 QByteArray QFontSubset::glyphName(unsigned short unicode, bool symbol)
 {
@@ -136,7 +138,7 @@ QByteArray QFontSubset::widthArray() const
 
     QByteArray width;
     QPdf::ByteStream s(&width);
-    QFixed scale = QFixed(1000)/emSquare;
+    const qreal scale = 1000.0/emSquare.toInt();
 
     QFixed defWidth = widths[0];
     //qDebug("defWidth=%d, scale=%f", defWidth.toInt(), scale.toReal());
@@ -145,7 +147,7 @@ QByteArray QFontSubset::widthArray() const
             defWidth = 0;
     }
     if (defWidth > 0) {
-        s << "/DW " << (defWidth*scale).toInt();
+        s << "/DW " << qRound(defWidth.toInt() * scale);
     } else {
         s << "/W [";
         for (int g = 0; g < nGlyphs();) {
@@ -174,11 +176,11 @@ QByteArray QFontSubset::widthArray() const
             if (endnonlinear > start) {
                 s << start << '[';
                 for (int i = start; i < endnonlinear; ++i)
-                    s << (widths[i]*scale).toInt();
+                    s << qRound(widths[i].toInt() * scale);
                 s << "]\n";
             }
             if (startLinear)
-                s << startLinear << g - 1 << (widths[startLinear]*scale).toInt() << '\n';
+                s << startLinear << g - 1 << qRound(widths[startLinear].toInt() * scale) << '\n';
         }
         s << "]\n";
     }

@@ -44,11 +44,62 @@
 
 #include <stdlib.h>
 
+#ifdef __GLIBC__
+#  include <sys/syscall.h>
+#  include <pthread.h>
+#  include <unistd.h>
+#endif
+
 #ifdef Q_OS_MAC
 #include <mach/mach_time.h>
 #endif
 
 QT_BEGIN_NAMESPACE
+
+QByteArray qt_readlink(const char *path)
+{
+#ifndef PATH_MAX
+    // suitably large value that won't consume too much memory
+#  define PATH_MAX  1024*1024
+#endif
+
+    QByteArray buf(256, Qt::Uninitialized);
+
+    ssize_t len = ::readlink(path, buf.data(), buf.size());
+    while (len == buf.size()) {
+        // readlink(2) will fill our buffer and not necessarily terminate with NUL;
+        if (buf.size() >= PATH_MAX) {
+            errno = ENAMETOOLONG;
+            return QByteArray();
+        }
+
+        // double the size and try again
+        buf.resize(buf.size() * 2);
+        len = ::readlink(path, buf.data(), buf.size());
+    }
+
+    if (len == -1)
+        return QByteArray();
+
+    buf.resize(len);
+    return buf;
+}
+
+#if defined(Q_PROCESSOR_X86_32) && defined(__GLIBC__)
+#  if !__GLIBC_PREREQ(2, 22)
+// glibc prior to release 2.22 had a bug that suppresses the third argument to
+// open() / open64() / openat(), causing file creation with O_TMPFILE to have
+// the wrong permissions. So we bypass the glibc implementation and go straight
+// for the syscall. See
+// https://sourceware.org/git/?p=glibc.git;a=commit;h=65f6f938cd562a614a68e15d0581a34b177ec29d
+int qt_open64(const char *pathname, int flags, mode_t mode)
+{
+    return syscall(SYS_open, pathname, flags | O_LARGEFILE, mode);
+}
+#  endif
+#endif
+
+#ifndef QT_BOOTSTRAPPED
 
 #if QT_CONFIG(poll_pollts)
 #  define ppoll pollts
@@ -99,7 +150,7 @@ int qt_safe_poll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout
     if (!timeout_ts) {
         // no timeout -> block forever
         int ret;
-        EINTR_LOOP(ret, qt_ppoll(fds, nfds, Q_NULLPTR));
+        EINTR_LOOP(ret, qt_ppoll(fds, nfds, nullptr));
         return ret;
     }
 
@@ -120,5 +171,7 @@ int qt_safe_poll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout
         }
     }
 }
+
+#endif // QT_BOOTSTRAPPED
 
 QT_END_NAMESPACE

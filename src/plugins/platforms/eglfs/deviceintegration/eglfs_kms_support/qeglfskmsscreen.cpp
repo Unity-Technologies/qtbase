@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 Pier Luigi Fiorini <pierluigi.fiorini@gmail.com>
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2017 Pier Luigi Fiorini <pierluigi.fiorini@gmail.com>
 ** Copyright (C) 2016 Pelagicore AG
 ** Contact: https://www.qt.io/licensing/
 **
@@ -68,14 +68,31 @@ private:
     QEglFSKmsScreen *m_screen;
 };
 
-QEglFSKmsScreen::QEglFSKmsScreen(QKmsDevice *device, const QKmsOutput &output)
-    : QEglFSScreen(eglGetDisplay((EGLNativeDisplayType) device->nativeDisplay()))
+QEglFSKmsScreen::QEglFSKmsScreen(QKmsDevice *device, const QKmsOutput &output, bool headless)
+    : QEglFSScreen(static_cast<QEglFSIntegration *>(QGuiApplicationPrivate::platformIntegration())->display())
     , m_device(device)
     , m_output(output)
     , m_powerState(PowerStateOn)
     , m_interruptHandler(new QEglFSKmsInterruptHandler(this))
+    , m_headless(headless)
 {
     m_siblings << this; // gets overridden later
+
+    if (m_output.edid_blob) {
+        QByteArray edid(reinterpret_cast<const char *>(m_output.edid_blob->data), m_output.edid_blob->length);
+        if (m_edid.parse(edid))
+            qCDebug(qLcEglfsKmsDebug, "EDID data for output \"%s\": identifier '%s', manufacturer '%s', model '%s', serial '%s', physical size: %.2fx%.2f",
+                    name().toLatin1().constData(),
+                    m_edid.identifier.toLatin1().constData(),
+                    m_edid.manufacturer.toLatin1().constData(),
+                    m_edid.model.toLatin1().constData(),
+                    m_edid.serialNumber.toLatin1().constData(),
+                    m_edid.physicalSize.width(), m_edid.physicalSize.height());
+        else
+            qCDebug(qLcEglfsKmsDebug) << "Failed to parse EDID data for output" << name(); // keep this debug, not warning
+    } else {
+        qCDebug(qLcEglfsKmsDebug) << "No EDID data for output" << name();
+    }
 }
 
 QEglFSKmsScreen::~QEglFSKmsScreen()
@@ -93,20 +110,40 @@ void QEglFSKmsScreen::setVirtualPosition(const QPoint &pos)
 // geometry() calls rawGeometry() and may apply additional transforms.
 QRect QEglFSKmsScreen::rawGeometry() const
 {
-    const int mode = m_output.mode;
+    if (m_headless)
+        return QRect(QPoint(0, 0), m_device->screenConfig()->headlessSize());
+
     return QRect(m_pos.x(), m_pos.y(),
-                 m_output.modes[mode].hdisplay,
-                 m_output.modes[mode].vdisplay);
+                 m_output.size.width(),
+                 m_output.size.height());
 }
 
 int QEglFSKmsScreen::depth() const
 {
-    return 32;
+    return format() == QImage::Format_RGB16 ? 16 : 32;
 }
 
 QImage::Format QEglFSKmsScreen::format() const
 {
-    return QImage::Format_RGB32;
+    // the result can be slightly incorrect, it won't matter in practice
+    switch (m_output.drm_format) {
+    case DRM_FORMAT_ARGB8888:
+    case DRM_FORMAT_ABGR8888:
+        return QImage::Format_ARGB32;
+    case DRM_FORMAT_RGB565:
+    case DRM_FORMAT_BGR565:
+        return QImage::Format_RGB16;
+    case DRM_FORMAT_XRGB2101010:
+        return QImage::Format_RGB30;
+    case DRM_FORMAT_XBGR2101010:
+        return QImage::Format_BGR30;
+    case DRM_FORMAT_ARGB2101010:
+        return QImage::Format_A2RGB30_Premultiplied;
+    case DRM_FORMAT_ABGR2101010:
+        return QImage::Format_A2BGR30_Premultiplied;
+    default:
+        return QImage::Format_RGB32;
+    }
 }
 
 QSizeF QEglFSKmsScreen::physicalSize() const
@@ -143,22 +180,25 @@ Qt::ScreenOrientation QEglFSKmsScreen::orientation() const
 
 QString QEglFSKmsScreen::name() const
 {
-    return m_output.name;
+    return !m_headless ? m_output.name : QStringLiteral("qt_Headless");
 }
 
-void QEglFSKmsScreen::destroySurface()
+QString QEglFSKmsScreen::manufacturer() const
 {
+    return m_edid.manufacturer;
+}
+
+QString QEglFSKmsScreen::model() const
+{
+    return m_edid.model.isEmpty() ? m_edid.identifier : m_edid.model;
+}
+
+QString QEglFSKmsScreen::serialNumber() const
+{
+    return m_edid.serialNumber;
 }
 
 void QEglFSKmsScreen::waitForFlip()
-{
-}
-
-void QEglFSKmsScreen::flip()
-{
-}
-
-void QEglFSKmsScreen::flipFinished()
 {
 }
 
@@ -169,8 +209,33 @@ void QEglFSKmsScreen::restoreMode()
 
 qreal QEglFSKmsScreen::refreshRate() const
 {
+    if (m_headless)
+        return 60;
+
     quint32 refresh = m_output.modes[m_output.mode].vrefresh;
     return refresh > 0 ? refresh : 60;
+}
+
+QVector<QPlatformScreen::Mode> QEglFSKmsScreen::modes() const
+{
+    QVector<QPlatformScreen::Mode> list;
+    list.reserve(m_output.modes.size());
+
+    for (const drmModeModeInfo &info : qAsConst(m_output.modes))
+        list.append({QSize(info.hdisplay, info.vdisplay),
+                     qreal(info.vrefresh > 0 ? info.vrefresh : 60)});
+
+    return list;
+}
+
+int QEglFSKmsScreen::currentMode() const
+{
+    return m_output.mode;
+}
+
+int QEglFSKmsScreen::preferredMode() const
+{
+    return m_output.preferred_mode;
 }
 
 QPlatformScreen::SubpixelAntialiasingType QEglFSKmsScreen::subpixelAntialiasingTypeHint() const

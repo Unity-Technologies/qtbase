@@ -132,7 +132,8 @@ QT_BEGIN_NAMESPACE
 
 QSqlError qMakeError(const QString& err, QSqlError::ErrorType type, int errNo = -1)
 {
-    return QSqlError(QLatin1String("QTDS: ") + err, QString(), type, errNo);
+    return QSqlError(QLatin1String("QTDS: ") + err, QString(), type,
+                     errNo != -1 ? QString::number(errNo) : QString());
 }
 
 class QTDSDriverPrivate : public QSqlDriverPrivate
@@ -163,15 +164,15 @@ class QTDSResult : public QSqlCachedResult
 public:
     explicit QTDSResult(const QTDSDriver* db);
     ~QTDSResult();
-    QVariant handle() const Q_DECL_OVERRIDE;
+    QVariant handle() const override;
 
 protected:
     void cleanup();
-    bool reset(const QString &query) Q_DECL_OVERRIDE;
-    int size() Q_DECL_OVERRIDE;
-    int numRowsAffected() Q_DECL_OVERRIDE;
-    bool gotoNext(QSqlCachedResult::ValueCache &values, int index) Q_DECL_OVERRIDE;
-    QSqlRecord record() const Q_DECL_OVERRIDE;
+    bool reset(const QString &query) override;
+    int size() override;
+    int numRowsAffected() override;
+    bool gotoNext(QSqlCachedResult::ValueCache &values, int index) override;
+    QSqlRecord record() const override;
 };
 
 class QTDSResultPrivate: public QSqlCachedResultPrivate
@@ -767,7 +768,7 @@ QSqlRecord QTDSDriver::record(const QString& tablename) const
                    "where id = (select id from sysobjects where name = '%1')"));
     t.exec(stmt.arg(table));
     while (t.next()) {
-        QSqlField f(t.value(0).toString().simplified(), qDecodeTDSType(t.value(1).toInt()));
+        QSqlField f(t.value(0).toString().simplified(), qDecodeTDSType(t.value(1).toInt()), tablename);
         f.setLength(t.value(2).toInt());
         f.setPrecision(t.value(3).toInt());
         f.setSqlType(t.value(1).toInt());
@@ -853,7 +854,7 @@ QSqlIndex QTDSDriver::primaryIndex(const QString& tablename) const
         QRegExp regx(QLatin1String("\\s*(\\S+)(?:\\s+(DESC|desc))?\\s*"));
         for(QStringList::Iterator it = fNames.begin(); it != fNames.end(); ++it) {
             regx.indexIn(*it);
-            QSqlField f(regx.cap(1), rec.field(regx.cap(1)).type());
+            QSqlField f(regx.cap(1), rec.field(regx.cap(1)).type(), tablename);
             if (regx.cap(2).toLower() == QLatin1String("desc")) {
                 idx.append(f, true);
             } else {

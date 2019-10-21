@@ -2,7 +2,7 @@ option(host_build)
 
 TARGET = QtBootstrap
 QT =
-CONFIG += minimal_syncqt internal_module force_bootstrap
+CONFIG += minimal_syncqt internal_module force_bootstrap gc_binaries
 
 MODULE_INCNAME = QtCore QtXml
 MODULE_DEFINES = \
@@ -12,6 +12,7 @@ MODULE_DEFINES = \
         QT_VERSION_PATCH=$$QT_PATCH_VERSION \
         QT_BOOTSTRAPPED \
         QT_NO_CAST_TO_ASCII
+MODULE_CONFIG = gc_binaries
 
 DEFINES += \
     $$MODULE_DEFINES \
@@ -24,14 +25,15 @@ SOURCES += \
            ../../corelib/codecs/qlatincodec.cpp \
            ../../corelib/codecs/qtextcodec.cpp \
            ../../corelib/codecs/qutfcodec.cpp \
+           ../../corelib/global/qendian.cpp \
            ../../corelib/global/qglobal.cpp \
            ../../corelib/global/qlogging.cpp \
            ../../corelib/global/qmalloc.cpp \
            ../../corelib/global/qnumeric.cpp \
            ../../corelib/global/qoperatingsystemversion.cpp \
+           ../../corelib/global/qrandom.cpp \
            ../../corelib/io/qabstractfileengine.cpp \
            ../../corelib/io/qbuffer.cpp \
-           ../../corelib/io/qdatastream.cpp \
            ../../corelib/io/qdebug.cpp \
            ../../corelib/io/qdir.cpp \
            ../../corelib/io/qdiriterator.cpp \
@@ -44,8 +46,8 @@ SOURCES += \
            ../../corelib/io/qiodevice.cpp \
            ../../corelib/io/qfiledevice.cpp \
            ../../corelib/io/qresource.cpp \
+           ../../corelib/io/qtemporarydir.cpp \
            ../../corelib/io/qtemporaryfile.cpp \
-           ../../corelib/io/qtextstream.cpp \
            ../../corelib/io/qsavefile.cpp \
            ../../corelib/io/qstandardpaths.cpp \
            ../../corelib/io/qloggingcategory.cpp \
@@ -56,6 +58,17 @@ SOURCES += \
            ../../corelib/kernel/qvariant.cpp \
            ../../corelib/kernel/qsystemerror.cpp \
            ../../corelib/plugin/quuid.cpp \
+           ../../corelib/serialization/qdatastream.cpp \
+           ../../corelib/serialization/qjson.cpp \
+           ../../corelib/serialization/qjsondocument.cpp \
+           ../../corelib/serialization/qjsonobject.cpp \
+           ../../corelib/serialization/qjsonarray.cpp \
+           ../../corelib/serialization/qjsonvalue.cpp \
+           ../../corelib/serialization/qjsonparser.cpp \
+           ../../corelib/serialization/qjsonwriter.cpp \
+           ../../corelib/serialization/qtextstream.cpp \
+           ../../corelib/serialization/qxmlutils.cpp \
+           ../../corelib/serialization/qxmlstream.cpp \
            ../../corelib/tools/qbitarray.cpp \
            ../../corelib/tools/qbytearray.cpp \
            ../../corelib/tools/qarraydata.cpp \
@@ -82,19 +95,11 @@ SOURCES += \
            ../../corelib/tools/qstringlist.cpp \
            ../../corelib/tools/qversionnumber.cpp \
            ../../corelib/tools/qvsnprintf.cpp \
-           ../../corelib/xml/qxmlutils.cpp \
-           ../../corelib/xml/qxmlstream.cpp \
-           ../../corelib/json/qjson.cpp \
-           ../../corelib/json/qjsondocument.cpp \
-           ../../corelib/json/qjsonobject.cpp \
-           ../../corelib/json/qjsonarray.cpp \
-           ../../corelib/json/qjsonvalue.cpp \
-           ../../corelib/json/qjsonparser.cpp \
-           ../../corelib/json/qjsonwriter.cpp \
            ../../xml/dom/qdom.cpp \
            ../../xml/sax/qxml.cpp
 
-unix:SOURCES += ../../corelib/io/qfilesystemengine_unix.cpp \
+unix:SOURCES += ../../corelib/kernel/qcore_unix.cpp \
+                ../../corelib/io/qfilesystemengine_unix.cpp \
                 ../../corelib/io/qfilesystemiterator_unix.cpp \
                 ../../corelib/io/qfsfileengine_unix.cpp
 
@@ -138,14 +143,11 @@ macx {
 }
 
 win32 {
-    LIBS += -luser32 -lole32 -ladvapi32 -lshell32
+    LIBS += -luser32 -lole32 -ladvapi32 -lshell32 -lnetapi32
     mingw: LIBS += -luuid
 }
 
 load(qt_module)
-
-# otherwise mingw headers do not declare common functions like putenv
-mingw: CONFIG -= strict_c++
 
 lib.CONFIG = dummy_install
 INSTALLS += lib

@@ -49,6 +49,26 @@ QT_BEGIN_NAMESPACE
    QTypeInfo     - type trait functionality
 */
 
+template <typename T>
+static constexpr bool qIsRelocatable()
+{
+#if defined(Q_CC_CLANG) || !defined(Q_CC_GNU) || Q_CC_GNU >= 501
+    return std::is_trivially_copyable<T>::value && std::is_trivially_destructible<T>::value;
+#else
+    return std::is_enum<T>::value || std::is_integral<T>::value;
+#endif
+}
+
+template <typename T>
+static constexpr bool qIsTrivial()
+{
+#if defined(Q_CC_CLANG) || !defined(Q_CC_GNU) || Q_CC_GNU >= 501
+    return std::is_trivial<T>::value;
+#else
+    return std::is_enum<T>::value || std::is_integral<T>::value;
+#endif
+}
+
 /*
   The catch-all template.
 */
@@ -61,9 +81,9 @@ public:
         isSpecialized = std::is_enum<T>::value, // don't require every enum to be marked manually
         isPointer = false,
         isIntegral = std::is_integral<T>::value,
-        isComplex = !isIntegral && !std::is_enum<T>::value,
+        isComplex = !qIsTrivial<T>(),
         isStatic = true,
-        isRelocatable = std::is_enum<T>::value,
+        isRelocatable = qIsRelocatable<T>(),
         isLarge = (sizeof(T)>sizeof(void*)),
         isDummy = false, //### Qt6: remove
         sizeOf = sizeof(T)
@@ -248,9 +268,9 @@ class QTypeInfo<TYPE > \
 public: \
     enum { \
         isSpecialized = true, \
-        isComplex = (((FLAGS) & Q_PRIMITIVE_TYPE) == 0), \
+        isComplex = (((FLAGS) & Q_PRIMITIVE_TYPE) == 0) && !qIsTrivial<TYPE>(), \
         isStatic = (((FLAGS) & (Q_MOVABLE_TYPE | Q_PRIMITIVE_TYPE)) == 0), \
-        isRelocatable = !isStatic || ((FLAGS) & Q_RELOCATABLE_TYPE), \
+        isRelocatable = !isStatic || ((FLAGS) & Q_RELOCATABLE_TYPE) || qIsRelocatable<TYPE>(), \
         isLarge = (sizeof(TYPE)>sizeof(void*)), \
         isPointer = false, \
         isIntegral = std::is_integral< TYPE >::value, \
@@ -311,14 +331,11 @@ Q_DECLARE_TYPEINFO(qint64, Q_PRIMITIVE_TYPE);
 Q_DECLARE_TYPEINFO(quint64, Q_PRIMITIVE_TYPE);
 Q_DECLARE_TYPEINFO(float, Q_PRIMITIVE_TYPE);
 Q_DECLARE_TYPEINFO(double, Q_PRIMITIVE_TYPE);
-#ifndef Q_OS_DARWIN
-Q_DECLARE_TYPEINFO(long double, Q_PRIMITIVE_TYPE);
-#endif
-
 
 #if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
 // ### Qt 6: remove the other branch
 // This was required so that QList<T> for these types allocates out of the array storage
+Q_DECLARE_TYPEINFO(long double, Q_PRIMITIVE_TYPE);
 #  ifdef Q_COMPILER_UNICODE_STRINGS
 Q_DECLARE_TYPEINFO(char16_t, Q_PRIMITIVE_TYPE);
 Q_DECLARE_TYPEINFO(char32_t, Q_PRIMITIVE_TYPE);
@@ -327,6 +344,11 @@ Q_DECLARE_TYPEINFO(char32_t, Q_PRIMITIVE_TYPE);
 Q_DECLARE_TYPEINFO(wchar_t, Q_PRIMITIVE_TYPE);
 #  endif
 #else
+#  ifndef Q_OS_DARWIN
+Q_DECLARE_TYPEINFO(long double, Q_PRIMITIVE_TYPE);
+#  else
+Q_DECLARE_TYPEINFO(long double, Q_RELOCATABLE_TYPE);
+#  endif
 #  ifdef Q_COMPILER_UNICODE_STRINGS
 Q_DECLARE_TYPEINFO(char16_t, Q_RELOCATABLE_TYPE);
 Q_DECLARE_TYPEINFO(char32_t, Q_RELOCATABLE_TYPE);

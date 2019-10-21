@@ -6,6 +6,7 @@ QT += \
     fontdatabase_support-private theme_support-private
 
 qtConfig(accessibility): QT += accessibility_support-private
+qtConfig(vulkan): QT += vulkan_support-private
 
 LIBS += -lgdi32 -ldwmapi
 

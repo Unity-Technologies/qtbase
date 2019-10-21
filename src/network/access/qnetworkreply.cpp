@@ -61,7 +61,7 @@ QNetworkReplyPrivate::QNetworkReplyPrivate()
     \class QNetworkReply
     \since 4.4
     \brief The QNetworkReply class contains the data and headers for a request
-    sent with QNetworkAccessManager
+    sent with QNetworkAccessManager.
 
     \reentrant
     \ingroup network
@@ -311,9 +311,11 @@ QNetworkReplyPrivate::QNetworkReplyPrivate()
     When client code handling the redirected() signal has verified the new URL,
     it emits this signal to allow the redirect to go ahead.  This protocol applies
     to network requests whose redirects policy is set to
-    QNetworkRequest::UserVerifiedRedirectsPolicy.
+    QNetworkRequest::UserVerifiedRedirectPolicy
 
-    \sa QNetworkRequest::UserVerifiedRedirectPolicy, QNetworkAccessManager::setRedirectPolicy(), QNetworkRequest::RedirectPolicyAttribute
+    \sa QNetworkRequest::UserVerifiedRedirectPolicy,
+    QNetworkAccessManager::setRedirectPolicy(),
+    QNetworkRequest::RedirectPolicyAttribute
 */
 
 /*!

@@ -37,10 +37,15 @@
 **
 ****************************************************************************/
 
+#include <ImageIO/ImageIO.h>
+
 #include <QtCore/qsystemdetection.h>
+#include <QtGui/qimage.h>
 
 #if defined(Q_OS_OSX)
 #import <AppKit/AppKit.h>
+#else
+#include <MobileCoreServices/MobileCoreServices.h>
 #endif
 
 #if defined(QT_PLATFORM_UIKIT)
@@ -413,8 +418,10 @@ QVariant QMacPasteboardMimeUnicodeText::convertToMime(const QString &mimetype, Q
     QVariant ret;
     if (flavor == QLatin1String("public.utf8-plain-text")) {
         ret = QString::fromUtf8(firstData);
+#if QT_CONFIG(textcodec)
     } else if (flavor == QLatin1String("public.utf16-plain-text")) {
         ret = QTextCodec::codecForName("UTF-16")->toUnicode(firstData);
+#endif
     } else {
         qWarning("QMime::convertToMime: unhandled mimetype: %s", qPrintable(mimetype));
     }
@@ -427,8 +434,25 @@ QList<QByteArray> QMacPasteboardMimeUnicodeText::convertFromMime(const QString &
     QString string = data.toString();
     if (flavor == QLatin1String("public.utf8-plain-text"))
         ret.append(string.toUtf8());
-    else if (flavor == QLatin1String("public.utf16-plain-text"))
-        ret.append(QTextCodec::codecForName("UTF-16")->fromUnicode(string));
+#if QT_CONFIG(textcodec)
+    else if (flavor == QLatin1String("public.utf16-plain-text")) {
+        QTextCodec::ConverterState state;
+#if defined(Q_OS_MACOS)
+        // Some applications such as Microsoft Excel, don't deal well with
+        // a BOM present, so we follow the traditional approach of Qt on
+        // macOS to not generate public.utf16-plain-text with a BOM.
+        state.flags = QTextCodec::IgnoreHeader;
+#else
+        // Whereas iOS applications will fail to paste if we do _not_
+        // include a BOM in the public.utf16-plain-text content, most
+        // likely due to converting the data using NSUTF16StringEncoding
+        // which assumes big-endian byte order if there is no BOM.
+        state.flags = QTextCodec::DefaultConversion;
+#endif
+        ret.append(QTextCodec::codecForName("UTF-16")->fromUnicode(
+            string.constData(), string.length(), &state));
+    }
+#endif
     return ret;
 }
 
@@ -531,13 +555,13 @@ QVariant QMacPasteboardMimeRtfText::convertToMime(const QString &mimeType, QList
 
     // Read RTF into to NSAttributedString, then convert the string to HTML
     NSAttributedString *string = [[NSAttributedString alloc] initWithData:data.at(0).toNSData()
-            options:[NSDictionary dictionaryWithObject:NSRTFTextDocumentType forKey:NSDocumentTypeDocumentAttribute]
+            options:@{NSDocumentTypeDocumentAttribute: NSRTFTextDocumentType}
             documentAttributes:nil
             error:nil];
 
     NSError *error;
     NSRange range = NSMakeRange(0, [string length]);
-    NSDictionary *dict = [NSDictionary dictionaryWithObject:NSHTMLTextDocumentType forKey:NSDocumentTypeDocumentAttribute];
+    NSDictionary *dict = @{NSDocumentTypeDocumentAttribute: NSHTMLTextDocumentType};
     NSData *htmlData = [string dataFromRange:range documentAttributes:dict error:&error];
     return QByteArray::fromNSData(htmlData);
 }
@@ -549,13 +573,13 @@ QList<QByteArray> QMacPasteboardMimeRtfText::convertFromMime(const QString &mime
         return ret;
 
     NSAttributedString *string = [[NSAttributedString alloc] initWithData:data.toByteArray().toNSData()
-            options:[NSDictionary dictionaryWithObject:NSHTMLTextDocumentType forKey:NSDocumentTypeDocumentAttribute]
+            options:@{NSDocumentTypeDocumentAttribute: NSHTMLTextDocumentType}
             documentAttributes:nil
             error:nil];
 
     NSError *error;
     NSRange range = NSMakeRange(0, [string length]);
-    NSDictionary *dict = [NSDictionary dictionaryWithObject:NSRTFTextDocumentType forKey:NSDocumentTypeDocumentAttribute];
+    NSDictionary *dict = @{NSDocumentTypeDocumentAttribute: NSRTFTextDocumentType};
     NSData *rtfData = [string dataFromRange:range documentAttributes:dict error:&error];
     ret << QByteArray::fromNSData(rtfData);
     return ret;
@@ -779,6 +803,85 @@ QList<QByteArray> QMacPasteboardMimeVCard::convertFromMime(const QString &mime, 
     return ret;
 }
 
+extern QImage qt_mac_toQImage(CGImageRef image);
+extern CGImageRef qt_mac_toCGImage(const QImage &qImage);
+
+class QMacPasteboardMimeTiff : public QMacInternalPasteboardMime {
+public:
+    QMacPasteboardMimeTiff() : QMacInternalPasteboardMime(MIME_ALL) { }
+    QString convertorName();
+
+    QString flavorFor(const QString &mime);
+    QString mimeFor(QString flav);
+    bool canConvert(const QString &mime, QString flav);
+    QVariant convertToMime(const QString &mime, QList<QByteArray> data, QString flav);
+    QList<QByteArray> convertFromMime(const QString &mime, QVariant data, QString flav);
+};
+
+QString QMacPasteboardMimeTiff::convertorName()
+{
+    return QLatin1String("Tiff");
+}
+
+QString QMacPasteboardMimeTiff::flavorFor(const QString &mime)
+{
+    if (mime.startsWith(QLatin1String("application/x-qt-image")))
+        return QLatin1String("public.tiff");
+    return QString();
+}
+
+QString QMacPasteboardMimeTiff::mimeFor(QString flav)
+{
+    if (flav == QLatin1String("public.tiff"))
+        return QLatin1String("application/x-qt-image");
+    return QString();
+}
+
+bool QMacPasteboardMimeTiff::canConvert(const QString &mime, QString flav)
+{
+    return flav == QLatin1String("public.tiff") && mime == QLatin1String("application/x-qt-image");
+}
+
+QVariant QMacPasteboardMimeTiff::convertToMime(const QString &mime, QList<QByteArray> data, QString flav)
+{
+    if (data.count() > 1)
+        qWarning("QMacPasteboardMimeTiff: Cannot handle multiple member data");
+
+    if (!canConvert(mime, flav))
+        return QVariant();
+
+    QCFType<CFDataRef> tiffData = data.first().toRawCFData();
+    QCFType<CGImageSourceRef> imageSource = CGImageSourceCreateWithData(tiffData, 0);
+
+    if (QCFType<CGImageRef> image = CGImageSourceCreateImageAtIndex(imageSource, 0, 0))
+        return QVariant(qt_mac_toQImage(image));
+
+    return QVariant();
+}
+
+QList<QByteArray> QMacPasteboardMimeTiff::convertFromMime(const QString &mime, QVariant variant, QString flav)
+{
+    if (!canConvert(mime, flav))
+        return QList<QByteArray>();
+
+    QCFType<CFMutableDataRef> data = CFDataCreateMutable(0, 0);
+    QCFType<CGImageDestinationRef> imageDestination = CGImageDestinationCreateWithData(data, kUTTypeTIFF, 1, 0);
+
+    if (!imageDestination)
+        return QList<QByteArray>();
+
+    QImage img = qvariant_cast<QImage>(variant);
+    NSDictionary *props = @{
+        static_cast<NSString *>(kCGImagePropertyPixelWidth): @(img.width()),
+        static_cast<NSString *>(kCGImagePropertyPixelHeight): @(img.height())
+    };
+
+    CGImageDestinationAddImage(imageDestination, qt_mac_toCGImage(img), static_cast<CFDictionaryRef>(props));
+    CGImageDestinationFinalize(imageDestination);
+
+    return QList<QByteArray>() << QByteArray::fromCFData(data);
+}
+
 /*!
   \internal
 
@@ -792,6 +895,7 @@ void QMacInternalPasteboardMime::initializeMimeTypes()
         new QMacPasteboardMimeAny;
 
         //standard types that we wrap
+        new QMacPasteboardMimeTiff;
         new QMacPasteboardMimePlainTextFallback;
         new QMacPasteboardMimeUnicodeText;
         new QMacPasteboardMimeRtfText;

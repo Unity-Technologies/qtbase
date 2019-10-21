@@ -52,29 +52,45 @@
 //
 #include "qt_mac_p.h"
 #include <private/qguiapplication_p.h>
+#include <QtCore/qoperatingsystemversion.h>
 #include <QtGui/qpalette.h>
 #include <QtGui/qscreen.h>
 
+#include <objc/runtime.h>
+#include <objc/message.h>
+
 Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSView));
+
+struct mach_header;
 
 QT_BEGIN_NAMESPACE
 
-Q_DECLARE_LOGGING_CATEGORY(lcQpaCocoaWindow)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaWindow)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaDrawing)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaMouse)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaScreen)
 
 class QPixmap;
 class QString;
 
 // Conversion functions
-QStringList qt_mac_NSArrayToQStringList(void *nsarray);
-void *qt_mac_QStringListToNSMutableArrayVoid(const QStringList &list);
-
-inline NSMutableArray *qt_mac_QStringListToNSMutableArray(const QStringList &qstrlist)
-{ return reinterpret_cast<NSMutableArray *>(qt_mac_QStringListToNSMutableArrayVoid(qstrlist)); }
+QStringList qt_mac_NSArrayToQStringList(NSArray<NSString *> *nsarray);
+NSMutableArray<NSString *> *qt_mac_QStringListToNSMutableArray(const QStringList &list);
 
 NSDragOperation qt_mac_mapDropAction(Qt::DropAction action);
 NSDragOperation qt_mac_mapDropActions(Qt::DropActions actions);
 Qt::DropAction qt_mac_mapNSDragOperation(NSDragOperation nsActions);
 Qt::DropActions qt_mac_mapNSDragOperations(NSDragOperation nsActions);
+
+template <typename T>
+typename std::enable_if<std::is_pointer<T>::value, T>::type
+qt_objc_cast(id object)
+{
+    if ([object isKindOfClass:[typename std::remove_pointer<T>::type class]])
+        return static_cast<T>(object);
+
+    return nil;
+}
 
 QT_MANGLE_NAMESPACE(QNSView) *qnsview_cast(NSView *view);
 
@@ -82,15 +98,16 @@ QT_MANGLE_NAMESPACE(QNSView) *qnsview_cast(NSView *view);
 void qt_mac_transformProccessToForegroundApplication();
 QString qt_mac_applicationName();
 
-int qt_mac_flipYCoordinate(int y);
-qreal qt_mac_flipYCoordinate(qreal y);
-QPointF qt_mac_flipPoint(const NSPoint &p);
-NSPoint qt_mac_flipPoint(const QPoint &p);
-NSPoint qt_mac_flipPoint(const QPointF &p);
-
-NSRect qt_mac_flipRect(const QRect &rect);
+QPointF qt_mac_flip(const QPointF &pos, const QRectF &reference);
+QRectF qt_mac_flip(const QRectF &rect, const QRectF &reference);
 
 Qt::MouseButton cocoaButton2QtButton(NSInteger buttonNum);
+Qt::MouseButton cocoaButton2QtButton(NSEvent *event);
+
+QEvent::Type cocoaEvent2QtMouseEvent(NSEvent *event);
+
+Qt::MouseButtons cocoaMouseButtons2QtMouseButtons(NSInteger pressedMouseButtons);
+Qt::MouseButtons currentlyPressedMouseButtons();
 
 // strip out '&' characters, and convert "&&" to a single '&', in menu
 // text - since menu text is sometimes decorated with these for Windows
@@ -159,6 +176,46 @@ T qt_mac_resolveOption(const T &fallback, QWindow *window, const QByteArray &pro
     return fallback;
 }
 
+// https://stackoverflow.com/a/52722575/2761869
+template<class R>
+struct backwards_t {
+  R r;
+  constexpr auto begin() const { using std::rbegin; return rbegin(r); }
+  constexpr auto begin() { using std::rbegin; return rbegin(r); }
+  constexpr auto end() const { using std::rend; return rend(r); }
+  constexpr auto end() { using std::rend; return rend(r); }
+};
+template<class R>
+constexpr backwards_t<R> backwards(R&& r) { return {std::forward<R>(r)}; }
+
+// -------------------------------------------------------------------------
+
+#if !defined(Q_PROCESSOR_X86_64)
+#error "32-bit builds are not supported"
+#endif
+
+class QMacVersion
+{
+public:
+    enum VersionTarget {
+        ApplicationBinary,
+        QtLibraries
+    };
+
+    static QOperatingSystemVersion buildSDK(VersionTarget target = ApplicationBinary);
+    static QOperatingSystemVersion deploymentTarget(VersionTarget target = ApplicationBinary);
+    static QOperatingSystemVersion currentRuntime();
+
+private:
+    QMacVersion() = default;
+    using VersionTuple = QPair<QOperatingSystemVersion, QOperatingSystemVersion>;
+    static VersionTuple versionsForImage(const mach_header *machHeader);
+    static VersionTuple applicationVersion();
+    static VersionTuple libraryVersion();
+};
+
+// -------------------------------------------------------------------------
+
 QT_END_NAMESPACE
 
 // @compatibility_alias doesn't work with protocols
@@ -170,12 +227,7 @@ QT_END_NAMESPACE
 - (void)onCancelClicked;
 @end
 
-@interface QT_MANGLE_NAMESPACE(QNSPanelContentsWrapper) : NSView {
-    NSButton *_okButton;
-    NSButton *_cancelButton;
-    NSView *_panelContents;
-    NSEdgeInsets _panelContentsMargins;
-}
+@interface QT_MANGLE_NAMESPACE(QNSPanelContentsWrapper) : NSView
 
 @property (nonatomic, readonly) NSButton *okButton;
 @property (nonatomic, readonly) NSButton *cancelButton;
@@ -187,9 +239,140 @@ QT_END_NAMESPACE
 
 - (NSButton *)createButtonWithTitle:(const char *)title;
 - (void)layout;
+
 @end
 
 QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSPanelContentsWrapper);
+
+// -------------------------------------------------------------------------
+
+// QAppleRefCounted expects the retain function to return the object
+io_object_t q_IOObjectRetain(io_object_t obj);
+// QAppleRefCounted expects the release function to return void
+void q_IOObjectRelease(io_object_t obj);
+
+template <typename T>
+class QIOType : public QAppleRefCounted<T, io_object_t, q_IOObjectRetain, q_IOObjectRelease>
+{
+    using QAppleRefCounted<T, io_object_t, q_IOObjectRetain, q_IOObjectRelease>::QAppleRefCounted;
+};
+
+// -------------------------------------------------------------------------
+
+// Depending on the ABI of the platform, we may need to use objc_msgSendSuper_stret:
+// - http://www.sealiesoftware.com/blog/archive/2008/10/30/objc_explain_objc_msgSend_stret.html
+// - https://lists.apple.com/archives/cocoa-dev/2008/Feb/msg02338.html
+template <typename T>
+struct objc_msgsend_requires_stret
+{ static const bool value =
+#if defined(Q_PROCESSOR_X86)
+    // Any return value larger than two registers on i386/x86_64
+    sizeof(T) > sizeof(void*) * 2;
+#elif defined(Q_PROCESSOR_ARM_32)
+    // Any return value larger than a single register on arm
+    sizeof(T) >  sizeof(void*);
+#elif defined(Q_PROCESSOR_ARM_64)
+    // Stret not used on arm64
+    false;
+#endif
+};
+
+template <>
+struct objc_msgsend_requires_stret<void>
+{ static const bool value = false; };
+
+template <typename ReturnType, typename... Args>
+ReturnType qt_msgSendSuper(id receiver, SEL selector, Args... args)
+{
+    static_assert(!objc_msgsend_requires_stret<ReturnType>::value,
+        "The given return type requires stret on this platform");
+
+    typedef ReturnType (*SuperFn)(objc_super *, SEL, Args...);
+    SuperFn superFn = reinterpret_cast<SuperFn>(objc_msgSendSuper);
+    objc_super sup = { receiver, [receiver superclass] };
+    return superFn(&sup, selector, args...);
+}
+
+template <typename ReturnType, typename... Args>
+ReturnType qt_msgSendSuper_stret(id receiver, SEL selector, Args... args)
+{
+    static_assert(objc_msgsend_requires_stret<ReturnType>::value,
+        "The given return type does not use stret on this platform");
+
+    typedef void (*SuperStretFn)(ReturnType *, objc_super *, SEL, Args...);
+    SuperStretFn superStretFn = reinterpret_cast<SuperStretFn>(objc_msgSendSuper_stret);
+
+    objc_super sup = { receiver, [receiver superclass] };
+    ReturnType ret;
+    superStretFn(&ret, &sup, selector, args...);
+    return ret;
+}
+
+template<typename... Args>
+class QSendSuperHelper {
+public:
+    QSendSuperHelper(id receiver, SEL sel, Args... args)
+        : m_receiver(receiver), m_selector(sel), m_args(std::make_tuple(args...)), m_sent(false)
+    {
+    }
+
+    ~QSendSuperHelper()
+    {
+        if (!m_sent)
+            msgSendSuper<void>(m_args);
+    }
+
+    template <typename ReturnType>
+    operator ReturnType()
+    {
+#if defined(QT_DEBUG)
+        Method method = class_getInstanceMethod(object_getClass(m_receiver), m_selector);
+        char returnTypeEncoding[256];
+        method_getReturnType(method, returnTypeEncoding, sizeof(returnTypeEncoding));
+        NSUInteger alignedReturnTypeSize = 0;
+        NSGetSizeAndAlignment(returnTypeEncoding, nullptr, &alignedReturnTypeSize);
+        Q_ASSERT(alignedReturnTypeSize == sizeof(ReturnType));
+#endif
+        m_sent = true;
+        return msgSendSuper<ReturnType>(m_args);
+    }
+
+private:
+    template <typename ReturnType, bool V>
+    using if_requires_stret = typename std::enable_if<objc_msgsend_requires_stret<ReturnType>::value == V, ReturnType>::type;
+
+    template <typename ReturnType, int... Is>
+    if_requires_stret<ReturnType, false> msgSendSuper(std::tuple<Args...>& args, QtPrivate::IndexesList<Is...>)
+    {
+        return qt_msgSendSuper<ReturnType>(m_receiver, m_selector, std::get<Is>(args)...);
+    }
+
+    template <typename ReturnType, int... Is>
+    if_requires_stret<ReturnType, true> msgSendSuper(std::tuple<Args...>& args, QtPrivate::IndexesList<Is...>)
+    {
+        return qt_msgSendSuper_stret<ReturnType>(m_receiver, m_selector, std::get<Is>(args)...);
+    }
+
+    template <typename ReturnType>
+    ReturnType msgSendSuper(std::tuple<Args...>& args)
+    {
+        return msgSendSuper<ReturnType>(args, QtPrivate::makeIndexSequence<sizeof...(Args)>{});
+    }
+
+    id m_receiver;
+    SEL m_selector;
+    std::tuple<Args...> m_args;
+    bool m_sent;
+};
+
+template<typename... Args>
+QSendSuperHelper<Args...> qt_objcDynamicSuperHelper(id receiver, SEL selector, Args... args)
+{
+    return QSendSuperHelper<Args...>(receiver, selector, args...);
+}
+
+// Same as calling super, but the super_class field resolved at runtime instead of compile time
+#define qt_objcDynamicSuper(...) qt_objcDynamicSuperHelper(self, _cmd, ##__VA_ARGS__)
 
 #endif //QCOCOAHELPERS_H
 

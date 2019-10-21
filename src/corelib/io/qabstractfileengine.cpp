@@ -328,7 +328,8 @@ QAbstractFileEngine *QAbstractFileEngine::create(const QString &fileName)
 
     These are used by the fileTime() function.
 
-    \value CreationTime When the file was created.
+    \value BirthTime When the file was born (created).
+    \value MetadataChangeTime When the file's metadata was last changed.
     \value ModificationTime When the file was most recently modified.
     \value AccessTime When the file was most recently accessed (e.g.
     read or written to).
@@ -737,13 +738,31 @@ QString QAbstractFileEngine::owner(FileOwner owner) const
     return QString();
 }
 
+
 /*!
-    If \a time is \c CreationTime, return when the file was created.
-    If \a time is \c ModificationTime, return when the file was most
-    recently modified. If \a time is \c AccessTime, return when the
-    file was most recently accessed (e.g. read or written).
-    If the time cannot be determined return QDateTime() (an invalid
-    date time).
+    \since 5.10
+
+    Sets the file \a time to \a newDate, returning true if successful;
+    otherwise returns false.
+
+    This virtual function must be reimplemented by all subclasses.
+
+    \sa fileTime()
+*/
+bool QAbstractFileEngine::setFileTime(const QDateTime &newDate, FileTime time)
+{
+    Q_UNUSED(newDate);
+    Q_UNUSED(time);
+    return false;
+}
+
+/*!
+    If \a time is \c BirthTime, return when the file was born (created). If \a
+    time is \c MetadataChangeTime, return when the file's metadata was last
+    changed. If \a time is \c ModificationTime, return when the file was most
+    recently modified. If \a time is \c AccessTime, return when the file was
+    most recently accessed (e.g. read or written). If the time cannot be
+    determined return QDateTime() (an invalid date time).
 
     This virtual function must be reimplemented by all subclasses.
 
@@ -840,6 +859,20 @@ bool QAbstractFileEngine::unmap(uchar *address)
     UnMapExtensionOption options;
     options.address = address;
     return extension(UnMapExtension, &options);
+}
+
+/*!
+    \since 5.10
+
+    Duplicates the contents of this file (starting from the current position)
+    to the file specified by the engine \a target.
+
+    Returns \c true on success; otherwise, \c false is returned.
+ */
+bool QAbstractFileEngine::cloneTo(QAbstractFileEngine *target)
+{
+    Q_UNUSED(target);
+    return false;
 }
 
 /*!

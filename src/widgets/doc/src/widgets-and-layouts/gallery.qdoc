@@ -41,10 +41,6 @@
 
     \table
         \row
-            \li \image windows-xp-style.png Windows XP Style
-            \li The Windows XP style ("windowsxp") is provided by
-                QWindowsXPStyle.
-        \row
             \li The Windows style ("windows") is provided by QWindowsStyle.
             \li \image windows-style.png Windows Style
         \row

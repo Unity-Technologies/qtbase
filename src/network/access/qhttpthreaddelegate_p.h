@@ -63,9 +63,10 @@
 #include "qhttpnetworkrequest_p.h"
 #include "qhttpnetworkconnection_p.h"
 #include <QSharedPointer>
-#include "qsslconfiguration.h"
+#include <QScopedPointer>
 #include "private/qnoncontiguousbytedevice_p.h"
 #include "qnetworkaccessauthenticationmanager_p.h"
+#include <QtNetwork/private/http2protocol_p.h>
 
 QT_REQUIRE_CONFIG(http);
 
@@ -88,7 +89,7 @@ public:
     // incoming
     bool ssl;
 #ifndef QT_NO_SSL
-    QSslConfiguration incomingSslConfiguration;
+    QScopedPointer<QSslConfiguration> incomingSslConfiguration;
 #endif
     QHttpNetworkRequest httpRequest;
     qint64 downloadBufferMaximumSize;
@@ -115,6 +116,7 @@ public:
     qint64 removedContentLength;
     QNetworkReply::NetworkError incomingErrorCode;
     QString incomingErrorDetail;
+    Http2::ProtocolParameters http2Parameters;
 #ifndef QT_NO_BEARERMANAGEMENT
     QSharedPointer<QNetworkSession> networkSession;
 #endif
@@ -216,12 +218,12 @@ public:
     {
     }
 
-    qint64 pos() const Q_DECL_OVERRIDE
+    qint64 pos() const override
     {
         return m_pos;
     }
 
-    const char* readPointer(qint64 maximumLength, qint64 &len) Q_DECL_OVERRIDE
+    const char* readPointer(qint64 maximumLength, qint64 &len) override
     {
         if (m_amount > 0) {
             len = m_amount;
@@ -241,7 +243,7 @@ public:
         return 0;
     }
 
-    bool advanceReadPointer(qint64 a) Q_DECL_OVERRIDE
+    bool advanceReadPointer(qint64 a) override
     {
         if (m_data == 0)
             return false;
@@ -256,7 +258,7 @@ public:
         return true;
     }
 
-    bool atEnd() const Q_DECL_OVERRIDE
+    bool atEnd() const override
     {
         if (m_amount > 0)
             return false;
@@ -264,7 +266,7 @@ public:
             return m_atEnd;
     }
 
-    bool reset() Q_DECL_OVERRIDE
+    bool reset() override
     {
         m_amount = 0;
         m_data = 0;
@@ -286,7 +288,7 @@ public:
         return b;
     }
 
-    qint64 size() const Q_DECL_OVERRIDE
+    qint64 size() const override
     {
         return m_size;
     }

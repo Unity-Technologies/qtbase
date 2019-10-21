@@ -52,6 +52,7 @@
 
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
+#include <QRandomGenerator>
 #include <qmath.h>
 
 Renderer::Renderer(const QSurfaceFormat &format, Renderer *share, QScreen *screen)
@@ -68,9 +69,9 @@ Renderer::Renderer(const QSurfaceFormat &format, Renderer *share, QScreen *scree
     m_context->create();
 
     m_backgroundColor = QColor::fromRgbF(0.1f, 0.1f, 0.2f, 1.0f);
-    m_backgroundColor.setRed(qrand() % 64);
-    m_backgroundColor.setGreen(qrand() % 128);
-    m_backgroundColor.setBlue(qrand() % 256);
+    m_backgroundColor.setRed(QRandomGenerator::global()->bounded(64));
+    m_backgroundColor.setGreen(QRandomGenerator::global()->bounded(128));
+    m_backgroundColor.setBlue(QRandomGenerator::global()->bounded(256));
 }
 
 HelloWindow::HelloWindow(const QSharedPointer<Renderer> &renderer, QScreen *screen)
@@ -93,6 +94,17 @@ HelloWindow::HelloWindow(const QSharedPointer<Renderer> &renderer, QScreen *scre
 void HelloWindow::exposeEvent(QExposeEvent *)
 {
     m_renderer->setAnimating(this, isExposed());
+    if (isExposed())
+        m_renderer->render();
+}
+
+bool HelloWindow::event(QEvent *ev)
+{
+    if (ev->type() == QEvent::UpdateRequest) {
+        m_renderer->render();
+        requestUpdate();
+    }
+    return QWindow::event(ev);
 }
 
 void HelloWindow::mousePressEvent(QMouseEvent *)
@@ -129,7 +141,7 @@ void Renderer::setAnimating(HelloWindow *window, bool animating)
     if (animating) {
         m_windows << window;
         if (m_windows.size() == 1)
-            QTimer::singleShot(0, this, &Renderer::render);
+            window->requestUpdate();
     } else {
         m_currentWindow = 0;
         m_windows.removeOne(window);
@@ -193,8 +205,6 @@ void Renderer::render()
     m_context->swapBuffers(surface);
 
     m_fAngle += 1.0f;
-
-    QTimer::singleShot(0, this, &Renderer::render);
 }
 
 Q_GLOBAL_STATIC(QMutex, initMutex)
@@ -276,21 +286,20 @@ void Renderer::createGeometry()
     extrude(x4, y4, y4, x4);
     extrude(y4, x4, y3, x3);
 
-    const qreal Pi = 3.14159f;
     const int NumSectors = 100;
-
+    const qreal sectorAngle = 2 * qreal(M_PI) / NumSectors;
     for (int i = 0; i < NumSectors; ++i) {
-        qreal angle1 = (i * 2 * Pi) / NumSectors;
-        qreal x5 = 0.30 * qSin(angle1);
-        qreal y5 = 0.30 * qCos(angle1);
-        qreal x6 = 0.20 * qSin(angle1);
-        qreal y6 = 0.20 * qCos(angle1);
+        qreal angle = i * sectorAngle;
+        qreal x5 = 0.30 * qSin(angle);
+        qreal y5 = 0.30 * qCos(angle);
+        qreal x6 = 0.20 * qSin(angle);
+        qreal y6 = 0.20 * qCos(angle);
 
-        qreal angle2 = ((i + 1) * 2 * Pi) / NumSectors;
-        qreal x7 = 0.20 * qSin(angle2);
-        qreal y7 = 0.20 * qCos(angle2);
-        qreal x8 = 0.30 * qSin(angle2);
-        qreal y8 = 0.30 * qCos(angle2);
+        angle += sectorAngle;
+        qreal x7 = 0.20 * qSin(angle);
+        qreal y7 = 0.20 * qCos(angle);
+        qreal x8 = 0.30 * qSin(angle);
+        qreal y8 = 0.30 * qCos(angle);
 
         quad(x5, y5, x6, y6, x7, y7, x8, y8);
 

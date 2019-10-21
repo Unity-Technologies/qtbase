@@ -40,6 +40,9 @@
 #include "qiosservices.h"
 
 #include <QtCore/qurl.h>
+#include <QtCore/qdebug.h>
+#include <QtCore/private/qcore_mac_p.h>
+
 #include <QtGui/qdesktopservices.h>
 
 #import <UIKit/UIApplication.h>
@@ -48,6 +51,11 @@ QT_BEGIN_NAMESPACE
 
 bool QIOSServices::openUrl(const QUrl &url)
 {
+    if (qt_apple_isApplicationExtension()) {
+        qWarning() << "openUrl not implement for application extensions yet";
+        return false;
+    }
+
     if (url == m_handlingUrl)
         return false;
 
@@ -55,11 +63,26 @@ bool QIOSServices::openUrl(const QUrl &url)
         return openDocument(url);
 
     NSURL *nsUrl = url.toNSURL();
+    UIApplication *application = qt_apple_sharedApplication();
 
-    if (![[UIApplication sharedApplication] canOpenURL:nsUrl])
+    if (![application canOpenURL:nsUrl])
         return false;
 
-    return [[UIApplication sharedApplication] openURL:nsUrl];
+    static SEL openUrlSelector = @selector(openURL:options:completionHandler:);
+    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:
+        [UIApplication instanceMethodSignatureForSelector:openUrlSelector]];
+    invocation.target = application;
+    invocation.selector = openUrlSelector;
+
+    static auto kEmptyDictionary = @{};
+    // Indices 0 and 1 are self and _cmd
+    [invocation setArgument:&nsUrl atIndex:2];
+    [invocation setArgument:&kEmptyDictionary atIndex:3];
+    // Fourth argument is nil, so left unset
+
+    [invocation invoke];
+
+    return true;
 }
 
 bool QIOSServices::openDocument(const QUrl &url)

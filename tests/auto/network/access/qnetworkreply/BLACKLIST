@@ -2,16 +2,15 @@
 osx
 [authenticationCacheAfterCancel]
 windows
-[ioGetFromBuiltinHttp:http+limited]
-ubuntu-14.04
-[ioGetFromBuiltinHttp:https+limited]
-ubuntu-14.04
 [httpAbort]
 *
 [backgroundRequestInterruption:ftp, bg, nobg]
 *
 [getErrors:ftp-host]
 linux
+# QTBUG-71953
+[getFromHttp:success-external]
+*
 [getFromHttpIntoBuffer]
 windows
 [getFromHttpIntoBuffer2]
@@ -25,11 +24,12 @@ windows
 # QTBUG-66247
 [ioHttpRedirect]
 windows
+# QTBUG-66602
 [ioHttpRedirectMultipartPost]
-linux
+*
+# QTBUG-66247
 [ioHttpRedirectPolicy]
-b2qt 64bit
-linux
+*
 [ioHttpRedirectPostPut]
 linux
 windows
@@ -43,3 +43,5 @@ windows
 windows
 [getFromUnreachableIp]
 windows msvc-2017
+[ioHttpRedirectErrors:too-many-redirects]
+rhel-6.6 ci

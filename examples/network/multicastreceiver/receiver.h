@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2017 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
@@ -53,11 +53,10 @@
 
 #include <QDialog>
 #include <QHostAddress>
+#include <QUdpSocket>
 
 QT_BEGIN_NAMESPACE
 class QLabel;
-class QPushButton;
-class QUdpSocket;
 QT_END_NAMESPACE
 
 class Receiver : public QDialog
@@ -65,16 +64,17 @@ class Receiver : public QDialog
     Q_OBJECT
 
 public:
-    Receiver(QWidget *parent = 0);
+    explicit Receiver(QWidget *parent = nullptr);
 
 private slots:
     void processPendingDatagrams();
 
 private:
-    QLabel *statusLabel;
-    QPushButton *quitButton;
-    QUdpSocket *udpSocket;
-    QHostAddress groupAddress;
+    QLabel *statusLabel = nullptr;
+    QUdpSocket udpSocket4;
+    QUdpSocket udpSocket6;
+    QHostAddress groupAddress4;
+    QHostAddress groupAddress6;
 };
 
 #endif

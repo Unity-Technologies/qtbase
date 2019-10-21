@@ -318,6 +318,9 @@ void tst_QColor::namehex_data()
     QTest::newRow("global color darkCyan") << "#008080" << QColor(Qt::darkCyan);
     QTest::newRow("global color darkMagenta") << "#800080" << QColor(Qt::darkMagenta);
     QTest::newRow("global color darkYellow") << "#808000" << QColor(Qt::darkYellow);
+    QTest::newRow("#RGB") << "#888" << QColor(0x88, 0x88, 0x88);
+    QTest::newRow("#RRRGGGBBB") << "#80F80F80F" << QColor(qRgba64(0x80f8, 0x80f8, 0x80f8, 0xffff));
+    QTest::newRow("#RRRRGGGGBBBB") << "#808180818081" << QColor(qRgba64(0x8081, 0x8081, 0x8081, 0xffff));
     QTest::newRow("transparent red") << "#66ff0000" << QColor(255, 0, 0, 102);
     QTest::newRow("invalid red") << "#gg0000" << QColor();
     QTest::newRow("invalid transparent") << "#gg00ff00" << QColor();
@@ -545,19 +548,32 @@ void tst_QColor::setNamedColor_data()
             QColor bySetNamedColor;              \
             bySetNamedColor.setNamedColor(expr); \
             auto byCtor = QColor(expr);          \
-            QTest::newRow(e.name + QByteArrayLiteral(#expr)) \
+            QTest::addRow("%s: %s", e.name, #expr) \
                 << byCtor << bySetNamedColor << expected;    \
         } while (0)                              \
         /*end*/
 
-        ROW(QLatin1String(e.name));
-        ROW(QString(QLatin1String(e.name)));
+        const auto l1 = QLatin1String(e.name);
+        const auto l1UpperBA = QByteArray(e.name).toUpper();
+        const auto l1Upper = QLatin1String(l1UpperBA);
+        const auto l1SpaceBA = QByteArray(e.name).insert(1, ' ');
+        const auto l1Space = QLatin1String(l1SpaceBA);
+
+        const auto u16  = QString(l1);
+        const auto u16Upper = u16.toUpper();
+        const auto u16Space = QString(u16).insert(1, ' ');
+
+        ROW(l1);
+        ROW(u16);
+        ROW(QStringView(u16));
         // name should be case insensitive
-        ROW(QLatin1String(QByteArray(e.name).toUpper()));
-        ROW(QString(e.name).toUpper());
+        ROW(l1Upper);
+        ROW(u16Upper);
+        ROW(QStringView(u16Upper));
         // spaces should be ignored
-        ROW(QLatin1String(QByteArray(e.name).insert(1, ' ')));
-        ROW(QString(e.name).insert(1, ' '));
+        ROW(l1Space);
+        ROW(u16Space);
+        ROW(QStringView(u16Space));
 #undef ROW
     }
 }
@@ -1275,7 +1291,7 @@ void tst_QColor::toCmyk_data()
         << QColor::fromHslF(180./360., 1., 0.5, 1.0);
 
     QTest::newRow("data1")
-        << QColor::fromCmyk(255, 255, 255, 255)
+        << QColor::fromCmyk(0, 0, 0, 255)
         << QColor::fromRgb(0, 0, 0)
         << QColor::fromRgb(0, 0, 0).toHsv()
         << QColor::fromRgb(0, 0, 0).toHsl();
@@ -1410,9 +1426,6 @@ void tst_QColor::achromaticHslHue()
 #if 0 // Used to be included in Qt4 for Q_WS_X11
 void tst_QColor::setallowX11ColorNames()
 {
-#if defined(Q_OS_IRIX)
-    QSKIP("This fails due to the gamma settings in the SGI X server");
-#endif
     RGBData x11RgbTbl[] = {
         // a few standard X11 color names
         { "DodgerBlue1", qRgb(30, 144, 255) },
@@ -1482,10 +1495,28 @@ void tst_QColor::unpremultiply_sse4()
     // Tests that qUnpremultiply_sse4 returns the same as qUnpremultiply.
 #if QT_COMPILER_SUPPORTS_HERE(SSE4_1)
     if (qCpuHasFeature(SSE4_1)) {
+        int minorDifferences = 0;
+        for (uint a = 0; a < 256; a++) {
+            for (uint c = 0; c <= a; c++) {
+                const QRgb p = qRgba(c, a-c, c/2, a);
+                const uint u = qUnpremultiply(p);
+                const uint usse4 = qUnpremultiply_sse4(p);
+                if (u != usse4) {
+                    QCOMPARE(qAlpha(u), qAlpha(usse4));
+                    QVERIFY(qAbs(qRed(u) - qRed(usse4)) <= 1);
+                    QVERIFY(qAbs(qGreen(u) - qGreen(usse4)) <= 1);
+                    QVERIFY(qAbs(qBlue(u) - qBlue(usse4)) <= 1);
+                    ++minorDifferences;
+                }
+            }
+        }
+        // Allow a few rounding differences as long as it still obeys
+        // the qPremultiply(qUnpremultiply(x)) == x invariant
+        QVERIFY(minorDifferences <= 16 * 255);
         for (uint a = 0; a < 256; a++) {
             for (uint c = 0; c <= a; c++) {
                 QRgb p = qRgba(c, a-c, c, a);
-                QCOMPARE(qUnpremultiply(p), qUnpremultiply_sse4(p));
+                QCOMPARE(p, qPremultiply(qUnpremultiply_sse4(p)));
             }
         }
         return;

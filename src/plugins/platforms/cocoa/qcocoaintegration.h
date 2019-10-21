@@ -51,6 +51,9 @@
 #include "qcocoadrag.h"
 #include "qcocoaservices.h"
 #include "qcocoakeymapper.h"
+#if QT_CONFIG(vulkan)
+#include "qcocoavulkaninstance.h"
+#endif
 
 #include <QtCore/QScopedPointer>
 #include <qpa/qplatformintegration.h>
@@ -58,60 +61,9 @@
 
 QT_BEGIN_NAMESPACE
 
-class QCocoaScreen : public QPlatformScreen
+class QCocoaIntegration : public QObject, public QPlatformIntegration
 {
-public:
-    QCocoaScreen(int screenIndex);
-    ~QCocoaScreen();
-
-    // ----------------------------------------------------
-    // Virtual methods overridden from QPlatformScreen
-    QPixmap grabWindow(WId window, int x, int y, int width, int height) const Q_DECL_OVERRIDE;
-    QRect geometry() const Q_DECL_OVERRIDE { return m_geometry; }
-    QRect availableGeometry() const Q_DECL_OVERRIDE { return m_availableGeometry; }
-    int depth() const Q_DECL_OVERRIDE { return m_depth; }
-    QImage::Format format() const Q_DECL_OVERRIDE { return m_format; }
-    qreal devicePixelRatio() const Q_DECL_OVERRIDE;
-    QSizeF physicalSize() const Q_DECL_OVERRIDE { return m_physicalSize; }
-    QDpi logicalDpi() const Q_DECL_OVERRIDE { return m_logicalDpi; }
-    qreal refreshRate() const Q_DECL_OVERRIDE { return m_refreshRate; }
-    QString name() const Q_DECL_OVERRIDE { return m_name; }
-    QPlatformCursor *cursor() const Q_DECL_OVERRIDE { return m_cursor; }
-    QWindow *topLevelAt(const QPoint &point) const Q_DECL_OVERRIDE;
-    QList<QPlatformScreen *> virtualSiblings() const Q_DECL_OVERRIDE { return m_siblings; }
-    QPlatformScreen::SubpixelAntialiasingType subpixelAntialiasingTypeHint() const Q_DECL_OVERRIDE;
-
-    // ----------------------------------------------------
-    // Additional methods
-    void setVirtualSiblings(const QList<QPlatformScreen *> &siblings) { m_siblings = siblings; }
-    NSScreen *nativeScreen() const;
-    void updateGeometry();
-
-    QPointF mapToNative(const QPointF &pos) const { return flipCoordinate(pos); }
-    QRectF mapToNative(const QRectF &rect) const { return flipCoordinate(rect); }
-    QPointF mapFromNative(const QPointF &pos) const { return flipCoordinate(pos); }
-    QRectF mapFromNative(const QRectF &rect) const { return flipCoordinate(rect); }
-
-private:
-    QPointF flipCoordinate(const QPointF &pos) const;
-    QRectF flipCoordinate(const QRectF &rect) const;
-
-public:
-    int m_screenIndex;
-    QRect m_geometry;
-    QRect m_availableGeometry;
-    QDpi m_logicalDpi;
-    qreal m_refreshRate;
-    int m_depth;
-    QString m_name;
-    QImage::Format m_format;
-    QSizeF m_physicalSize;
-    QCocoaCursor *m_cursor;
-    QList<QPlatformScreen *> m_siblings;
-};
-
-class QCocoaIntegration : public QPlatformIntegration
-{
+    Q_OBJECT
 public:
     enum Option {
         UseFreeTypeFontEngine = 0x1
@@ -124,37 +76,40 @@ public:
     static QCocoaIntegration *instance();
     Options options() const;
 
-    bool hasCapability(QPlatformIntegration::Capability cap) const Q_DECL_OVERRIDE;
-    QPlatformWindow *createPlatformWindow(QWindow *window) const Q_DECL_OVERRIDE;
-    QPlatformWindow *createForeignWindow(QWindow *window, WId nativeHandle) const Q_DECL_OVERRIDE;
+    bool hasCapability(QPlatformIntegration::Capability cap) const override;
+    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
+    QPlatformWindow *createForeignWindow(QWindow *window, WId nativeHandle) const override;
+    QPlatformOffscreenSurface *createPlatformOffscreenSurface(QOffscreenSurface *surface) const override;
 #ifndef QT_NO_OPENGL
-    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const Q_DECL_OVERRIDE;
+    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const override;
 #endif
-    QPlatformBackingStore *createPlatformBackingStore(QWindow *widget) const Q_DECL_OVERRIDE;
+    QPlatformBackingStore *createPlatformBackingStore(QWindow *widget) const override;
 
-    QAbstractEventDispatcher *createEventDispatcher() const Q_DECL_OVERRIDE;
+    QAbstractEventDispatcher *createEventDispatcher() const override;
 
-    QCoreTextFontDatabase *fontDatabase() const Q_DECL_OVERRIDE;
-    QCocoaNativeInterface *nativeInterface() const Q_DECL_OVERRIDE;
-    QPlatformInputContext *inputContext() const Q_DECL_OVERRIDE;
+#if QT_CONFIG(vulkan)
+    QPlatformVulkanInstance *createPlatformVulkanInstance(QVulkanInstance *instance) const override;
+    QCocoaVulkanInstance *getCocoaVulkanInstance() const;
+#endif
+
+    QCoreTextFontDatabase *fontDatabase() const override;
+    QCocoaNativeInterface *nativeInterface() const override;
+    QPlatformInputContext *inputContext() const override;
 #ifndef QT_NO_ACCESSIBILITY
-    QCocoaAccessibility *accessibility() const Q_DECL_OVERRIDE;
+    QCocoaAccessibility *accessibility() const override;
 #endif
 #ifndef QT_NO_CLIPBOARD
-    QCocoaClipboard *clipboard() const Q_DECL_OVERRIDE;
+    QCocoaClipboard *clipboard() const override;
 #endif
-    QCocoaDrag *drag() const Q_DECL_OVERRIDE;
+    QCocoaDrag *drag() const override;
 
-    QStringList themeNames() const Q_DECL_OVERRIDE;
-    QPlatformTheme *createPlatformTheme(const QString &name) const Q_DECL_OVERRIDE;
-    QCocoaServices *services() const Q_DECL_OVERRIDE;
-    QVariant styleHint(StyleHint hint) const Q_DECL_OVERRIDE;
+    QStringList themeNames() const override;
+    QPlatformTheme *createPlatformTheme(const QString &name) const override;
+    QCocoaServices *services() const override;
+    QVariant styleHint(StyleHint hint) const override;
 
-    Qt::KeyboardModifiers queryKeyboardModifiers() const Q_DECL_OVERRIDE;
-    QList<int> possibleKeys(const QKeyEvent *event) const Q_DECL_OVERRIDE;
-
-    void updateScreens();
-    QCocoaScreen *screenForNSScreen(NSScreen *nsScreen);
+    Qt::KeyboardModifiers queryKeyboardModifiers() const override;
+    QList<int> possibleKeys(const QKeyEvent *event) const override;
 
     void setToolbar(QWindow *window, NSToolbar *toolbar);
     NSToolbar *toolbar(QWindow *window) const;
@@ -165,9 +120,12 @@ public:
     QCocoaWindow *activePopupWindow() const;
     QList<QCocoaWindow *> *popupWindowStack();
 
-    void setApplicationIcon(const QIcon &icon) const Q_DECL_OVERRIDE;
+    void setApplicationIcon(const QIcon &icon) const override;
 
-    void beep() const Q_DECL_OVERRIDE;
+    void beep() const override;
+
+private Q_SLOTS:
+    void focusWindowChanged(QWindow *);
 
 private:
     static QCocoaIntegration *mInstance;
@@ -180,7 +138,6 @@ private:
     QScopedPointer<QCocoaAccessibility> mAccessibility;
 #endif
     QScopedPointer<QPlatformTheme> mPlatformTheme;
-    QList<QCocoaScreen *> mScreens;
 #ifndef QT_NO_CLIPBOARD
     QCocoaClipboard  *mCocoaClipboard;
 #endif
@@ -189,6 +146,9 @@ private:
     QScopedPointer<QCocoaServices> mServices;
     QScopedPointer<QCocoaKeyMapper> mKeyboardMapper;
 
+#if QT_CONFIG(vulkan)
+    mutable QCocoaVulkanInstance *mCocoaVulkanInstance = nullptr;
+#endif
     QHash<QWindow *, NSToolbar *> mToolbars;
     QList<QCocoaWindow *> m_popupWindowStack;
 };

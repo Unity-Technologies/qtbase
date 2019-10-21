@@ -1,5 +1,6 @@
 /****************************************************************************
 **
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Copyright (C) 2013 BogDan Vatra <bogdan@kde.org>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -103,11 +104,7 @@ bool QAndroidPlatformMessageDialogHelper::show(Qt::WindowFlags windowFlags
     if (!str.isEmpty())
         m_javaMessageDialog.callMethod<void>("setDetailedText", "(Ljava/lang/String;)V", QJNIObjectPrivate::fromString(str).object());
 
-    // http://developer.android.com/design/building-blocks/dialogs.html
-    // dismissive action on the left, affirmative on the right
-    // There don't seem to be more fine-grained rules, but the OS X layout
-    // at least conforms to this one rule and makes the rest deterministic.
-    const int * currentLayout = buttonLayout(Qt::Horizontal, MacLayout);
+    const int * currentLayout = buttonLayout(Qt::Horizontal, AndroidLayout);
     while (*currentLayout != QPlatformDialogHelper::EOL) {
         int role = (*currentLayout & ~QPlatformDialogHelper::Reverse);
         addButtons(opt, static_cast<ButtonRole>(role));
@@ -121,6 +118,15 @@ bool QAndroidPlatformMessageDialogHelper::show(Qt::WindowFlags windowFlags
 
 void QAndroidPlatformMessageDialogHelper::addButtons(QSharedPointer<QMessageDialogOptions> opt, ButtonRole role)
 {
+    for (const QMessageDialogOptions::CustomButton &b : opt->customButtons()) {
+        if (b.role == role) {
+            QString label = b.label;
+            label.remove(QChar('&'));
+            m_javaMessageDialog.callMethod<void>("addButton", "(ILjava/lang/String;)V", b.id,
+                                                 QJNIObjectPrivate::fromString(label).object());
+        }
+    }
+
     for (int i = QPlatformDialogHelper::FirstButton; i < QPlatformDialogHelper::LastButton; i<<=1) {
         StandardButton b = static_cast<StandardButton>(i);
         if (buttonRole(b) == role && (opt->standardButtons() & i)) {
@@ -148,6 +154,12 @@ void QAndroidPlatformMessageDialogHelper::dialogResult(int buttonID)
 
     QPlatformDialogHelper::StandardButton standardButton = static_cast<QPlatformDialogHelper::StandardButton>(buttonID);
     QPlatformDialogHelper::ButtonRole role = QPlatformDialogHelper::buttonRole(standardButton);
+    if (buttonID > QPlatformDialogHelper::LastButton) {
+        const QMessageDialogOptions::CustomButton *custom = options()->customButton(buttonID);
+        Q_ASSERT(custom);
+        role = custom->role;
+    }
+
     emit clicked(standardButton, role);
 }
 

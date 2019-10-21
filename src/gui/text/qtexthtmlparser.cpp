@@ -40,7 +40,6 @@
 #include "qtexthtmlparser_p.h"
 
 #include <qbytearray.h>
-#include <qtextcodec.h>
 #include <qstack.h>
 #include <qdebug.h>
 #include <qthread.h>
@@ -448,13 +447,6 @@ static const QTextHtmlElement elements[Html_NumElements]= {
     { "var",        Html_var,        QTextHtmlElement::DisplayInline },
 };
 
-#if defined(Q_CC_MSVC) && _MSC_VER < 1600
-static bool operator<(const QTextHtmlElement &e1, const QTextHtmlElement &e2)
-{
-    return QLatin1String(e1.name) < QLatin1String(e2.name);
-}
-#endif
-
 static bool operator<(const QString &str, const QTextHtmlElement &e)
 {
     return str < QLatin1String(e.name);
@@ -493,7 +485,7 @@ static QString quoteNewline(const QString &s)
 
 QTextHtmlParserNode::QTextHtmlParserNode()
     : parent(0), id(Html_unknown),
-      cssFloat(QTextFrameFormat::InFlow), hasOwnListStyle(false), hasOwnLineHeightType(false),
+      cssFloat(QTextFrameFormat::InFlow), hasOwnListStyle(false), hasOwnLineHeightType(false), hasLineHeightMultiplier(false),
       hasCssListIndent(false), isEmptyParagraph(false), isTextFrame(false), isRootFrame(false),
       displayMode(QTextHtmlElement::DisplayInline), hasHref(false),
       listStyle(QTextListFormat::ListStyleUndefined), imageWidth(-1), imageHeight(-1), tableBorder(0),
@@ -869,7 +861,8 @@ QString QTextHtmlParser::parseWord()
         ++pos;
         while (pos < len) {
             QChar c = txt.at(pos++);
-            if (c == QLatin1Char('\''))
+            // Allow for escaped single quotes as they may be part of the string
+            if (c == QLatin1Char('\'') && (txt.length() > 1 && txt.at(pos - 2) != QLatin1Char('\\')))
                 break;
             else
                 word += c;
@@ -1216,6 +1209,11 @@ void QTextHtmlParserNode::applyCssDeclarations(const QVector<QCss::Declaration> 
             else
                 lineHeightType = QTextBlockFormat::SingleHeight;
 
+            if (hasLineHeightMultiplier) {
+                qreal lineHeight = blockFormat.lineHeight() / 100.0;
+                blockFormat.setProperty(QTextBlockFormat::LineHeight, lineHeight);
+            }
+
             blockFormat.setProperty(QTextBlockFormat::LineHeightType, lineHeightType);
             hasOwnLineHeightType = true;
         }
@@ -1227,9 +1225,14 @@ void QTextHtmlParserNode::applyCssDeclarations(const QVector<QCss::Declaration> 
                 lineHeightType = QTextBlockFormat::MinimumHeight;
             } else {
                 bool ok;
-                QString value = decl.d->values.first().toString();
+                QCss::Value cssValue = decl.d->values.first();
+                QString value = cssValue.toString();
                 lineHeight = value.toDouble(&ok);
                 if (ok) {
+                    if (!hasOwnLineHeightType && cssValue.type == QCss::Value::Number) {
+                        lineHeight *= 100.0;
+                        hasLineHeightMultiplier = true;
+                    }
                     lineHeightType = QTextBlockFormat::ProportionalHeight;
                 } else {
                     lineHeight = 0.0;
@@ -1502,7 +1505,16 @@ void QTextHtmlParser::applyAttributes(const QStringList &attributes)
                         n -= 3;
                     node->charFormat.setProperty(QTextFormat::FontSizeAdjustment, n);
                 } else if (key == QLatin1String("face")) {
-                    node->charFormat.setFontFamily(value);
+                    if (value.contains(QLatin1Char(','))) {
+                        const QStringList values = value.split(QLatin1Char(','));
+                        QStringList families;
+                        for (const QString &family : values)
+                            families << family.trimmed();
+                        node->charFormat.setFontFamilies(families);
+                        node->charFormat.setFontFamily(families.at(0));
+                    } else {
+                        node->charFormat.setFontFamily(value);
+                    }
                 } else if (key == QLatin1String("color")) {
                     QColor c; c.setNamedColor(value);
                     if (!c.isValid())
@@ -1541,7 +1553,7 @@ void QTextHtmlParser::applyAttributes(const QStringList &attributes)
                 if (key == QLatin1String("href"))
                     node->charFormat.setAnchorHref(value);
                 else if (key == QLatin1String("name"))
-                    node->charFormat.setAnchorName(value);
+                    node->charFormat.setAnchorNames({value});
                 break;
             case Html_img:
                 if (key == QLatin1String("src") || key == QLatin1String("source")) {
@@ -1681,7 +1693,7 @@ void QTextHtmlParser::applyAttributes(const QStringList &attributes)
             node->charFormat.setToolTip(value);
         } else if (key == QLatin1String("id")) {
             node->charFormat.setAnchor(true);
-            node->charFormat.setAnchorName(value);
+            node->charFormat.setAnchorNames({value});
         }
     }
 
@@ -1698,14 +1710,14 @@ public:
     inline QTextHtmlStyleSelector(const QTextHtmlParser *parser)
         : parser(parser) { nameCaseSensitivity = Qt::CaseInsensitive; }
 
-    virtual QStringList nodeNames(NodePtr node) const Q_DECL_OVERRIDE;
-    virtual QString attribute(NodePtr node, const QString &name) const Q_DECL_OVERRIDE;
-    virtual bool hasAttributes(NodePtr node) const Q_DECL_OVERRIDE;
-    virtual bool isNullNode(NodePtr node) const Q_DECL_OVERRIDE;
-    virtual NodePtr parentNode(NodePtr node) const Q_DECL_OVERRIDE;
-    virtual NodePtr previousSiblingNode(NodePtr node) const Q_DECL_OVERRIDE;
-    virtual NodePtr duplicateNode(NodePtr node) const Q_DECL_OVERRIDE;
-    virtual void freeNode(NodePtr node) const Q_DECL_OVERRIDE;
+    virtual QStringList nodeNames(NodePtr node) const override;
+    virtual QString attribute(NodePtr node, const QString &name) const override;
+    virtual bool hasAttributes(NodePtr node) const override;
+    virtual bool isNullNode(NodePtr node) const override;
+    virtual NodePtr parentNode(NodePtr node) const override;
+    virtual NodePtr previousSiblingNode(NodePtr node) const override;
+    virtual NodePtr duplicateNode(NodePtr node) const override;
+    virtual void freeNode(NodePtr node) const override;
 
 private:
     const QTextHtmlParser *parser;
@@ -1718,6 +1730,8 @@ QStringList QTextHtmlStyleSelector::nodeNames(NodePtr node) const
 
 #endif // QT_NO_CSSPARSER
 
+#ifndef QT_NO_CSSPARSER
+
 static inline int findAttribute(const QStringList &attributes, const QString &name)
 {
     int idx = -1;
@@ -1726,8 +1740,6 @@ static inline int findAttribute(const QStringList &attributes, const QString &na
     } while (idx != -1 && (idx % 2 == 1));
     return idx;
 }
-
-#ifndef QT_NO_CSSPARSER
 
 QString QTextHtmlStyleSelector::attribute(NodePtr node, const QString &name) const
 {

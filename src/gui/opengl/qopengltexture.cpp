@@ -43,6 +43,7 @@
 #include "qopenglfunctions.h"
 #include <QtGui/qcolor.h>
 #include <QtGui/qopenglcontext.h>
+#include <QtCore/qdebug.h>
 #include <private/qobject_p.h>
 #include <private/qopenglcontext_p.h>
 
@@ -190,9 +191,18 @@ void QOpenGLTexturePrivate::destroy()
         return;
     }
     QOpenGLContext *currentContext = QOpenGLContext::currentContext();
-    if (!currentContext || !QOpenGLContext::areSharing(currentContext, context)) {
-        qWarning("Texture is not valid in the current context.\n"
+    if (!currentContext) {
+        qWarning("QOpenGLTexturePrivate::destroy() called without a current context.\n"
                  "Texture has not been destroyed");
+        return;
+    }
+    if (!QOpenGLContext::areSharing(currentContext, context)) {
+
+        qWarning("QOpenGLTexturePrivate::destroy() called but texture context %p"
+                 " is not shared with current context %p.\n"
+                 "Texture has not been destroyed",
+                 static_cast<const void *>(context),
+                 static_cast<const void *>(currentContext));
         return;
     }
 
@@ -768,6 +778,8 @@ static QOpenGLTexture::PixelFormat pixelFormatCompatibleWithInternalFormat(QOpen
         return QOpenGLTexture::Alpha;
 
     case QOpenGLTexture::RGBFormat:
+        return QOpenGLTexture::RGB;
+
     case QOpenGLTexture::RGBAFormat:
         return QOpenGLTexture::RGBA;
 
@@ -2788,12 +2800,21 @@ QOpenGLTexture::TextureFormat QOpenGLTexture::format() const
     return d->format;
 }
 
+static bool isNpot(int width, int height = 1, int depth = 1)
+{
+    return width & (width-1) || height & (height-1) || depth & (depth-1);
+}
+
 /*!
     Sets the dimensions of this texture object to \a width,
     \a height, and \a depth. The default for each dimension is 1.
     The maximum allowable texture size is dependent upon your OpenGL
     implementation. Allocating storage for a texture less than the
     maximum size can still fail if your system is low on resources.
+
+    If a non-power-of-two \a width, \a height or \a depth is provided and your
+    OpenGL implementation doesn't have support for repeating non-power-of-two
+    textures, then the wrap mode is automatically set to ClampToEdge.
 
     \sa width(), height(), depth()
 */
@@ -2806,6 +2827,9 @@ void QOpenGLTexture::setSize(int width, int height, int depth)
                  "To do so, destroy() the texture and then create() and setSize()");
         return;
     }
+
+    if (isNpot(width, height, depth) && !hasFeature(Feature::NPOTTextureRepeat) && d->target != Target::TargetRectangle)
+        d->setWrapMode(WrapMode::ClampToEdge);
 
     switch (d->target) {
     case QOpenGLTexture::Target1D:
@@ -3890,8 +3914,7 @@ bool QOpenGLTexture::isAutoMipMapGenerationEnabled() const
     have disabled automatic mipmap generation then you need to call this function
     or the overload to create the mipmap chain.
 
-    \note Mipmap generation is not supported for compressed textures with OpenGL
-    ES 2.0.
+    \note Mipmap generation is not supported for compressed textures with OpenGL ES.
 
     \sa setAutoMipMapGenerationEnabled(), setMipLevels(), mipLevels()
 */
@@ -3902,7 +3925,7 @@ void QOpenGLTexture::generateMipMaps()
     Q_ASSERT(d->textureId);
     if (isCompressedFormat(d->format)) {
         if (QOpenGLContext *ctx = QOpenGLContext::currentContext())
-            if (ctx->isOpenGLES() && ctx->format().majorVersion() < 3)
+            if (ctx->isOpenGLES())
                 return;
     }
     d->texFuncs->glGenerateTextureMipmap(d->textureId, d->target, d->bindingTarget);
@@ -3927,7 +3950,7 @@ void QOpenGLTexture::generateMipMaps(int baseLevel, bool resetBaseLevel)
     Q_ASSERT(d->textureId);
     if (isCompressedFormat(d->format)) {
         if (QOpenGLContext *ctx = QOpenGLContext::currentContext())
-            if (ctx->isOpenGLES() && ctx->format().majorVersion() < 3)
+            if (ctx->isOpenGLES())
                 return;
     }
     int oldBaseLevel;
@@ -4091,7 +4114,7 @@ QOpenGLTexture::DepthStencilMode QOpenGLTexture::depthStencilMode() const
 
 */
 
-/*
+/*!
     \since 5.5
 
     Sets the texture comparison function on this texture to \a function. The texture
@@ -4660,5 +4683,41 @@ float QOpenGLTexture::levelofDetailBias() const
     Q_D(const QOpenGLTexture);
     return d->levelOfDetailBias;
 }
+
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug debug, const QOpenGLTexture *t)
+{
+    QDebugStateSaver saver(debug);
+    debug.nospace();
+    debug << "QOpenGLTexture(";
+    if (t) {
+        const QOpenGLTexturePrivate *d = t->d_ptr.data();
+        debug << d->target << ", bindingTarget=" << d->bindingTarget
+            << ", size=[" << d->dimensions[0]
+            << ", " << d->dimensions[1];
+        if (d->target == QOpenGLTexture::Target3D)
+            debug << ", " << d->dimensions[2];
+        debug << "], format=" << d->format << ", formatClass=" << d->formatClass;
+        if (t->isCreated())
+            debug << ", textureId=" << d->textureId;
+        if (t->isBound())
+            debug << ", [bound]";
+        if (t->isTextureView())
+            debug << ", [view]";
+        if (d->fixedSamplePositions)
+            debug << ", [fixedSamplePositions]";
+        debug << ", mipLevels=" << d->requestedMipLevels << ", layers=" << d->layers
+            << ", faces=" << d->faces << ", samples=" << d->samples
+            << ", depthStencilMode=" << d->depthStencilMode << ", comparisonFunction="
+            << d->comparisonFunction << ", comparisonMode=" << d->comparisonMode
+            << ", features=" << d->features << ", minificationFilter=" << d->minFilter
+            << ", magnificationFilter=" << d->magFilter << ", wrapMode=" << d->wrapModes[0];
+    } else {
+        debug << '0';
+    }
+    debug << ')';
+    return debug;
+}
+#endif // QT_NO_DEBUG_STREAM
 
 QT_END_NAMESPACE

@@ -46,6 +46,7 @@ import android.content.ServiceConnection;
 import android.content.pm.ComponentInfo;
 import android.content.pm.PackageInfo;
 import android.content.res.AssetManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
@@ -84,6 +85,7 @@ public abstract class QtLoader {
     public static final String ENVIRONMENT_VARIABLES_KEY = "environment.variables";
     public static final String APPLICATION_PARAMETERS_KEY = "application.parameters";
     public static final String BUNDLED_LIBRARIES_KEY = "bundled.libraries";
+    public static final String QT_LIBS_RESOURCE_ID_KEY = "android.app.qt_libs_resource_id";
     public static final String BUNDLED_IN_LIB_RESOURCE_ID_KEY = "android.app.bundled_in_lib_resource_id";
     public static final String BUNDLED_IN_ASSETS_RESOURCE_ID_KEY = "android.app.bundled_in_assets_resource_id";
     public static final String MAIN_LIBRARY_KEY = "main.library";
@@ -91,6 +93,10 @@ public abstract class QtLoader {
     public static final String NECESSITAS_API_LEVEL_KEY = "necessitas.api.level";
     public static final String EXTRACT_STYLE_KEY = "extract.android.style";
     private static final String EXTRACT_STYLE_MINIMAL_KEY = "extract.android.style.option";
+
+    // These parameters matter in case of deploying application as system (embedded into firmware)
+    public static final String SYSTEM_LIB_PATH = "/system/lib/";
+    public String[] SYSTEM_APP_PATHS = {"/system/priv-app/", "/system/app/"};
 
     /// Ministro server parameter keys
     public static final String REQUIRED_MODULES_KEY = "required.modules";
@@ -105,7 +111,6 @@ public abstract class QtLoader {
 
     public static final String REPOSITORY_KEY = "repository";         // use this key to overwrite the default ministro repsitory
     public static final String ANDROID_THEMES_KEY = "android.themes"; // themes that your application uses
-
 
     public String APPLICATION_PARAMETERS = null; // use this variable to pass any parameters to your application,
     // the parameters must not contain any white spaces
@@ -210,11 +215,11 @@ public abstract class QtLoader {
 
             // add all bundled Qt libs to loader params
             ArrayList<String> libs = new ArrayList<String>();
-            if ( m_contextInfo.metaData.containsKey("android.app.bundled_libs_resource_id") )
+            if (m_contextInfo.metaData.containsKey("android.app.bundled_libs_resource_id"))
                 libs.addAll(Arrays.asList(m_context.getResources().getStringArray(m_contextInfo.metaData.getInt("android.app.bundled_libs_resource_id"))));
 
             String libName = null;
-            if ( m_contextInfo.metaData.containsKey("android.app.lib_name") ) {
+            if (m_contextInfo.metaData.containsKey("android.app.lib_name")) {
                 libName = m_contextInfo.metaData.getString("android.app.lib_name");
                 loaderParams.putString(MAIN_LIBRARY_KEY, libName); //main library contains main() function
             }
@@ -238,10 +243,6 @@ public abstract class QtLoader {
                 throw new Exception("");
 
             QtApplication.setQtContextDelegate(m_delegateClass, qtLoader);
-
-            // now load the application library so it's accessible from this class loader
-            if (libName != null)
-                System.loadLibrary(libName);
 
             Method startAppMethod=qtLoader.getClass().getMethod("startApplication");
             if (!(Boolean)startAppMethod.invoke(qtLoader))
@@ -355,12 +356,21 @@ public abstract class QtLoader {
         destinationFile.createNewFile();
 
         AssetManager assetsManager = m_context.getAssets();
-        InputStream inputStream = assetsManager.open(source);
-        OutputStream outputStream = new FileOutputStream(destinationFile);
-        copyFile(inputStream, outputStream);
+        InputStream inputStream = null;
+        OutputStream outputStream = null;
+        try {
+            inputStream = assetsManager.open(source);
+            outputStream = new FileOutputStream(destinationFile);
+            copyFile(inputStream, outputStream);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (inputStream != null)
+                inputStream.close();
 
-        inputStream.close();
-        outputStream.close();
+            if (outputStream != null)
+                outputStream.close();
+        }
     }
 
     private static void createBundledBinary(String source, String destination)
@@ -377,12 +387,21 @@ public abstract class QtLoader {
 
         destinationFile.createNewFile();
 
-        InputStream inputStream = new FileInputStream(source);
-        OutputStream outputStream = new FileOutputStream(destinationFile);
-        copyFile(inputStream, outputStream);
+        InputStream inputStream = null;
+        OutputStream outputStream = null;
+        try {
+            inputStream = new FileInputStream(source);
+            outputStream = new FileOutputStream(destinationFile);
+            copyFile(inputStream, outputStream);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (inputStream != null)
+                inputStream.close();
 
-        inputStream.close();
-        outputStream.close();
+            if (outputStream != null)
+                outputStream.close();
+        }
     }
 
     private boolean cleanCacheIfNecessary(String pluginsPrefix, long packageVersion)
@@ -391,12 +410,20 @@ public abstract class QtLoader {
 
         long cacheVersion = 0;
         if (versionFile.exists() && versionFile.canRead()) {
+            DataInputStream inputStream = null;
             try {
-                DataInputStream inputStream = new DataInputStream(new FileInputStream(versionFile));
+                inputStream = new DataInputStream(new FileInputStream(versionFile));
                 cacheVersion = inputStream.readLong();
-                inputStream.close();
             } catch (Exception e) {
                 e.printStackTrace();
+            } finally {
+                if (inputStream != null) {
+                    try {
+                        inputStream.close();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
             }
         }
 
@@ -408,13 +435,9 @@ public abstract class QtLoader {
         }
     }
 
-    private void extractBundledPluginsAndImports(String pluginsPrefix)
+    private void extractBundledPluginsAndImports(String pluginsPrefix, String libsDir)
             throws IOException
     {
-        ArrayList<String> libs = new ArrayList<String>();
-
-        String libsDir = m_context.getApplicationInfo().nativeLibraryDir + "/";
-
         long packageVersion = -1;
         try {
             PackageInfo packageInfo = m_context.getPackageManager().getPackageInfo(m_context.getPackageName(), 0);
@@ -435,14 +458,21 @@ public abstract class QtLoader {
 
             versionFile.createNewFile();
 
-            DataOutputStream outputStream = new DataOutputStream(new FileOutputStream(versionFile));
-            outputStream.writeLong(packageVersion);
-            outputStream.close();
+            DataOutputStream outputStream = null;
+            try {
+                outputStream = new DataOutputStream(new FileOutputStream(versionFile));
+                outputStream.writeLong(packageVersion);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                if (outputStream != null)
+                    outputStream.close();
+            }
         }
 
         {
+            // why can't we load the plugins directly from libs ?!?!
             String key = BUNDLED_IN_LIB_RESOURCE_ID_KEY;
-            java.util.Set<String> keys = m_contextInfo.metaData.keySet();
             if (m_contextInfo.metaData.containsKey(key)) {
                 String[] list = m_context.getResources().getStringArray(m_contextInfo.metaData.getInt(key));
 
@@ -530,61 +560,71 @@ public abstract class QtLoader {
                     && m_contextInfo.metaData.getInt("android.app.use_local_qt_libs") == 1) {
                 ArrayList<String> libraryList = new ArrayList<String>();
 
+                boolean apkDeployFromSystem = false;
+                String apkPath = m_context.getApplicationInfo().publicSourceDir;
+                File apkFile = new File(apkPath);
+                if (apkFile.exists() && Arrays.asList(SYSTEM_APP_PATHS).contains(apkFile.getParentFile().getAbsolutePath() + "/"))
+                    apkDeployFromSystem = true;
 
-                String localPrefix = "/data/local/tmp/qt/";
-                if (m_contextInfo.metaData.containsKey("android.app.libs_prefix"))
-                    localPrefix = m_contextInfo.metaData.getString("android.app.libs_prefix");
-
-                String pluginsPrefix = localPrefix;
-
-                boolean bundlingQtLibs = false;
-                if (m_contextInfo.metaData.containsKey("android.app.bundle_local_qt_libs")
-                        && m_contextInfo.metaData.getInt("android.app.bundle_local_qt_libs") == 1) {
-                    localPrefix = m_context.getApplicationInfo().dataDir + "/";
-                    pluginsPrefix = localPrefix + "qt-reserved-files/";
-                    cleanOldCacheIfNecessary(localPrefix, pluginsPrefix);
-                    extractBundledPluginsAndImports(pluginsPrefix);
-                    bundlingQtLibs = true;
+                String libsDir = null;
+                if (apkDeployFromSystem) {
+                    String systemLibsPrefix = SYSTEM_LIB_PATH;
+                    if (m_contextInfo.metaData.containsKey("android.app.system_libs_prefix")) {
+                        systemLibsPrefix = m_contextInfo.metaData.getString("android.app.system_libs_prefix");
+                    } else {
+                        Log.e(QtApplication.QtTAG, "It looks like app deployed as system app. "
+                            + "It may be necessary to specify path to system lib directory using "
+                            + "android.app.system_libs_prefix metadata variable in your AndroidManifest.xml");
+                        Log.e(QtApplication.QtTAG, "Using " + SYSTEM_LIB_PATH + " as default path");
+                    }
+                    File systemLibraryDir = new File(systemLibsPrefix);
+                    if (systemLibraryDir.exists() && systemLibraryDir.isDirectory() && systemLibraryDir.list().length > 0)
+                        libsDir = systemLibsPrefix;
+                } else {
+                    String nativeLibraryPrefix = m_context.getApplicationInfo().nativeLibraryDir + "/";
+                    File nativeLibraryDir = new File(nativeLibraryPrefix);
+                    if (nativeLibraryDir.exists() && nativeLibraryDir.isDirectory() && nativeLibraryDir.list().length > 0)
+                        libsDir = nativeLibraryPrefix;
                 }
+
+                if (apkDeployFromSystem && libsDir == null)
+                    throw new Exception("");
+
 
                 if (m_qtLibs != null) {
-                    for (int i=0;i<m_qtLibs.length;i++) {
-                        libraryList.add(localPrefix
-                                + "lib/lib"
-                                + m_qtLibs[i]
-                                + ".so");
-                    }
+                    String libPrefix = libsDir + "lib";
+                    for (int i = 0; i < m_qtLibs.length; i++)
+                        libraryList.add(libPrefix + m_qtLibs[i] + ".so");
                 }
 
-                if (m_contextInfo.metaData.containsKey("android.app.load_local_libs")) {
-                    String[] extraLibs = m_contextInfo.metaData.getString("android.app.load_local_libs").split(":");
-                    for (String lib : extraLibs) {
-                        if (lib.length() > 0) {
-                            if (lib.startsWith("lib/"))
-                                libraryList.add(localPrefix + lib);
-                            else
+                if (m_contextInfo.metaData.containsKey("android.app.bundle_local_qt_libs")
+                        && m_contextInfo.metaData.getInt("android.app.bundle_local_qt_libs") == 1) {
+                    File dataDir = new File(m_context.getApplicationInfo().dataDir);
+                    String dataPath = dataDir.getCanonicalPath() + "/";
+                    String pluginsPrefix = dataPath + "qt-reserved-files/";
+
+                    if (libsDir == null)
+                        throw new Exception("");
+
+                    cleanOldCacheIfNecessary(dataPath, pluginsPrefix);
+                    extractBundledPluginsAndImports(pluginsPrefix, libsDir);
+
+                    if (m_contextInfo.metaData.containsKey(BUNDLED_IN_LIB_RESOURCE_ID_KEY)) {
+                        String[] extraLibs = m_contextInfo.metaData.getString("android.app.load_local_libs").split(":");
+                        for (String lib : extraLibs) {
+                            if (!lib.isEmpty())
                                 libraryList.add(pluginsPrefix + lib);
                         }
                     }
-                }
 
-
-                String dexPaths = new String();
-                String pathSeparator = System.getProperty("path.separator", ":");
-                if (!bundlingQtLibs && m_contextInfo.metaData.containsKey("android.app.load_local_jars")) {
-                    String[] jarFiles = m_contextInfo.metaData.getString("android.app.load_local_jars").split(":");
-                    for (String jar:jarFiles) {
-                        if (jar.length() > 0) {
-                            if (dexPaths.length() > 0)
-                                dexPaths += pathSeparator;
-                            dexPaths += localPrefix + jar;
-                        }
-                    }
+                    ENVIRONMENT_VARIABLES += "\tQML2_IMPORT_PATH=" + pluginsPrefix + "/qml"
+                            + "\tQML_IMPORT_PATH=" + pluginsPrefix + "/imports"
+                            + "\tQT_PLUGIN_PATH=" + pluginsPrefix + "/plugins";
                 }
 
                 Bundle loaderParams = new Bundle();
                 loaderParams.putInt(ERROR_CODE_KEY, 0);
-                loaderParams.putString(DEX_PATH_KEY, dexPaths);
+                loaderParams.putString(DEX_PATH_KEY, new String());
                 loaderParams.putString(LOADER_CLASS_NAME_KEY, loaderClassName());
                 if (m_contextInfo.metaData.containsKey("android.app.static_init_classes")) {
                     loaderParams.putStringArray(STATIC_INIT_CLASSES_KEY,
@@ -596,13 +636,24 @@ public abstract class QtLoader {
                 String themePath = m_context.getApplicationInfo().dataDir + "/qt-reserved-files/android-style/";
                 String stylePath = themePath + m_displayDensity + "/";
 
-                String extractOption = "full";
+                String extractOption = "default";
                 if (m_contextInfo.metaData.containsKey("android.app.extract_android_style")) {
                     extractOption = m_contextInfo.metaData.getString("android.app.extract_android_style");
-                    if (!extractOption.equals("full") && !extractOption.equals("minimal") && !extractOption.equals("none")) {
-                        Log.e(QtApplication.QtTAG, "Invalid extract_android_style option \"" + extractOption + "\", defaulting to full");
-                        extractOption = "full";
+                    if (!extractOption.equals("default") && !extractOption.equals("full") && !extractOption.equals("minimal") && !extractOption.equals("none")) {
+                        Log.e(QtApplication.QtTAG, "Invalid extract_android_style option \"" + extractOption + "\", defaulting to \"default\"");
+                        extractOption = "default";
                    }
+                }
+
+                // QTBUG-69810: The extraction code will trigger compatibility warnings on Android SDK version >= 28
+                // when the target SDK version is set to something lower then 28, so default to "none" and issue a warning
+                // if that is the case.
+                if (extractOption.equals("default")) {
+                    final int targetSdkVersion = m_context.getApplicationInfo().targetSdkVersion;
+                    if (targetSdkVersion < 28 && Build.VERSION.SDK_INT >= 28) {
+                        Log.e(QtApplication.QtTAG, "extract_android_style option set to \"none\" when targetSdkVersion is less then 28");
+                        extractOption = "none";
+                    }
                 }
 
                 if (!(new File(stylePath)).exists() && !extractOption.equals("none")) {
@@ -616,10 +667,7 @@ public abstract class QtLoader {
                 ENVIRONMENT_VARIABLES += "\tMINISTRO_ANDROID_STYLE_PATH=" + stylePath
                         + "\tQT_ANDROID_THEMES_ROOT_PATH=" + themePath;
 
-                loaderParams.putString(ENVIRONMENT_VARIABLES_KEY, ENVIRONMENT_VARIABLES
-                        + "\tQML2_IMPORT_PATH=" + pluginsPrefix + "/qml"
-                        + "\tQML_IMPORT_PATH=" + pluginsPrefix + "/imports"
-                        + "\tQT_PLUGIN_PATH=" + pluginsPrefix + "/plugins");
+                loaderParams.putString(ENVIRONMENT_VARIABLES_KEY, ENVIRONMENT_VARIABLES);
 
                 String appParams = null;
                 if (APPLICATION_PARAMETERS != null)

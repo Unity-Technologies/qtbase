@@ -38,11 +38,9 @@
 ****************************************************************************/
 
 #include <QtWidgets/private/qtwidgetsglobal_p.h>
+#include "private/qstylehelper_p.h"
 #include "qstyleoption.h"
 #include "qapplication.h"
-#if QT_CONFIG(style_mac)
-# include "qmacstyle_mac_p.h"
-#endif
 #include <qdebug.h>
 #include <QtCore/qmath.h>
 
@@ -205,18 +203,16 @@ void QStyleOption::init(const QWidget *widget)
     if (!(state & QStyle::State_Active) && !qt_mac_can_clickThrough(widget))
         state &= ~QStyle::State_Enabled;
 #endif
-#if QT_CONFIG(style_mac)
-    switch (QMacStyle::widgetSizePolicy(widget)) {
-    case QMacStyle::SizeSmall:
+    switch (QStyleHelper::widgetSizePolicy(widget)) {
+    case QStyleHelper::SizeSmall:
         state |= QStyle::State_Small;
         break;
-    case QMacStyle::SizeMini:
+    case QStyleHelper::SizeMini:
         state |= QStyle::State_Mini;
         break;
     default:
         ;
     }
-#endif
 #ifdef QT_KEYPAD_NAVIGATION
     if (widget->hasEditFocus())
         state |= QStyle::State_HasEditFocus;
@@ -1044,7 +1040,7 @@ QStyleOptionButton::QStyleOptionButton(int version)
 */
 
 
-#ifndef QT_NO_TOOLBAR
+#if QT_CONFIG(toolbar)
 /*!
     \class QStyleOptionToolBar
     \brief The QStyleOptionToolBar class is used to describe the
@@ -1846,10 +1842,12 @@ QStyleOptionMenuItem::QStyleOptionMenuItem(int version)
 
 /*!
     \variable QStyleOptionMenuItem::tabWidth
-    \brief the tab width for the menu item
+    \brief the reserved width for the menu item's shortcut
 
-    The tab width is the distance between the text of the menu item
-    and the shortcut. The default value is 0.
+    QMenu sets it to the width occupied by the widest shortcut among
+    all visible items within the menu.
+
+    The default value is 0.
 */
 
 
@@ -3269,10 +3267,10 @@ QStyleOptionViewItem::QStyleOptionViewItem(int version)
 
 #endif // QT_CONFIG(itemviews)
 /*!
-    \fn T qstyleoption_cast<T>(const QStyleOption *option)
+    \fn template <typename T> T qstyleoption_cast<T>(const QStyleOption *option)
     \relates QStyleOption
 
-    Returns a T or 0 depending on the \l{QStyleOption::type}{type} and
+    Returns a T or \nullptr depending on the \l{QStyleOption::type}{type} and
     \l{QStyleOption::version}{version} of the given \a option.
 
     Example:
@@ -3283,11 +3281,11 @@ QStyleOptionViewItem::QStyleOptionViewItem(int version)
 */
 
 /*!
-    \fn T qstyleoption_cast<T>(QStyleOption *option)
+    \fn template <typename T> T qstyleoption_cast<T>(QStyleOption *option)
     \overload
     \relates QStyleOption
 
-    Returns a T or 0 depending on the type of the given \a option.
+    Returns a T or \nullptr depending on the type of the given \a option.
 */
 
 #if QT_CONFIG(tabwidget)
@@ -4005,10 +4003,10 @@ QStyleHintReturnVariant::~QStyleHintReturnVariant()
 */
 
 /*!
-    \fn T qstyleoption_cast<T>(const QStyleHintReturn *hint)
+    \fn template <typename T> T qstyleoption_cast<T>(const QStyleHintReturn *hint)
     \relates QStyleHintReturn
 
-    Returns a T or 0 depending on the \l{QStyleHintReturn::type}{type}
+    Returns a T or \nullptr depending on the \l{QStyleHintReturn::type}{type}
     and \l{QStyleHintReturn::version}{version} of \a hint.
 
     Example:
@@ -4019,11 +4017,11 @@ QStyleHintReturnVariant::~QStyleHintReturnVariant()
 */
 
 /*!
-    \fn T qstyleoption_cast<T>(QStyleHintReturn *hint)
+    \fn template <typename T> T qstyleoption_cast<T>(QStyleHintReturn *hint)
     \overload
     \relates QStyleHintReturn
 
-    Returns a T or 0 depending on the type of \a hint.
+    Returns a T or \nullptr depending on the type of \a hint.
 */
 
 #if !defined(QT_NO_DEBUG_STREAM)

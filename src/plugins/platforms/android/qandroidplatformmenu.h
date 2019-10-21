@@ -61,8 +61,6 @@ public:
     void syncMenuItem(QPlatformMenuItem *menuItem) override;
     void syncSeparatorsCollapsible(bool enable) override;
 
-    void setTag(quintptr tag) override;
-    quintptr tag() const override;
     void setText(const QString &text) override;
     QString text() const;
     void setIcon(const QIcon &icon) override;
@@ -75,18 +73,22 @@ public:
 
     QPlatformMenuItem *menuItemAt(int position) const override;
     QPlatformMenuItem *menuItemForTag(quintptr tag) const override;
+    QPlatformMenuItem *menuItemForId(int menuId) const;
+    int menuId(QPlatformMenuItem *menuItem) const;
 
     PlatformMenuItemsType menuItems() const;
     QMutex *menuItemsMutex();
 
 private:
     PlatformMenuItemsType m_menuItems;
-    quintptr m_tag;
     QString m_text;
     QIcon m_icon;
     bool m_enabled;
     bool m_isVisible;
     QMutex m_menuItemsMutex;
+
+    int m_nextMenuId = 0;
+    QHash<int, QPlatformMenuItem *> m_menuHash;
 };
 
 QT_END_NAMESPACE

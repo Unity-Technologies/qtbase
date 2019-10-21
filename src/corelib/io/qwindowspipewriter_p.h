@@ -134,7 +134,7 @@ private:
 
     class Overlapped : public OVERLAPPED
     {
-        Q_DISABLE_COPY(Overlapped)
+        Q_DISABLE_COPY_MOVE(Overlapped)
     public:
         explicit Overlapped(QWindowsPipeWriter *pipeWriter);
         void clear();
@@ -145,7 +145,6 @@ private:
     HANDLE handle;
     Overlapped *overlapped;
     QByteArray buffer;
-    qint64 numberOfBytesToWrite;
     qint64 pendingBytesWrittenValue;
     bool stopped;
     bool writeSequenceStarted;

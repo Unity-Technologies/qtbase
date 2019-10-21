@@ -57,7 +57,6 @@ struct QArrayData;
 typedef QArrayData QByteArrayData;
 
 class QString;
-
 #ifndef Q_MOC_OUTPUT_REVISION
 #define Q_MOC_OUTPUT_REVISION 67
 #endif
@@ -138,13 +137,17 @@ class QString;
 #ifndef QT_NO_TRANSLATION
 // full set of tr functions
 #  define QT_TR_FUNCTIONS \
-    static inline QString tr(const char *s, const char *c = Q_NULLPTR, int n = -1) \
+    static inline QString tr(const char *s, const char *c = nullptr, int n = -1) \
         { return staticMetaObject.tr(s, c, n); } \
-    QT_DEPRECATED static inline QString trUtf8(const char *s, const char *c = Q_NULLPTR, int n = -1) \
+    QT_DEPRECATED static inline QString trUtf8(const char *s, const char *c = nullptr, int n = -1) \
         { return staticMetaObject.tr(s, c, n); }
 #else
 // inherit the ones from QObject
 # define QT_TR_FUNCTIONS
+#endif
+
+#ifdef Q_CLANG_QDOC
+#define QT_TR_FUNCTIONS
 #endif
 
 // ### Qt6: remove
@@ -241,11 +244,6 @@ private: \
 #define Q_SLOT Q_SLOT
 #endif //Q_MOC_RUN
 
-#ifdef Q_CLANG_QDOC
-#undef Q_GADGET
-#define Q_GADGET
-#endif
-
 #ifndef QT_NO_META_MACROS
 // macro for onaming members
 #ifdef METHOD
@@ -295,7 +293,7 @@ class QMetaClassInfo;
 class Q_CORE_EXPORT QGenericArgument
 {
 public:
-    inline QGenericArgument(const char *aName = Q_NULLPTR, const void *aData = Q_NULLPTR)
+    inline QGenericArgument(const char *aName = nullptr, const void *aData = nullptr)
         : _data(aData), _name(aName) {}
     inline void *data() const { return const_cast<void *>(_data); }
     inline const char *name() const { return _name; }
@@ -308,7 +306,7 @@ private:
 class Q_CORE_EXPORT QGenericReturnArgument: public QGenericArgument
 {
 public:
-    inline QGenericReturnArgument(const char *aName = Q_NULLPTR, void *aData = Q_NULLPTR)
+    inline QGenericReturnArgument(const char *aName = nullptr, void *aData = nullptr)
         : QGenericArgument(aName, aData)
         {}
 };
@@ -350,7 +348,7 @@ struct Q_CORE_EXPORT QMetaObject
     QObject *cast(QObject *obj) const;
     const QObject *cast(const QObject *obj) const;
 
-#ifndef QT_NO_TRANSLATION
+#if !defined(QT_NO_TRANSLATION) || defined(Q_CLANG_QDOC)
     QString tr(const char *s, const char *c, int n = -1) const;
 #endif // QT_NO_TRANSLATION
 
@@ -389,7 +387,7 @@ struct Q_CORE_EXPORT QMetaObject
     // internal index-based connect
     static Connection connect(const QObject *sender, int signal_index,
                         const QObject *receiver, int method_index,
-                        int type = 0, int *types = Q_NULLPTR);
+                        int type = 0, int *types = nullptr);
     // internal index-based disconnect
     static bool disconnect(const QObject *sender, int signal_index,
                            const QObject *receiver, int method_index);
@@ -406,7 +404,7 @@ struct Q_CORE_EXPORT QMetaObject
     static bool invokeMethod(QObject *obj, const char *member,
                              Qt::ConnectionType,
                              QGenericReturnArgument ret,
-                             QGenericArgument val0 = QGenericArgument(Q_NULLPTR),
+                             QGenericArgument val0 = QGenericArgument(nullptr),
                              QGenericArgument val1 = QGenericArgument(),
                              QGenericArgument val2 = QGenericArgument(),
                              QGenericArgument val3 = QGenericArgument(),
@@ -419,7 +417,7 @@ struct Q_CORE_EXPORT QMetaObject
 
     static inline bool invokeMethod(QObject *obj, const char *member,
                              QGenericReturnArgument ret,
-                             QGenericArgument val0 = QGenericArgument(Q_NULLPTR),
+                             QGenericArgument val0 = QGenericArgument(nullptr),
                              QGenericArgument val1 = QGenericArgument(),
                              QGenericArgument val2 = QGenericArgument(),
                              QGenericArgument val3 = QGenericArgument(),
@@ -436,7 +434,7 @@ struct Q_CORE_EXPORT QMetaObject
 
     static inline bool invokeMethod(QObject *obj, const char *member,
                              Qt::ConnectionType type,
-                             QGenericArgument val0 = QGenericArgument(Q_NULLPTR),
+                             QGenericArgument val0 = QGenericArgument(nullptr),
                              QGenericArgument val1 = QGenericArgument(),
                              QGenericArgument val2 = QGenericArgument(),
                              QGenericArgument val3 = QGenericArgument(),
@@ -452,7 +450,7 @@ struct Q_CORE_EXPORT QMetaObject
     }
 
     static inline bool invokeMethod(QObject *obj, const char *member,
-                             QGenericArgument val0 = QGenericArgument(Q_NULLPTR),
+                             QGenericArgument val0 = QGenericArgument(nullptr),
                              QGenericArgument val1 = QGenericArgument(),
                              QGenericArgument val2 = QGenericArgument(),
                              QGenericArgument val3 = QGenericArgument(),
@@ -467,7 +465,88 @@ struct Q_CORE_EXPORT QMetaObject
                 val1, val2, val3, val4, val5, val6, val7, val8, val9);
     }
 
-    QObject *newInstance(QGenericArgument val0 = QGenericArgument(Q_NULLPTR),
+#ifdef Q_CLANG_QDOC
+    template<typename Functor, typename FunctorReturnType>
+    static bool invokeMethod(QObject *context, Functor function, Qt::ConnectionType type = Qt::AutoConnection, FunctorReturnType *ret = nullptr);
+    template<typename Functor, typename FunctorReturnType>
+    static bool invokeMethod(QObject *context, Functor function, FunctorReturnType *ret);
+#else
+
+    // invokeMethod() for member function pointer
+    template <typename Func>
+    static typename std::enable_if<QtPrivate::FunctionPointer<Func>::IsPointerToMemberFunction
+                                   && !std::is_convertible<Func, const char*>::value
+                                   && QtPrivate::FunctionPointer<Func>::ArgumentCount == 0, bool>::type
+    invokeMethod(typename QtPrivate::FunctionPointer<Func>::Object *object,
+                 Func function,
+                 Qt::ConnectionType type = Qt::AutoConnection,
+                 typename QtPrivate::FunctionPointer<Func>::ReturnType *ret = nullptr)
+    {
+        return invokeMethodImpl(object, new QtPrivate::QSlotObjectWithNoArgs<Func>(function), type, ret);
+    }
+
+    template <typename Func>
+    static typename std::enable_if<QtPrivate::FunctionPointer<Func>::IsPointerToMemberFunction
+                                   && !std::is_convertible<Func, const char*>::value
+                                   && QtPrivate::FunctionPointer<Func>::ArgumentCount == 0, bool>::type
+    invokeMethod(typename QtPrivate::FunctionPointer<Func>::Object *object,
+                 Func function,
+                 typename QtPrivate::FunctionPointer<Func>::ReturnType *ret)
+    {
+        return invokeMethodImpl(object, new QtPrivate::QSlotObjectWithNoArgs<Func>(function), Qt::AutoConnection, ret);
+    }
+
+    // invokeMethod() for function pointer (not member)
+    template <typename Func>
+    static typename std::enable_if<!QtPrivate::FunctionPointer<Func>::IsPointerToMemberFunction
+                                   && !std::is_convertible<Func, const char*>::value
+                                   && QtPrivate::FunctionPointer<Func>::ArgumentCount == 0, bool>::type
+    invokeMethod(QObject *context, Func function,
+                 Qt::ConnectionType type = Qt::AutoConnection,
+                 typename QtPrivate::FunctionPointer<Func>::ReturnType *ret = nullptr)
+    {
+        return invokeMethodImpl(context, new QtPrivate::QFunctorSlotObjectWithNoArgsImplicitReturn<Func>(function), type, ret);
+    }
+
+    template <typename Func>
+    static typename std::enable_if<!QtPrivate::FunctionPointer<Func>::IsPointerToMemberFunction
+                                   && !std::is_convertible<Func, const char*>::value
+                                   && QtPrivate::FunctionPointer<Func>::ArgumentCount == 0, bool>::type
+    invokeMethod(QObject *context, Func function,
+                 typename QtPrivate::FunctionPointer<Func>::ReturnType *ret)
+    {
+        return invokeMethodImpl(context, new QtPrivate::QFunctorSlotObjectWithNoArgsImplicitReturn<Func>(function), Qt::AutoConnection, ret);
+    }
+
+    // invokeMethod() for Functor
+    template <typename Func>
+    static typename std::enable_if<!QtPrivate::FunctionPointer<Func>::IsPointerToMemberFunction
+                                   && QtPrivate::FunctionPointer<Func>::ArgumentCount == -1
+                                   && !std::is_convertible<Func, const char*>::value, bool>::type
+    invokeMethod(QObject *context, Func function,
+                 Qt::ConnectionType type = Qt::AutoConnection, decltype(function()) *ret = nullptr)
+    {
+        return invokeMethodImpl(context,
+                                new QtPrivate::QFunctorSlotObjectWithNoArgs<Func, decltype(function())>(std::move(function)),
+                                type,
+                                ret);
+    }
+
+    template <typename Func>
+    static typename std::enable_if<!QtPrivate::FunctionPointer<Func>::IsPointerToMemberFunction
+                                   && QtPrivate::FunctionPointer<Func>::ArgumentCount == -1
+                                   && !std::is_convertible<Func, const char*>::value, bool>::type
+    invokeMethod(QObject *context, Func function, typename std::result_of<Func()>::type *ret)
+    {
+        return invokeMethodImpl(context,
+                                new QtPrivate::QFunctorSlotObjectWithNoArgs<Func, decltype(function())>(std::move(function)),
+                                Qt::AutoConnection,
+                                ret);
+    }
+
+#endif
+
+    QObject *newInstance(QGenericArgument val0 = QGenericArgument(nullptr),
                          QGenericArgument val1 = QGenericArgument(),
                          QGenericArgument val2 = QGenericArgument(),
                          QGenericArgument val3 = QGenericArgument(),
@@ -506,6 +585,9 @@ struct Q_CORE_EXPORT QMetaObject
         const QMetaObject * const *relatedMetaObjects;
         void *extradata; //reserved for future use
     } d;
+
+private:
+    static bool invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *slot, Qt::ConnectionType type, void *ret);
 };
 
 class Q_CORE_EXPORT QMetaObject::Connection {
@@ -524,14 +606,12 @@ public:
     operator bool() const;
 #else
     typedef void *Connection::*RestrictedBool;
-    operator RestrictedBool() const { return d_ptr && isConnected_helper() ? &Connection::d_ptr : Q_NULLPTR; }
+    operator RestrictedBool() const { return d_ptr && isConnected_helper() ? &Connection::d_ptr : nullptr; }
 #endif
 
-#ifdef Q_COMPILER_RVALUE_REFS
-    inline Connection(Connection &&o) : d_ptr(o.d_ptr) { o.d_ptr = Q_NULLPTR; }
-    inline Connection &operator=(Connection &&other)
+    Connection(Connection &&o) Q_DECL_NOTHROW : d_ptr(o.d_ptr) { o.d_ptr = nullptr; }
+    Connection &operator=(Connection &&other) Q_DECL_NOTHROW
     { qSwap(d_ptr, other.d_ptr); return *this; }
-#endif
 };
 
 inline const QMetaObject *QMetaObject::superClass() const

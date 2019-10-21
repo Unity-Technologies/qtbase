@@ -42,12 +42,17 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QScopedPointer>
 
+#include <QtCore/qmetatype.h>
+#include <QtCore/qtextstream.h>
 #include "qglxconvenience_p.h"
 
+#include <QtCore/QLoggingCategory>
 #include <QtCore/QVector>
 #include <QtCore/QVarLengthArray>
 
 #include <GL/glxext.h>
+
+Q_LOGGING_CATEGORY(lcGlx, "qt.glx")
 
 enum {
     XFocusOut = FocusOut,
@@ -72,7 +77,11 @@ enum {
 #undef FontChange
 #endif
 
-QVector<int> qglx_buildSpec(const QSurfaceFormat &format, int drawableBit)
+#ifndef GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB
+#define GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB 0x20B2
+#endif
+
+QVector<int> qglx_buildSpec(const QSurfaceFormat &format, int drawableBit, int flags)
 {
     QVector<int> spec;
 
@@ -115,6 +124,10 @@ QVector<int> qglx_buildSpec(const QSurfaceFormat &format, int drawableBit)
              << 1
              << GLX_SAMPLES_ARB
              << format.samples();
+
+    if ((flags & QGLX_SUPPORTS_SRGB) && format.colorSpace() == QSurfaceFormat::sRGBColorSpace)
+        spec << GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB
+             << True;
 
     spec << GLX_DRAWABLE_TYPE
          << drawableBit
@@ -176,14 +189,14 @@ template <class T>
 using QXlibArrayPointer = QScopedArrayPointer<T, QXlibScopedPointerDeleter<T>>;
 }
 
-GLXFBConfig qglx_findConfig(Display *display, int screen , QSurfaceFormat format, bool highestPixelFormat, int drawableBit)
+GLXFBConfig qglx_findConfig(Display *display, int screen , QSurfaceFormat format, bool highestPixelFormat, int drawableBit, int flags)
 {
     QXcbSoftwareOpenGLEnforcer softwareOpenGLEnforcer;
 
     GLXFBConfig config = 0;
 
     do {
-        const QVector<int> spec = qglx_buildSpec(format, drawableBit);
+        const QVector<int> spec = qglx_buildSpec(format, drawableBit, flags);
 
         int confcount = 0;
         QXlibArrayPointer<GLXFBConfig> configs(glXChooseFBConfig(display, screen, spec.constData(), &confcount));
@@ -199,17 +212,39 @@ GLXFBConfig qglx_findConfig(Display *display, int screen , QSurfaceFormat format
         const int requestedBlue = qMax(0, format.blueBufferSize());
         const int requestedAlpha = qMax(0, format.alphaBufferSize());
 
+        GLXFBConfig compatibleCandidate = nullptr;
         for (int i = 0; i < confcount; i++) {
             GLXFBConfig candidate = configs[i];
 
-            QXlibPointer<XVisualInfo> visual(glXGetVisualFromFBConfig(display, candidate));
-            if (visual.isNull())
-                continue;
+            if ((flags & QGLX_SUPPORTS_SRGB) && format.colorSpace() == QSurfaceFormat::sRGBColorSpace) {
+                int srgbCapable = 0;
+                glXGetFBConfigAttrib(display, candidate, GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB, &srgbCapable);
+                if (!srgbCapable)
+                    continue;
+            }
 
-            const int actualRed = qPopulationCount(visual->red_mask);
-            const int actualGreen = qPopulationCount(visual->green_mask);
-            const int actualBlue = qPopulationCount(visual->blue_mask);
-            const int actualAlpha = visual->depth - actualRed - actualGreen - actualBlue;
+            QXlibPointer<XVisualInfo> visual(glXGetVisualFromFBConfig(display, candidate));
+            int actualRed;
+            int actualGreen;
+            int actualBlue;
+            int actualAlpha;
+            glXGetFBConfigAttrib(display, candidate, GLX_RED_SIZE, &actualRed);
+            glXGetFBConfigAttrib(display, candidate, GLX_GREEN_SIZE, &actualGreen);
+            glXGetFBConfigAttrib(display, candidate, GLX_BLUE_SIZE, &actualBlue);
+            glXGetFBConfigAttrib(display, candidate, GLX_ALPHA_SIZE, &actualAlpha);
+            // Sometimes the visuals don't have a depth that includes the alpha channel.
+            actualAlpha = qMin(actualAlpha, visual->depth - actualRed - actualGreen - actualBlue);
+
+            if (requestedRed && actualRed < requestedRed)
+                continue;
+            if (requestedGreen && actualGreen < requestedGreen)
+                continue;
+            if (requestedBlue && actualBlue < requestedBlue)
+                continue;
+            if (requestedAlpha && actualAlpha < requestedAlpha)
+                continue;
+            if (!compatibleCandidate) // Only pick up the first compatible one offered by the server
+                compatibleCandidate = candidate;
 
             if (requestedRed && actualRed != requestedRed)
                 continue;
@@ -222,33 +257,40 @@ GLXFBConfig qglx_findConfig(Display *display, int screen , QSurfaceFormat format
 
             return candidate;
         }
+        if (compatibleCandidate) {
+            qCDebug(lcGlx) << "qglx_findConfig: Found non-matching but compatible FBConfig";
+            return compatibleCandidate;
+        }
     } while (qglx_reduceFormat(&format));
+
+    if (!config)
+        qCWarning(lcGlx) << "qglx_findConfig: Failed to finding matching FBConfig for" << format;
 
     return config;
 }
 
-XVisualInfo *qglx_findVisualInfo(Display *display, int screen, QSurfaceFormat *format, int drawableBit)
+XVisualInfo *qglx_findVisualInfo(Display *display, int screen, QSurfaceFormat *format, int drawableBit, int flags)
 {
     Q_ASSERT(format);
 
     XVisualInfo *visualInfo = 0;
 
-    GLXFBConfig config = qglx_findConfig(display, screen, *format, false, drawableBit);
+    GLXFBConfig config = qglx_findConfig(display, screen, *format, false, drawableBit, flags);
     if (config)
         visualInfo = glXGetVisualFromFBConfig(display, config);
 
     if (visualInfo) {
-        qglx_surfaceFormatFromGLXFBConfig(format, display, config);
+        qglx_surfaceFormatFromGLXFBConfig(format, display, config, flags);
         return visualInfo;
     }
 
     // attempt to fall back to glXChooseVisual
     do {
-        QVector<int> attribs = qglx_buildSpec(*format, drawableBit);
+        QVector<int> attribs = qglx_buildSpec(*format, drawableBit, flags);
         visualInfo = glXChooseVisual(display, screen, attribs.data());
 
         if (visualInfo) {
-            qglx_surfaceFormatFromVisualInfo(format, display, visualInfo);
+            qglx_surfaceFormatFromVisualInfo(format, display, visualInfo, flags);
             return visualInfo;
         }
     } while (qglx_reduceFormat(format));
@@ -256,7 +298,7 @@ XVisualInfo *qglx_findVisualInfo(Display *display, int screen, QSurfaceFormat *f
     return visualInfo;
 }
 
-void qglx_surfaceFormatFromGLXFBConfig(QSurfaceFormat *format, Display *display, GLXFBConfig config)
+void qglx_surfaceFormatFromGLXFBConfig(QSurfaceFormat *format, Display *display, GLXFBConfig config, int flags)
 {
     int redSize     = 0;
     int greenSize   = 0;
@@ -267,6 +309,7 @@ void qglx_surfaceFormatFromGLXFBConfig(QSurfaceFormat *format, Display *display,
     int sampleBuffers = 0;
     int sampleCount = 0;
     int stereo      = 0;
+    int srgbCapable = 0;
 
     glXGetFBConfigAttrib(display, config, GLX_RED_SIZE,     &redSize);
     glXGetFBConfigAttrib(display, config, GLX_GREEN_SIZE,   &greenSize);
@@ -276,6 +319,8 @@ void qglx_surfaceFormatFromGLXFBConfig(QSurfaceFormat *format, Display *display,
     glXGetFBConfigAttrib(display, config, GLX_STENCIL_SIZE, &stencilSize);
     glXGetFBConfigAttrib(display, config, GLX_SAMPLES_ARB,  &sampleBuffers);
     glXGetFBConfigAttrib(display, config, GLX_STEREO,       &stereo);
+    if (flags & QGLX_SUPPORTS_SRGB)
+        glXGetFBConfigAttrib(display, config, GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB, &srgbCapable);
 
     format->setRedBufferSize(redSize);
     format->setGreenBufferSize(greenSize);
@@ -287,11 +332,12 @@ void qglx_surfaceFormatFromGLXFBConfig(QSurfaceFormat *format, Display *display,
         glXGetFBConfigAttrib(display, config, GLX_SAMPLES_ARB, &sampleCount);
         format->setSamples(sampleCount);
     }
+    format->setColorSpace(srgbCapable ? QSurfaceFormat::sRGBColorSpace : QSurfaceFormat::DefaultColorSpace);
 
     format->setStereo(stereo);
 }
 
-void qglx_surfaceFormatFromVisualInfo(QSurfaceFormat *format, Display *display, XVisualInfo *visualInfo)
+void qglx_surfaceFormatFromVisualInfo(QSurfaceFormat *format, Display *display, XVisualInfo *visualInfo, int flags)
 {
     int redSize     = 0;
     int greenSize   = 0;
@@ -302,6 +348,7 @@ void qglx_surfaceFormatFromVisualInfo(QSurfaceFormat *format, Display *display, 
     int sampleBuffers = 0;
     int sampleCount = 0;
     int stereo      = 0;
+    int srgbCapable = 0;
 
     glXGetConfig(display, visualInfo, GLX_RED_SIZE,     &redSize);
     glXGetConfig(display, visualInfo, GLX_GREEN_SIZE,   &greenSize);
@@ -311,6 +358,8 @@ void qglx_surfaceFormatFromVisualInfo(QSurfaceFormat *format, Display *display, 
     glXGetConfig(display, visualInfo, GLX_STENCIL_SIZE, &stencilSize);
     glXGetConfig(display, visualInfo, GLX_SAMPLES_ARB,  &sampleBuffers);
     glXGetConfig(display, visualInfo, GLX_STEREO,       &stereo);
+    if (flags & QGLX_SUPPORTS_SRGB)
+        glXGetConfig(display, visualInfo, GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB, &srgbCapable);
 
     format->setRedBufferSize(redSize);
     format->setGreenBufferSize(greenSize);
@@ -322,6 +371,7 @@ void qglx_surfaceFormatFromVisualInfo(QSurfaceFormat *format, Display *display, 
         glXGetConfig(display, visualInfo, GLX_SAMPLES_ARB, &sampleCount);
         format->setSamples(sampleCount);
     }
+    format->setColorSpace(srgbCapable ? QSurfaceFormat::sRGBColorSpace : QSurfaceFormat::DefaultColorSpace);
 
     format->setStereo(stereo);
 }
@@ -329,6 +379,18 @@ void qglx_surfaceFormatFromVisualInfo(QSurfaceFormat *format, Display *display, 
 bool qglx_reduceFormat(QSurfaceFormat *format)
 {
     Q_ASSERT(format);
+    if (std::max(std::max(format->redBufferSize(), format->greenBufferSize()), format->blueBufferSize()) > 8) {
+        if (format->alphaBufferSize() > 2) {
+            // First try to match 10 10 10 2
+            format->setAlphaBufferSize(2);
+            return true;
+        }
+
+        format->setRedBufferSize(std::min(format->redBufferSize(), 8));
+        format->setGreenBufferSize(std::min(format->greenBufferSize(), 8));
+        format->setBlueBufferSize(std::min(format->blueBufferSize(), 8));
+        return true;
+    }
 
     if (format->redBufferSize() > 1) {
         format->setRedBufferSize(1);
@@ -387,6 +449,11 @@ bool qglx_reduceFormat(QSurfaceFormat *format)
 
     if (format->stereo()) {
         format->setStereo(false);
+        return true;
+    }
+
+    if (format->colorSpace() == QSurfaceFormat::sRGBColorSpace) {
+        format->setColorSpace(QSurfaceFormat::DefaultColorSpace);
         return true;
     }
 

@@ -11,6 +11,8 @@ QT += \
     eventdispatcher_support-private accessibility_support-private \
     fontdatabase_support-private egl_support-private
 
+qtConfig(vulkan): QT += vulkan_support-private
+
 OTHER_FILES += $$PWD/android.json
 
 INCLUDEPATH += \
@@ -18,6 +20,7 @@ INCLUDEPATH += \
     $$QT_SOURCE_TREE/src/3rdparty/android
 
 SOURCES += $$PWD/androidplatformplugin.cpp \
+           $$PWD/androidcontentfileengine.cpp \
            $$PWD/androiddeadlockprotector.cpp \
            $$PWD/androidjnimain.cpp \
            $$PWD/androidjniaccessibility.cpp \
@@ -44,9 +47,11 @@ SOURCES += $$PWD/androidplatformplugin.cpp \
            $$PWD/qandroidplatformopenglcontext.cpp \
            $$PWD/qandroidplatformforeignwindow.cpp \
            $$PWD/qandroideventdispatcher.cpp \
-           $$PWD/qandroidplatformoffscreensurface.cpp
+           $$PWD/qandroidplatformoffscreensurface.cpp \
+           $$PWD/qandroidplatformfiledialoghelper.cpp
 
 HEADERS += $$PWD/qandroidplatformintegration.h \
+           $$PWD/androidcontentfileengine.h \
            $$PWD/androiddeadlockprotector.h \
            $$PWD/androidjnimain.h \
            $$PWD/androidjniaccessibility.h \
@@ -73,10 +78,18 @@ HEADERS += $$PWD/qandroidplatformintegration.h \
            $$PWD/qandroidplatformopenglcontext.h \
            $$PWD/qandroidplatformforeignwindow.h \
            $$PWD/qandroideventdispatcher.h \
-           $$PWD/qandroidplatformoffscreensurface.h
+           $$PWD/qandroidplatformoffscreensurface.h \
+           $$PWD/qandroidplatformfiledialoghelper.h
 
 qtConfig(android-style-assets): SOURCES += $$PWD/extract.cpp
 else: SOURCES += $$PWD/extract-dummy.cpp
+
+qtConfig(vulkan) {
+    SOURCES += $$PWD/qandroidplatformvulkaninstance.cpp \
+               $$PWD/qandroidplatformvulkanwindow.cpp
+    HEADERS += $$PWD/qandroidplatformvulkaninstance.h \
+               $$PWD/qandroidplatformvulkanwindow.h
+}
 
 PLUGIN_TYPE = platforms
 load(qt_plugin)

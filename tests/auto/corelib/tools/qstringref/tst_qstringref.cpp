@@ -121,14 +121,6 @@ typedef QList<int> IntList;
 #if defined(Q_OS_SOLARIS)
 #   include <ieeefp.h>
 #endif
-#if defined(Q_OS_OSF) && (defined(__DECC) || defined(__DECCXX))
-#   define INFINITY DBL_INFINITY
-#   define NAN DBL_QNAN
-#endif
-#if defined(Q_OS_IRIX) && defined(Q_CC_GNU)
-#   include <ieeefp.h>
-#   define isnan(d) isnand(d)
-#endif
 
 enum {
     LittleEndian,
@@ -1862,7 +1854,9 @@ void tst_QStringRef::double_conversion()
 
 void tst_QStringRef::trimmed()
 {
-    QString a;
+    QVERIFY(QStringRef().trimmed().isNull());
+    QString a = "";
+    QVERIFY(!QStringRef(&a).trimmed().isNull());
     QStringRef b;
     a = "Text";
     b = a.leftRef(-1);

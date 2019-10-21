@@ -84,7 +84,7 @@ QOfonoManagerInterface::QOfonoManagerInterface( QObject *parent)
                            QLatin1String(OFONO_MANAGER_PATH),
                            QLatin1String(OFONO_MANAGER_INTERFACE),
                            QLatin1String("ModemAdded"),
-                           this,SLOT(modemAdded(QDBusObjectPath, QVariantMap)));
+                           this,SLOT(modemAdded(QDBusObjectPath,QVariantMap)));
     QDBusConnection::systemBus().connect(QLatin1String(OFONO_SERVICE),
                            QLatin1String(OFONO_MANAGER_PATH),
                            QLatin1String(OFONO_MANAGER_INTERFACE),
@@ -118,7 +118,7 @@ QString QOfonoManagerInterface::currentModem()
     for (const QString &modem : modems) {
         QOfonoModemInterface device(modem);
         if (device.isPowered() && device.isOnline()
-                && device.interfaces().contains(QStringLiteral("org.ofono.NetworkRegistration")))
+                && device.interfaces().contains(QLatin1String("org.ofono.NetworkRegistration")))
         return modem;
     }
     return QString();

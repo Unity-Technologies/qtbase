@@ -34,7 +34,13 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QLibraryInfo>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QStandardPaths>
+
+#include <cstdio>
+
+static const char keepEnvVar[] = "UIC_KEEP_GENERATED_FILES";
+static const char diffToStderrEnvVar[] = "UIC_STDERR_DIFF";
 
 class tst_uic : public QObject
 {
@@ -63,12 +69,12 @@ private:
     const QString m_command;
     QString m_baseline;
     QTemporaryDir m_generated;
-    QRegExp m_versionRegexp;
+    QRegularExpression m_versionRegexp;
 };
 
 tst_uic::tst_uic()
     : m_command(QLibraryInfo::location(QLibraryInfo::BinariesPath) + QLatin1String("/uic"))
-    , m_versionRegexp(QLatin1String("Created by: Qt User Interface Compiler version [.\\d]{5,5}"))
+    , m_versionRegexp(QLatin1String(R"(\*\* Created by: Qt User Interface Compiler version \d{1,2}\.\d{1,2}\.\d{1,2})"))
 {
 }
 
@@ -102,14 +108,19 @@ void tst_uic::initTestCase()
     qDebug("%s", qPrintable(msg));
 }
 
+static const char helpFormat[] = R"(
+Note: The environment variable '%s' can be set to keep the temporary files
+for error analysis.
+The environment variable '%s' can be set to redirect the diff output to
+stderr.)";
+
 void tst_uic::cleanupTestCase()
 {
-    static const char envVar[] = "UIC_KEEP_GENERATED_FILES";
-    if (qgetenv(envVar).isEmpty()) {
-        qDebug("Note: The environment variable '%s' can be set to keep the temporary files for error analysis.", envVar);
-    } else {
+    if (qEnvironmentVariableIsSet(keepEnvVar)) {
         m_generated.setAutoRemove(false);
         qDebug("Keeping generated files in '%s'", qPrintable(QDir::toNativeSeparators(m_generated.path())));
+    } else {
+        qDebug(helpFormat, keepEnvVar, diffToStderrEnvVar);
     }
 }
 
@@ -151,7 +162,7 @@ void tst_uic::run()
     QVERIFY(process.waitForFinished());
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
     QCOMPARE(process.exitCode(), 0);
-    QCOMPARE(QFileInfo(generatedFile).exists(), true);
+    QVERIFY(QFileInfo::exists(generatedFile));
 }
 
 void tst_uic::run_data() const
@@ -211,6 +222,16 @@ static QByteArray msgCannotReadFile(const QFile &file)
     return result.toLocal8Bit();
 }
 
+static void outputDiff(const QString &diff)
+{
+    // Use patch -p3 < diff to apply the obtained diff output in the baseline directory.
+    static const bool diffToStderr = qEnvironmentVariableIsSet(diffToStderrEnvVar);
+    if (diffToStderr)
+        std::fputs(qPrintable(diff), stderr);
+    else
+        qWarning("Difference:\n%s", qPrintable(diff));
+}
+
 void tst_uic::compare()
 {
     QFETCH(QString, originalFile);
@@ -232,7 +253,7 @@ void tst_uic::compare()
     if (generatedFileContents != originalFileContents) {
         const QString diff = generateDiff(originalFile, generatedFile);
         if (!diff.isEmpty())
-             qWarning().noquote().nospace() << "Difference:\n" << diff;
+            outputDiff(diff);
     }
 
     QCOMPARE(generatedFileContents, originalFileContents);
@@ -273,7 +294,7 @@ void tst_uic::runTranslation()
     QVERIFY(process.waitForFinished());
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
     QCOMPARE(process.exitCode(), 0);
-    QCOMPARE(QFileInfo(generatedFile).exists(), true);
+    QVERIFY(QFileInfo::exists(generatedFile));
 }
 
 
@@ -300,7 +321,7 @@ void tst_uic::runCompare()
     if (generatedFileContents != originalFileContents) {
         const QString diff = generateDiff(originalFile, generatedFile);
         if (!diff.isEmpty())
-             qWarning().noquote().nospace() << "Difference:\n" << diff;
+            outputDiff(diff);
     }
 
     QCOMPARE(generatedFileContents, originalFileContents);

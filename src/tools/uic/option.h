@@ -36,23 +36,15 @@ QT_BEGIN_NAMESPACE
 
 struct Option
 {
-    enum Generator
-    {
-        CppGenerator,
-        JavaGenerator
-    };
-
     unsigned int headerProtection : 1;
     unsigned int copyrightHeader : 1;
     unsigned int generateImplemetation : 1;
     unsigned int generateNamespace : 1;
     unsigned int autoConnection : 1;
     unsigned int dependencies : 1;
-    unsigned int extractImages : 1;
     unsigned int limitXPM_LineLength : 1;
     unsigned int implicitIncludes: 1;
     unsigned int idBased: 1;
-    Generator generator;
 
     QString inputFile;
     QString outputFile;
@@ -62,10 +54,6 @@ struct Option
     QString postfix;
     QString translateFunction;
     QString includeFile;
-#ifdef QT_UIC_JAVA_GENERATOR
-    QString javaPackage;
-    QString javaOutputDirectory;
-#endif
 
     Option()
         : headerProtection(1),
@@ -74,11 +62,9 @@ struct Option
           generateNamespace(1),
           autoConnection(1),
           dependencies(0),
-          extractImages(0),
           limitXPM_LineLength(0),
           implicitIncludes(1),
           idBased(0),
-          generator(CppGenerator),
           prefix(QLatin1String("Ui_"))
     { indent.fill(QLatin1Char(' '), 4); }
 

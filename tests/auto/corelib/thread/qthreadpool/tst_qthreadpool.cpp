@@ -32,6 +32,10 @@
 #include <qstring.h>
 #include <qmutex.h>
 
+#ifdef Q_OS_UNIX
+#include <unistd.h>
+#endif
+
 typedef void (*FunctionPointer)();
 
 class FunctionPointerTask : public QRunnable
@@ -92,6 +96,7 @@ private slots:
     void tryTake();
     void waitForDoneTimeout();
     void destroyingWaitsForTasksToFinish();
+    void stackSize();
     void stressTest();
     void takeAllAndIncreaseMaxThreadCount();
     void waitForDoneAfterTake();
@@ -963,21 +968,6 @@ void tst_QThreadPool::cancel()
     QSemaphore sem(0);
     QSemaphore startedThreads(0);
 
-    class SemaphoreReleaser
-    {
-        QSemaphore &sem;
-        int n;
-        Q_DISABLE_COPY(SemaphoreReleaser)
-    public:
-        explicit SemaphoreReleaser(QSemaphore &sem, int n)
-            : sem(sem), n(n) {}
-
-        ~SemaphoreReleaser()
-        {
-            sem.release(n);
-        }
-    };
-
     class BlockingRunnable : public QRunnable
     {
     public:
@@ -1016,7 +1006,7 @@ void tst_QThreadPool::cancel()
 
     // ensure that the QThreadPool doesn't deadlock if any of the checks fail
     // and cause an early return:
-    const SemaphoreReleaser semReleaser(sem, runs);
+    const QSemaphoreReleaser semReleaser(sem, runs);
 
     count.store(0);
     QAtomicInt dtorCounter = 0;
@@ -1049,21 +1039,6 @@ void tst_QThreadPool::tryTake()
 {
     QSemaphore sem(0);
     QSemaphore startedThreads(0);
-
-    class SemaphoreReleaser
-    {
-        QSemaphore &sem;
-        int n;
-        Q_DISABLE_COPY(SemaphoreReleaser)
-    public:
-        explicit SemaphoreReleaser(QSemaphore &sem, int n)
-            : sem(sem), n(n) {}
-
-        ~SemaphoreReleaser()
-        {
-            sem.release(n);
-        }
-    };
 
     class BlockingRunnable : public QRunnable
     {
@@ -1103,7 +1078,7 @@ void tst_QThreadPool::tryTake()
 
     // ensure that the QThreadPool doesn't deadlock if any of the checks fail
     // and cause an early return:
-    const SemaphoreReleaser semReleaser(sem, Runs);
+    const QSemaphoreReleaser semReleaser(sem, Runs);
 
     count.store(0);
     QAtomicInt dtorCounter = 0;
@@ -1166,6 +1141,43 @@ void tst_QThreadPool::destroyingWaitsForTasksToFinish()
         }
         QCOMPARE(count.load(), runs);
     }
+}
+
+// Verify that QThreadPool::stackSize is used when creating
+// new threads. Note that this tests the Qt property only
+// since QThread::stackSize() does not reflect the actual
+// stack size used by the native thread.
+void tst_QThreadPool::stackSize()
+{
+#if defined(Q_OS_UNIX) && !(defined(_POSIX_THREAD_ATTR_STACKSIZE) && (_POSIX_THREAD_ATTR_STACKSIZE-0 > 0))
+    QSKIP("Setting stack size is unsupported on this platform.");
+#endif
+
+    uint targetStackSize = 512 * 1024;
+    uint threadStackSize = 1; // impossible value
+
+    class StackSizeChecker : public QRunnable
+    {
+        public:
+        uint *stackSize;
+
+        StackSizeChecker(uint *stackSize)
+        :stackSize(stackSize)
+        {
+
+        }
+
+        void run()
+        {
+            *stackSize = QThread::currentThread()->stackSize();
+        }
+    };
+
+    QThreadPool threadPool;
+    threadPool.setStackSize(targetStackSize);
+    threadPool.start(new StackSizeChecker(&threadStackSize));
+    QVERIFY(threadPool.waitForDone(30000)); // 30s timeout
+    QCOMPARE(threadStackSize, targetStackSize);
 }
 
 void tst_QThreadPool::stressTest()

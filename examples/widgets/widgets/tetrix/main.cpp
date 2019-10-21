@@ -48,17 +48,14 @@
 **
 ****************************************************************************/
 
-#include <QtWidgets>
-
-#include <stdlib.h>
-
 #include "tetrixwindow.h"
+
+#include <QApplication>
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     TetrixWindow window;
     window.show();
-    qsrand(QTime(0,0,0).secsTo(QTime::currentTime()));
     return app.exec();
 }

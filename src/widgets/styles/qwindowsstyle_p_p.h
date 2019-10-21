@@ -62,7 +62,7 @@ QT_BEGIN_NAMESPACE
 
 class QTime;
 
-class QWindowsStylePrivate : public QCommonStylePrivate
+class Q_WIDGETS_EXPORT QWindowsStylePrivate : public QCommonStylePrivate
 {
     Q_DECLARE_PUBLIC(QWindowsStyle)
 public:
@@ -73,7 +73,7 @@ public:
     static int fixedPixelMetric(QStyle::PixelMetric pm);
     static qreal devicePixelRatio(const QWidget *widget = 0)
         { return widget ? widget->devicePixelRatioF() : QWindowsStylePrivate::appDevicePixelRatio(); }
-    static qreal nativeMetricScaleFactor(const QWidget *widget = Q_NULLPTR);
+    static qreal nativeMetricScaleFactor(const QWidget *widget = nullptr);
 
     bool hasSeenAlt(const QWidget *widget) const;
     bool altDown() const { return alt_down; }

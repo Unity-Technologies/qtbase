@@ -53,6 +53,7 @@ struct Option;
 
 class Uic
 {
+    Q_DISABLE_COPY_MOVE(Uic)
 public:
     Uic(Driver *driver);
     ~Uic();
@@ -74,12 +75,6 @@ public:
     inline void setPixmapFunction(const QString &f)
     { pixFunction = f; }
 
-    inline bool hasExternalPixmap() const
-    { return externalPix; }
-
-    inline void setExternalPixmap(bool b)
-    { externalPix = b; }
-
     inline const DatabaseInfo *databaseInfo() const
     { return &info; }
 
@@ -88,21 +83,10 @@ public:
 
     bool write(QIODevice *in);
 
-#ifdef QT_UIC_JAVA_GENERATOR
-    bool jwrite(DomUI *ui);
-#endif
-
-#ifdef QT_UIC_CPP_GENERATOR
     bool write(DomUI *ui);
-#endif
 
-    bool isMainWindow(const QString &className) const;
-    bool isToolBar(const QString &className) const;
-    bool isStatusBar(const QString &className) const;
     bool isButton(const QString &className) const;
     bool isContainer(const QString &className) const;
-    bool isCustomWidgetContainer(const QString &className) const;
-    bool isMenuBar(const QString &className) const;
     bool isMenu(const QString &className) const;
 
 private:
@@ -110,11 +94,9 @@ private:
     void writeCopyrightHeader(DomUI *ui);
     DomUI *parseUiFile(QXmlStreamReader &reader);
 
-#ifdef QT_UIC_CPP_GENERATOR
     // header protection
     void writeHeaderProtectionStart();
     void writeHeaderProtectionEnd();
-#endif
 
 private:
     Driver *drv;
@@ -123,7 +105,6 @@ private:
     DatabaseInfo info;
     CustomWidgetsInfo cWidgetsInfo;
     QString pixFunction;
-    bool externalPix;
 };
 
 QT_END_NAMESPACE

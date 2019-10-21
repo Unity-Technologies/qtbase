@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
+** Copyright (C) 2017 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
@@ -57,6 +57,7 @@
 #if QT_CONFIG(process)
 # include <QProcess>
 #endif
+#include <QRandomGenerator>
 #include <QStringList>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -163,9 +164,8 @@ private slots:
     void waitForReadyReadInASlot();
     void remoteCloseError();
     void nestedEventLoopInErrorSlot();
-#ifndef Q_OS_WIN
-    void connectToLocalHostNoService();
-#endif
+    void connectToHostError_data();
+    void connectToHostError();
     void waitForConnectedInHostLookupSlot();
     void waitForConnectedInHostLookupSlot2();
     void readyReadSignalsAfterWaitForReadyRead();
@@ -305,8 +305,6 @@ public:
 tst_QTcpSocket::tst_QTcpSocket()
     : firstFailName("qt-test-server-first-fail")
 {
-    qsrand(time(NULL));
-
     tmpSocket = 0;
 
     //This code relates to the socketsConstructedBeforeEventLoop test case
@@ -329,8 +327,8 @@ void tst_QTcpSocket::initTestCase_data()
 
     qDebug() << QtNetworkSettings::serverName();
     QTest::newRow("WithoutProxy") << false << 0 << false;
-    //QTest::newRow("WithSocks5Proxy") << true << int(Socks5Proxy) << false; ### temporarily disabled, QTBUG-38385
-    //QTest::newRow("WithSocks5ProxyAuth") << true << int(Socks5Proxy | AuthBasic) << false; ### temporarily disabled, QTBUG-38385
+    QTest::newRow("WithSocks5Proxy") << true << int(Socks5Proxy) << false;
+    QTest::newRow("WithSocks5ProxyAuth") << true << int(Socks5Proxy | AuthBasic) << false;
 
     QTest::newRow("WithHttpProxy") << true << int(HttpProxy) << false;
     QTest::newRow("WithHttpProxyBasicAuth") << true << int(HttpProxy | AuthBasic) << false;
@@ -338,8 +336,8 @@ void tst_QTcpSocket::initTestCase_data()
 
 #ifndef QT_NO_SSL
     QTest::newRow("WithoutProxy SSL") << false << 0 << true;
-    //QTest::newRow("WithSocks5Proxy SSL") << true << int(Socks5Proxy) << true; ### temporarily disabled, QTBUG-38385
-    //QTest::newRow("WithSocks5AuthProxy SSL") << true << int(Socks5Proxy | AuthBasic) << true; ### temporarily disabled, QTBUG-38385
+    QTest::newRow("WithSocks5Proxy SSL") << true << int(Socks5Proxy) << true;
+    QTest::newRow("WithSocks5AuthProxy SSL") << true << int(Socks5Proxy | AuthBasic) << true;
 
     QTest::newRow("WithHttpProxy SSL") << true << int(HttpProxy) << true;
     QTest::newRow("WithHttpProxyBasicAuth SSL") << true << int(HttpProxy | AuthBasic) << true;
@@ -581,8 +579,7 @@ void tst_QTcpSocket::bind()
                 // try to get a random port number
                 // we do this to ensure we're not trying to bind to the same port as we've just used in
                 // a previous run - race condition with the OS actually freeing the port
-                Q_STATIC_ASSERT(RAND_MAX > 1024);
-                port = qrand() & USHRT_MAX;
+                port = QRandomGenerator::global()->generate() & USHRT_MAX;
                 if (port < 1024)
                     continue;
             }
@@ -2042,22 +2039,38 @@ void tst_QTcpSocket::nestedEventLoopInErrorSlot()
 }
 
 //----------------------------------------------------------------------------------
-#ifndef Q_OS_WIN
-void tst_QTcpSocket::connectToLocalHostNoService()
-{
-    // This test was created after we received a report that claimed
-    // QTcpSocket would crash if trying to connect to "localhost" on a random
-    // port with no service listening.
-    QTcpSocket *socket = newSocket();
-    socket->connectToHost("localhost", 31415); // no service running here, one suspects
 
-    while(socket->state() == QTcpSocket::HostLookupState || socket->state() == QTcpSocket::ConnectingState) {
-        QTest::qWait(100);
-    }
-    QCOMPARE(socket->state(), QTcpSocket::UnconnectedState);
+void tst_QTcpSocket::connectToHostError_data()
+{
+    QTest::addColumn<QString>("host");
+    QTest::addColumn<int>("port");
+    QTest::addColumn<QAbstractSocket::SocketError>("expectedError");
+
+    QTest::newRow("localhost no service") << QStringLiteral("localhost") << 31415 << QAbstractSocket::ConnectionRefusedError;
+    QTest::newRow("unreachable") << QStringLiteral("0.0.0.1") << 65000 << QAbstractSocket::NetworkError;
+}
+
+
+void tst_QTcpSocket::connectToHostError()
+{
+    QTcpSocket *socket = newSocket();
+
+    QAbstractSocket::SocketError error = QAbstractSocket::UnknownSocketError;
+
+    QFETCH(QString, host);
+    QFETCH(int, port);
+    QFETCH(QAbstractSocket::SocketError, expectedError);
+
+    connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error),[&](QAbstractSocket::SocketError socketError){
+        error = socketError;
+    });
+    socket->connectToHost(host, port); // no service running here, one suspects
+    QTRY_COMPARE(socket->state(), QTcpSocket::UnconnectedState);
+    if (error != expectedError && error == QAbstractSocket::ConnectionRefusedError)
+        QEXPECT_FAIL("unreachable", "CI firewall interfers with this test", Continue);
+    QCOMPARE(error, expectedError);
     delete socket;
 }
-#endif
 
 //----------------------------------------------------------------------------------
 void tst_QTcpSocket::waitForConnectedInHostLookupSlot()
@@ -2435,7 +2448,17 @@ void tst_QTcpSocket::suddenRemoteDisconnect()
         QString::fromLatin1("Could not start %1: %2").arg(processExe, serverProcess.errorString())));
     while (!serverProcess.canReadLine())
         QVERIFY(serverProcess.waitForReadyRead(10000));
-    QCOMPARE(serverProcess.readLine().data(), QByteArray(server.toLatin1() + "\n").data());
+
+    QByteArray line = serverProcess.readLine();
+
+    // Ignore following print, happens on Qemu:
+    if (line == "getsockopt level=41 optname=26 not yet supported\n") {
+        while (!serverProcess.canReadLine())
+            QVERIFY(serverProcess.waitForReadyRead(10000));
+        line = serverProcess.readLine();
+    }
+
+    QCOMPARE(line.data(), QByteArray(server.toLatin1() + "\n").data());
 
     // Start client
     QProcess clientProcess;
@@ -3133,7 +3156,7 @@ void tst_QTcpSocket::readNotificationsAfterBind()
     if (setProxy)
         return;
 
-    QAbstractSocket socket(QAbstractSocket::TcpSocket, Q_NULLPTR);
+    QAbstractSocket socket(QAbstractSocket::TcpSocket, nullptr);
     QVERIFY2(socket.bind(), "Bind error!");
 
     connect(&socket, SIGNAL(error(QAbstractSocket::SocketError)), &QTestEventLoop::instance(), SLOT(exitLoop()));

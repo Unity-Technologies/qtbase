@@ -29,16 +29,12 @@
 #include "controllerwidget.h"
 #include <controls.h>
 
-#if QT_VERSION >= 0x050000
-#    include <QtWidgets>
-#    include <QWindow>
-#    include <QBackingStore>
-#    include <QPaintDevice>
-#    include <QPainter>
-#else
-#    include <QtGui>
-#endif
-
+#include <QtWidgets>
+#include <QWindow>
+#include <QBackingStore>
+#include <QPaintDevice>
+#include <QPainter>
+#include <QRandomGenerator>
 #include <QResizeEvent>
 
 CoordinateControl::CoordinateControl(const QString &sep) : m_x(new QSpinBox), m_y(new QSpinBox)
@@ -240,7 +236,7 @@ private:
 
 WidgetWindowControl::WidgetWindowControl(QWidget *w )
     : BaseWindowControl(w)
-    , m_statesControl(new WindowStatesControl(WindowStatesControl::WantVisibleCheckBox | WindowStatesControl::WantActiveCheckBox))
+    , m_statesControl(new WindowStatesControl)
 {
     setTitle(w->windowTitle());
     m_layout->addWidget(m_statesControl, 2, 0);
@@ -280,7 +276,7 @@ public:
     explicit Window(QWindow *parent = 0)
         : QWindow(parent)
         , m_backingStore(new QBackingStore(this))
-        , m_color(Qt::GlobalColor(qrand() % 18))
+        , m_color(Qt::GlobalColor(QRandomGenerator::global()->bounded(18)))
     {
         setObjectName(QStringLiteral("window"));
         setTitle(tr("TestWindow"));
@@ -368,14 +364,14 @@ private:
     virtual void setObjectWindowFlags(QObject *o, Qt::WindowFlags f)
         { static_cast<QWindow *>(o)->setFlags(f); }
 
-    WindowStateControl *m_stateControl;
+    WindowStatesControl *m_statesControl;
     QWindow *m_window;
     QWindow *m_detachedParent; // set when this window is detached. This is the window we should re-attach to.
 };
 
 WindowControl::WindowControl(QWindow *w )
     : BaseWindowControl(w)
-    , m_stateControl(new WindowStateControl(WindowStateControl::WantVisibleCheckBox | WindowStateControl::WantMinimizeRadioButton))
+    , m_statesControl(new WindowStatesControl)
     , m_window(w)
     , m_detachedParent(0)
 {

@@ -94,7 +94,7 @@ QLibInputHandler::QLibInputHandler(const QString &key, const QString &spec)
     if (Q_UNLIKELY(!m_udev))
         qFatal("Failed to get udev context for libinput");
 
-    m_li = libinput_udev_create_context(&liInterface, Q_NULLPTR, m_udev);
+    m_li = libinput_udev_create_context(&liInterface, nullptr, m_udev);
     if (Q_UNLIKELY(!m_li))
         qFatal("Failed to get libinput context");
 
@@ -107,14 +107,17 @@ QLibInputHandler::QLibInputHandler(const QString &key, const QString &spec)
 
     m_liFd = libinput_get_fd(m_li);
     m_notifier.reset(new QSocketNotifier(m_liFd, QSocketNotifier::Read));
-    connect(m_notifier.data(), SIGNAL(activated(int)), SLOT(onReadyRead()));
+
+    connect(m_notifier.data(), &QSocketNotifier::activated, this, &QLibInputHandler::onReadyRead);
 
     m_pointer.reset(new QLibInputPointer);
     m_keyboard.reset(new QLibInputKeyboard);
     m_touch.reset(new QLibInputTouch);
 
-    connect(QGuiApplicationPrivate::inputDeviceManager(), SIGNAL(cursorPositionChangeRequested(QPoint)),
-            this, SLOT(onCursorPositionChangeRequested(QPoint)));
+    QInputDeviceManager *manager = QGuiApplicationPrivate::inputDeviceManager();
+    connect(manager, &QInputDeviceManager::cursorPositionChangeRequested, [this](const QPoint &pos) {
+        m_pointer->setPos(pos);
+    });
 
     // Process the initial burst of DEVICE_ADDED events.
     onReadyRead();
@@ -137,7 +140,7 @@ void QLibInputHandler::onReadyRead()
     }
 
     libinput_event *ev;
-    while ((ev = libinput_get_event(m_li)) != Q_NULLPTR) {
+    while ((ev = libinput_get_event(m_li)) != nullptr) {
         processEvent(ev);
         libinput_event_destroy(ev);
     }
@@ -154,10 +157,6 @@ void QLibInputHandler::processEvent(libinput_event *ev)
         // This is not just for hotplugging, it is also called for each input
         // device libinput reads from on startup. Hence it is suitable for doing
         // touch device registration.
-        const char *sysname = libinput_device_get_sysname(dev); // node name without path
-        const char *name = libinput_device_get_name(dev);
-        emit deviceAdded(QString::fromUtf8(sysname), QString::fromUtf8(name));
-
         QInputDeviceManagerPrivate *inputManagerPriv = QInputDeviceManagerPrivate::get(
             QGuiApplicationPrivate::inputDeviceManager());
         if (libinput_device_has_capability(dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
@@ -180,10 +179,6 @@ void QLibInputHandler::processEvent(libinput_event *ev)
     }
     case LIBINPUT_EVENT_DEVICE_REMOVED:
     {
-        const char *sysname = libinput_device_get_sysname(dev);
-        const char *name = libinput_device_get_name(dev);
-        emit deviceRemoved(QString::fromUtf8(sysname), QString::fromUtf8(name));
-
         QInputDeviceManagerPrivate *inputManagerPriv = QInputDeviceManagerPrivate::get(
             QGuiApplicationPrivate::inputDeviceManager());
         if (libinput_device_has_capability(dev, LIBINPUT_DEVICE_CAP_TOUCH)) {
@@ -234,11 +229,6 @@ void QLibInputHandler::processEvent(libinput_event *ev)
     default:
         break;
     }
-}
-
-void QLibInputHandler::onCursorPositionChangeRequested(const QPoint &pos)
-{
-    m_pointer->setPos(pos);
 }
 
 QT_END_NAMESPACE

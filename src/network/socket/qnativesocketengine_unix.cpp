@@ -226,6 +226,20 @@ static void convertToLevelAndOption(QNativeSocketEngine::SocketOption opt,
 #endif
         }
         break;
+
+    case QNativeSocketEngine::PathMtuInformation:
+        if (socketProtocol == QAbstractSocket::IPv6Protocol || socketProtocol == QAbstractSocket::AnyIPProtocol) {
+#ifdef IPV6_MTU
+            level = IPPROTO_IPV6;
+            n = IPV6_MTU;
+#endif
+        } else {
+#ifdef IP_MTU
+            level = IPPROTO_IP;
+            n = IP_MTU;
+#endif
+        }
+        break;
     }
 }
 
@@ -331,6 +345,20 @@ int QNativeSocketEnginePrivate::option(QNativeSocketEngine::SocketOption opt) co
         return -1;
     }
 
+    case QNativeSocketEngine::PathMtuInformation:
+#if defined(IPV6_PATHMTU) && !defined(IPV6_MTU)
+        // Prefer IPV6_MTU (handled by convertToLevelAndOption), if available
+        // (Linux); fall back to IPV6_PATHMTU otherwise (FreeBSD):
+        if (socketProtocol == QAbstractSocket::IPv6Protocol) {
+            ip6_mtuinfo mtuinfo;
+            QT_SOCKOPTLEN_T len = sizeof(mtuinfo);
+            if (::getsockopt(socketDescriptor, IPPROTO_IPV6, IPV6_PATHMTU, &mtuinfo, &len) == 0)
+                return int(mtuinfo.ip6m_mtu);
+            return -1;
+        }
+#endif
+        break;
+
     default:
         break;
     }
@@ -420,6 +448,8 @@ bool QNativeSocketEnginePrivate::setOption(QNativeSocketEngine::SocketOption opt
     }
 #endif
 
+    if (n == -1)
+        return false;
     return ::setsockopt(socketDescriptor, level, n, (char *) &v, sizeof(v)) == 0;
 }
 
@@ -670,8 +700,7 @@ static bool multicastMembershipHelper(QNativeSocketEnginePrivate *d,
         Q_IPV6ADDR ip6 = groupAddress.toIPv6Address();
         memcpy(&mreq6.ipv6mr_multiaddr, &ip6, sizeof(ip6));
         mreq6.ipv6mr_interface = interface.index();
-    } else
-    if (groupAddress.protocol() == QAbstractSocket::IPv4Protocol) {
+    } else if (groupAddress.protocol() == QAbstractSocket::IPv4Protocol) {
         level = IPPROTO_IP;
         sockOpt = how4;
         sockArg = &mreq4;
@@ -830,18 +859,10 @@ qint64 QNativeSocketEnginePrivate::nativeBytesAvailable() const
 
 bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
 {
-    // Create a sockaddr struct and reset its port number.
-    qt_sockaddr storage;
-    QT_SOCKLEN_T storageSize = sizeof(storage);
-    memset(&storage, 0, storageSize);
-
-    // Peek 0 bytes into the next message. The size of the message may
-    // well be 0, so we can't check recvfrom's return value.
+    // Peek 1 bytes into the next message.
     ssize_t readBytes;
-    do {
-        char c;
-        readBytes = ::recvfrom(socketDescriptor, &c, 1, MSG_PEEK, &storage.a, &storageSize);
-    } while (readBytes == -1 && errno == EINTR);
+    char c;
+    EINTR_LOOP(readBytes, ::recv(socketDescriptor, &c, 1, MSG_PEEK));
 
     // If there's no error, or if our buffer was too small, there must be a
     // pending datagram.
@@ -856,23 +877,56 @@ bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
 
 qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
 {
-    QVarLengthArray<char, 8192> udpMessagePeekBuffer(8192);
     ssize_t recvResult = -1;
+#ifdef Q_OS_LINUX
+    // Linux can return the actual datagram size if we use MSG_TRUNC
+    char c;
+    EINTR_LOOP(recvResult, ::recv(socketDescriptor, &c, 1, MSG_PEEK | MSG_TRUNC));
+#elif defined(SO_NREAD)
+    // macOS can return the actual datagram size if we use SO_NREAD
+    int value;
+    socklen_t valuelen = sizeof(value);
+    recvResult = getsockopt(socketDescriptor, SOL_SOCKET, SO_NREAD, &value, &valuelen);
+    if (recvResult != -1)
+        recvResult = value;
+#else
+    // We need to grow the buffer to fit the entire datagram.
+    // We start at 1500 bytes (the MTU for Ethernet V2), which should catch
+    // almost all uses (effective MTU for UDP under IPv4 is 1468), except
+    // for localhost datagrams and those reassembled by the IP layer.
+    char udpMessagePeekBuffer[1500];
+    struct msghdr msg;
+    struct iovec vec;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &vec;
+    msg.msg_iovlen = 1;
+    vec.iov_base = udpMessagePeekBuffer;
+    vec.iov_len = sizeof(udpMessagePeekBuffer);
 
     for (;;) {
         // the data written to udpMessagePeekBuffer is discarded, so
         // this function is still reentrant although it might not look
         // so.
-        recvResult = ::recv(socketDescriptor, udpMessagePeekBuffer.data(),
-            udpMessagePeekBuffer.size(), MSG_PEEK);
+        recvResult = ::recvmsg(socketDescriptor, &msg, MSG_PEEK);
         if (recvResult == -1 && errno == EINTR)
             continue;
 
-        if (recvResult != (ssize_t) udpMessagePeekBuffer.size())
+        // was the result truncated?
+        if ((msg.msg_flags & MSG_TRUNC) == 0)
             break;
 
-        udpMessagePeekBuffer.resize(udpMessagePeekBuffer.size() * 2);
+        // grow by 16 times
+        msg.msg_iovlen *= 16;
+        if (msg.msg_iov != &vec)
+            delete[] msg.msg_iov;
+        msg.msg_iov = new struct iovec[msg.msg_iovlen];
+        std::fill_n(msg.msg_iov, msg.msg_iovlen, vec);
     }
+
+    if (msg.msg_iov != &vec)
+        delete[] msg.msg_iov;
+#endif
 
 #if defined (QNATIVESOCKETENGINE_DEBUG)
     qDebug("QNativeSocketEnginePrivate::nativePendingDatagramSize() == %zd", recvResult);
@@ -1329,19 +1383,23 @@ qint64 QNativeSocketEnginePrivate::nativeRead(char *data, qint64 maxSize)
             // No data was available for reading
             r = -2;
             break;
-        case EBADF:
-        case EINVAL:
-        case EIO:
-            //error string is now set in read(), not here in nativeRead()
-            break;
         case ECONNRESET:
 #if defined(Q_OS_VXWORKS)
         case ESHUTDOWN:
 #endif
             r = 0;
             break;
-        default:
+        case ETIMEDOUT:
+            socketError = QAbstractSocket::SocketTimeoutError;
             break;
+        default:
+            socketError = QAbstractSocket::NetworkError;
+            break;
+        }
+
+        if (r == -1) {
+            hasSetSocketError = true;
+            socketErrorString = qt_error_string();
         }
     }
 

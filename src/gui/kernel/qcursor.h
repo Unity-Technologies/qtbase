@@ -87,7 +87,7 @@ public:
     ~QCursor();
     QCursor &operator=(const QCursor &cursor);
 #ifdef Q_COMPILER_RVALUE_REFS
-    QCursor(QCursor &&other) Q_DECL_NOTHROW : d(other.d) { other.d = Q_NULLPTR; }
+    QCursor(QCursor &&other) Q_DECL_NOTHROW : d(other.d) { other.d = nullptr; }
     inline QCursor &operator=(QCursor &&other) Q_DECL_NOTHROW
     { swap(other); return *this; }
 #endif
@@ -112,9 +112,13 @@ public:
     inline static void setPos(QScreen *screen, const QPoint &p) { setPos(screen, p.x(), p.y()); }
 
 private:
+    friend Q_GUI_EXPORT bool operator==(const QCursor &lhs, const QCursor &rhs) Q_DECL_NOTHROW;
     QCursorData *d;
 };
 Q_DECLARE_SHARED_NOT_MOVABLE_UNTIL_QT6(QCursor)
+
+Q_GUI_EXPORT bool operator==(const QCursor &lhs, const QCursor &rhs) Q_DECL_NOTHROW;
+inline bool operator!=(const QCursor &lhs, const QCursor &rhs) Q_DECL_NOTHROW { return !(lhs == rhs); }
 
 /*****************************************************************************
   QCursor stream functions

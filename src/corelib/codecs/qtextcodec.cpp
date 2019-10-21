@@ -1,6 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2018 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -38,13 +39,14 @@
 ****************************************************************************/
 
 #include "qplatformdefs.h"
+
 #include "qtextcodec.h"
 #include "qtextcodec_p.h"
 
-#ifndef QT_NO_TEXTCODEC
-
-#include "qlist.h"
+#include "qbytearraymatcher.h"
+#include "qendian.h"
 #include "qfile.h"
+#include "qlist.h"
 #include "qstringlist.h"
 #include "qvarlengtharray.h"
 #if !defined(QT_BOOTSTRAPPED)
@@ -56,8 +58,10 @@
 #include "qlatincodec_p.h"
 
 #if !defined(QT_BOOTSTRAPPED)
+#if QT_CONFIG(codecs)
 #  include "qtsciicodec_p.h"
 #  include "qisciicodec_p.h"
+#endif
 #if QT_CONFIG(icu)
 #include "qicucodec_p.h"
 #else
@@ -68,7 +72,7 @@
 #  include "qwindowscodec_p.h"
 #endif
 #  include "qsimplecodec_p.h"
-#if !defined(QT_NO_BIG_CODECS)
+#if QT_CONFIG(big_codecs)
 #  ifndef Q_OS_INTEGRITY
 #    include "qgb18030codec_p.h"
 #    include "qeucjpcodec_p.h"
@@ -77,7 +81,7 @@
 #    include "qeuckrcodec_p.h"
 #    include "qbig5codec_p.h"
 #  endif // !Q_OS_INTEGRITY
-#endif // !QT_NO_BIG_CODECS
+#endif // big_codecs
 
 #endif // icu
 #endif // QT_BOOTSTRAPPED
@@ -87,7 +91,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <locale.h>
-#if defined (_XOPEN_UNIX) && !defined(Q_OS_QNX) && !defined(Q_OS_OSF) && !defined(Q_OS_ANDROID)
+#if defined (_XOPEN_UNIX) && !defined(Q_OS_QNX) && !defined(Q_OS_ANDROID)
 # include <langinfo.h>
 #endif
 
@@ -179,7 +183,7 @@ static QTextCodec *setupLocaleMapper()
     // This is because the builtin utf8 codec is around 5 times faster
     // then the using QIconvCodec
 
-#if defined (_XOPEN_UNIX) && !defined(Q_OS_OSF)
+#if defined (_XOPEN_UNIX)
     char *charset = nl_langinfo(CODESET);
     if (charset)
         locale = QTextCodec::codecForName(charset);
@@ -267,14 +271,14 @@ static void setup()
         return;
     initialized = true;
 
-#if !defined(QT_NO_CODECS) && !defined(QT_BOOTSTRAPPED)
+#if QT_CONFIG(codecs) && !defined(QT_BOOTSTRAPPED)
     (void)new QTsciiCodec;
     for (int i = 0; i < 9; ++i)
         (void)new QIsciiCodec(i);
     for (int i = 0; i < QSimpleTextCodec::numSimpleCodecs; ++i)
         (void)new QSimpleTextCodec(i);
 
-#  if !defined(QT_NO_BIG_CODECS) && !defined(Q_OS_INTEGRITY)
+#  if QT_CONFIG(big_codecs) && !defined(Q_OS_INTEGRITY)
     (void)new QGb18030Codec;
     (void)new QGbkCodec;
     (void)new QGb2312Codec;
@@ -285,14 +289,14 @@ static void setup()
     (void)new QCP949Codec;
     (void)new QBig5Codec;
     (void)new QBig5hkscsCodec;
-#  endif // !QT_NO_BIG_CODECS && !Q_OS_INTEGRITY
+#  endif // big_codecs && !Q_OS_INTEGRITY
 #if QT_CONFIG(iconv)
     (void) new QIconvCodec;
 #endif
 #if defined(Q_OS_WIN32)
     (void) new QWindowsLocalCodec;
 #endif // Q_OS_WIN32
-#endif // !QT_NO_CODECS && !QT_BOOTSTRAPPED
+#endif // codecs && !QT_BOOTSTRAPPED
 
     (void)new QUtf16Codec;
     (void)new QUtf16BECodec;
@@ -491,6 +495,24 @@ QTextCodec::QTextCodec()
 */
 QTextCodec::~QTextCodec()
 {
+    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    if (!globalData)
+        return;
+
+    globalData->codecForLocale.testAndSetRelaxed(this, nullptr);
+
+    QMutexLocker locker(textCodecsMutex());
+
+    globalData->allCodecs.removeOne(this);
+
+    auto it = globalData->codecCache.begin();
+
+    while (it != globalData->codecCache.end()) {
+        if (it.value() == this)
+            it = globalData->codecCache.erase(it);
+        else
+            ++it;
+    }
 }
 
 /*!
@@ -656,7 +678,7 @@ QList<int> QTextCodec::availableMibs()
     \nonreentrant
 
     Set the codec to \a c; this will be returned by
-    codecForLocale(). If \a c is a null pointer, the codec is reset to
+    codecForLocale(). If \a c is \nullptr, the codec is reset to
     the default.
 
     This might be needed for some applications that want to use their
@@ -673,11 +695,9 @@ void QTextCodec::setCodecForLocale(QTextCodec *c)
     \threadsafe
     Returns a pointer to the codec most suitable for this locale.
 
-    On Windows, the codec will be based on a system locale. On Unix
-    systems, the codec will might fall back to using the \e iconv
-    library if no builtin codec for the locale can be found.
-
-    Note that in these cases the codec's name will be "System".
+    The codec will be retrieved from ICU where that backend is in use, otherwise
+    it may be obtained from an OS-specific API.  In the latter case, the codec's
+    name may be "System".
 */
 
 QTextCodec* QTextCodec::codecForLocale()
@@ -744,7 +764,7 @@ QList<QByteArray> QTextCodec::aliases() const
     encoding of the subclass to Unicode, and returns the result in a
     QString.
 
-    \a state can be 0, in which case the conversion is stateless and
+    \a state can be \nullptr, in which case the conversion is stateless and
     default conversion rules should be used. If state is not 0, the
     codec should save the state after the conversion in \a state, and
     adjust the \c remainingChars and \c invalidChars members of the struct.
@@ -760,7 +780,7 @@ QList<QByteArray> QTextCodec::aliases() const
     from Unicode to the encoding of the subclass, and returns the result
     in a QByteArray.
 
-    \a state can be 0 in which case the conversion is stateless and
+    \a state can be \nullptr in which case the conversion is stateless and
     default conversion rules should be used. If state is not 0, the
     codec should save the state after the conversion in \a state, and
     adjust the \c remainingChars and \c invalidChars members of the struct.
@@ -803,6 +823,7 @@ QTextEncoder* QTextCodec::makeEncoder(QTextCodec::ConversionFlags flags) const
     The \a state of the convertor used is updated.
 */
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Converts \a str from Unicode to the encoding of this codec, and
     returns the result in a QByteArray.
@@ -810,6 +831,19 @@ QTextEncoder* QTextCodec::makeEncoder(QTextCodec::ConversionFlags flags) const
 QByteArray QTextCodec::fromUnicode(const QString& str) const
 {
     return convertFromUnicode(str.constData(), str.length(), 0);
+}
+#endif
+
+/*!
+    \overload
+    \since 5.10
+
+    Converts \a str from Unicode to the encoding of this codec, and
+    returns the result in a QByteArray.
+*/
+QByteArray QTextCodec::fromUnicode(QStringView str) const
+{
+    return convertFromUnicode(str.data(), str.length(), nullptr);
 }
 
 /*!
@@ -844,6 +878,7 @@ bool QTextCodec::canEncode(QChar ch) const
     return (state.invalidChars == 0);
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     \overload
 
@@ -856,7 +891,22 @@ bool QTextCodec::canEncode(const QString& s) const
     convertFromUnicode(s.constData(), s.length(), &state);
     return (state.invalidChars == 0);
 }
+#endif
 
+/*!
+    \overload
+    \since 5.10
+
+    Returns \c true if the Unicode string \a s can be fully encoded
+    with this codec; otherwise returns \c false.
+*/
+bool QTextCodec::canEncode(QStringView s) const
+{
+    ConverterState state;
+    state.flags = ConvertInvalidToNull;
+    convertFromUnicode(s.data(), s.length(), &state);
+    return !state.invalidChars;
+}
 /*!
     \overload
 
@@ -921,6 +971,7 @@ bool QTextEncoder::hasFailure() const
     return state.invalidChars != 0;
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Converts the Unicode string \a str into an encoded QByteArray.
 */
@@ -928,6 +979,17 @@ QByteArray QTextEncoder::fromUnicode(const QString& str)
 {
     QByteArray result = c->fromUnicode(str.constData(), str.length(), &state);
     return result;
+}
+#endif
+
+/*!
+    \overload
+    \since 5.10
+    Converts the Unicode string \a str into an encoded QByteArray.
+*/
+QByteArray QTextEncoder::fromUnicode(QStringView str)
+{
+    return c->fromUnicode(str.data(), str.length(), &state);
 }
 
 /*!
@@ -1050,10 +1112,12 @@ QTextCodec *QTextCodec::codecForHtml(const QByteArray &ba, QTextCodec *defaultCo
     // determine charset
     QTextCodec *c = QTextCodec::codecForUtfText(ba, 0);
     if (!c) {
+        static Q_RELAXED_CONSTEXPR auto matcher = qMakeStaticByteArrayMatcher("meta ");
         QByteArray header = ba.left(1024).toLower();
-        int pos = header.indexOf("meta ");
+        int pos = matcher.indexIn(header);
         if (pos != -1) {
-            pos = header.indexOf("charset=", pos);
+            static Q_RELAXED_CONSTEXPR auto matcher = qMakeStaticByteArrayMatcher("charset=");
+            pos = matcher.indexIn(header, pos);
             if (pos != -1) {
                 pos += qstrlen("charset=");
 
@@ -1098,41 +1162,50 @@ QTextCodec *QTextCodec::codecForHtml(const QByteArray &ba)
 
     Tries to detect the encoding of the provided snippet \a ba by
     using the BOM (Byte Order Mark) and returns a QTextCodec instance
-    that is capable of decoding the text to unicode. If the codec
-    cannot be detected from the content provided, \a defaultCodec is
-    returned.
+    that is capable of decoding the text to unicode. This function can
+    detect one of the following codecs:
+
+    \list
+      \li UTF-32 Little Endian
+      \li UTF-32 Big Endian
+      \li UTF-16 Little Endian
+      \li UTF-16 Big Endian
+      \li UTF-8
+    \endlist
+
+    If the codec cannot be detected from the content provided, \a defaultCodec
+    is returned.
 
     \sa codecForHtml()
 */
 QTextCodec *QTextCodec::codecForUtfText(const QByteArray &ba, QTextCodec *defaultCodec)
 {
     const int arraySize = ba.size();
+    const uchar *buf = reinterpret_cast<const uchar *>(ba.constData());
+    const uint bom = 0xfeff;
 
     if (arraySize > 3) {
-        if ((uchar)ba[0] == 0x00
-            && (uchar)ba[1] == 0x00
-            && (uchar)ba[2] == 0xFE
-            && (uchar)ba[3] == 0xFF)
+        uint uc = qFromUnaligned<uint>(buf);
+        if (uc == qToBigEndian(bom))
             return QTextCodec::codecForMib(1018); // utf-32 be
-        else if ((uchar)ba[0] == 0xFF
-                 && (uchar)ba[1] == 0xFE
-                 && (uchar)ba[2] == 0x00
-                 && (uchar)ba[3] == 0x00)
+        else if (uc == qToLittleEndian(bom))
             return QTextCodec::codecForMib(1019); // utf-32 le
     }
 
     if (arraySize < 2)
         return defaultCodec;
-    if ((uchar)ba[0] == 0xfe && (uchar)ba[1] == 0xff)
+
+    ushort uc = qFromUnaligned<ushort>(buf);
+    if (uc == qToBigEndian(ushort(bom)))
         return QTextCodec::codecForMib(1013); // utf16 be
-    else if ((uchar)ba[0] == 0xff && (uchar)ba[1] == 0xfe)
+    else if (uc == qToLittleEndian(ushort(bom)))
         return QTextCodec::codecForMib(1014); // utf16 le
 
     if (arraySize < 3)
         return defaultCodec;
-    if ((uchar)ba[0] == 0xef
-        && (uchar)ba[1] == 0xbb
-        && (uchar)ba[2] == 0xbf)
+
+    static const char utf8bom[] = "\xef\xbb\xbf";
+    if (memcmp(buf, utf8bom, sizeof(utf8bom) - 1) == 0)
         return QTextCodec::codecForMib(106); // utf-8
 
     return defaultCodec;
@@ -1143,8 +1216,19 @@ QTextCodec *QTextCodec::codecForUtfText(const QByteArray &ba, QTextCodec *defaul
 
     Tries to detect the encoding of the provided snippet \a ba by
     using the BOM (Byte Order Mark) and returns a QTextCodec instance
-    that is capable of decoding the text to unicode. If the codec
-    cannot be detected, this overload returns a Latin-1 QTextCodec.
+    that is capable of decoding the text to unicode. This function can
+    detect one of the following codecs:
+
+    \list
+      \li UTF-32 Little Endian
+      \li UTF-32 Big Endian
+      \li UTF-16 Little Endian
+      \li UTF-16 Big Endian
+      \li UTF-8
+    \endlist
+
+    If the codec cannot be detected from the content provided, this overload
+    returns a Latin-1 QTextCodec.
 
     \sa codecForHtml()
 */
@@ -1158,7 +1242,7 @@ QTextCodec *QTextCodec::codecForUtfText(const QByteArray &ba)
     \obsolete
 
     Returns the codec used by QObject::tr() on its argument. If this
-    function returns 0 (the default), tr() assumes Latin-1.
+    function returns \nullptr (the default), tr() assumes Latin-1.
 */
 
 /*!
@@ -1173,6 +1257,17 @@ bool QTextDecoder::hasFailure() const
     return state.invalidChars != 0;
 }
 
-QT_END_NAMESPACE
+/*!
+    \internal
+    \since 5.12
 
-#endif // QT_NO_TEXTCODEC
+    Determines whether the decoder needs more bytes to continue decoding. That
+    is, this signifies that the input string ended in the middle of a
+    multi-byte sequence. Note that it's possible some codecs do not report this.
+ */
+bool QTextDecoder::needsMoreData() const
+{
+    return state.remainingChars;
+}
+
+QT_END_NAMESPACE

@@ -165,6 +165,39 @@ QFSFileEngine::QFSFileEngine(QFSFileEnginePrivate &dd)
 }
 
 /*!
+    \internal
+*/
+ProcessOpenModeResult processOpenModeFlags(QIODevice::OpenMode openMode)
+{
+    ProcessOpenModeResult result;
+    result.ok = false;
+    if ((openMode & QFile::NewOnly) && (openMode & QFile::ExistingOnly)) {
+        qWarning("NewOnly and ExistingOnly are mutually exclusive");
+        result.error = QLatin1String("NewOnly and ExistingOnly are mutually exclusive");
+        return result;
+    }
+
+    if ((openMode & QFile::ExistingOnly) && !(openMode & (QFile::ReadOnly | QFile::WriteOnly))) {
+        qWarning("ExistingOnly must be specified alongside ReadOnly, WriteOnly, or ReadWrite");
+        result.error = QLatin1String(
+                    "ExistingOnly must be specified alongside ReadOnly, WriteOnly, or ReadWrite");
+        return result;
+    }
+
+    // Either Append or NewOnly implies WriteOnly
+    if (openMode & (QFile::Append | QFile::NewOnly))
+        openMode |= QFile::WriteOnly;
+
+    // WriteOnly implies Truncate when ReadOnly, Append, and NewOnly are not set.
+    if ((openMode & QFile::WriteOnly) && !(openMode & (QFile::ReadOnly | QFile::Append | QFile::NewOnly)))
+        openMode |= QFile::Truncate;
+
+    result.ok = true;
+    result.openMode = openMode;
+    return result;
+}
+
+/*!
     Destructs the QFSFileEngine.
 */
 QFSFileEngine::~QFSFileEngine()
@@ -195,6 +228,9 @@ void QFSFileEngine::setFileName(const QString &file)
 */
 bool QFSFileEngine::open(QIODevice::OpenMode openMode)
 {
+    Q_ASSERT_X(openMode & QIODevice::Unbuffered, "QFSFileEngine::open",
+               "QFSFileEngine no longer supports buffered mode; upper layer must buffer");
+
     Q_D(QFSFileEngine);
     if (d->fileEntry.isEmpty()) {
         qWarning("QFSFileEngine::open: No file name specified");
@@ -202,21 +238,19 @@ bool QFSFileEngine::open(QIODevice::OpenMode openMode)
         return false;
     }
 
-    // Append implies WriteOnly.
-    if (openMode & QFile::Append)
-        openMode |= QFile::WriteOnly;
+    const ProcessOpenModeResult res = processOpenModeFlags(openMode);
+    if (!res.ok) {
+        setError(QFileDevice::OpenError, res.error);
+        return false;
+    }
 
-    // WriteOnly implies Truncate if neither ReadOnly nor Append are sent.
-    if ((openMode & QFile::WriteOnly) && !(openMode & (QFile::ReadOnly | QFile::Append)))
-        openMode |= QFile::Truncate;
-
-    d->openMode = openMode;
+    d->openMode = res.openMode;
     d->lastFlushFailed = false;
     d->tried_stat = 0;
     d->fh = 0;
     d->fd = -1;
 
-    return d->nativeOpen(openMode);
+    return d->nativeOpen(d->openMode);
 }
 
 /*!
@@ -230,24 +264,25 @@ bool QFSFileEngine::open(QIODevice::OpenMode openMode, FILE *fh)
 
 bool QFSFileEngine::open(QIODevice::OpenMode openMode, FILE *fh, QFile::FileHandleFlags handleFlags)
 {
+    Q_ASSERT_X(openMode & QIODevice::Unbuffered, "QFSFileEngine::open",
+               "QFSFileEngine no longer supports buffered mode; upper layer must buffer");
+
     Q_D(QFSFileEngine);
 
-    // Append implies WriteOnly.
-    if (openMode & QFile::Append)
-        openMode |= QFile::WriteOnly;
+    const ProcessOpenModeResult res = processOpenModeFlags(openMode);
+    if (!res.ok) {
+        setError(QFileDevice::OpenError, res.error);
+        return false;
+    }
 
-    // WriteOnly implies Truncate if neither ReadOnly nor Append are sent.
-    if ((openMode & QFile::WriteOnly) && !(openMode & (QFile::ReadOnly | QFile::Append)))
-        openMode |= QFile::Truncate;
-
-    d->openMode = openMode;
+    d->openMode = res.openMode;
     d->lastFlushFailed = false;
     d->closeFileHandle = (handleFlags & QFile::AutoCloseHandle);
     d->fileEntry.clear();
     d->tried_stat = 0;
     d->fd = -1;
 
-    return d->openFh(openMode, fh);
+    return d->openFh(d->openMode, fh);
 }
 
 /*!
@@ -255,6 +290,9 @@ bool QFSFileEngine::open(QIODevice::OpenMode openMode, FILE *fh, QFile::FileHand
 */
 bool QFSFileEnginePrivate::openFh(QIODevice::OpenMode openMode, FILE *fh)
 {
+    Q_ASSERT_X(openMode & QIODevice::Unbuffered, "QFSFileEngine::open",
+               "QFSFileEngine no longer supports buffered mode; upper layer must buffer");
+
     Q_Q(QFSFileEngine);
     this->fh = fh;
     fd = -1;
@@ -293,15 +331,13 @@ bool QFSFileEngine::open(QIODevice::OpenMode openMode, int fd, QFile::FileHandle
 {
     Q_D(QFSFileEngine);
 
-    // Append implies WriteOnly.
-    if (openMode & QFile::Append)
-        openMode |= QFile::WriteOnly;
+    const ProcessOpenModeResult res = processOpenModeFlags(openMode);
+    if (!res.ok) {
+        setError(QFileDevice::OpenError, res.error);
+        return false;
+    }
 
-    // WriteOnly implies Truncate if neither ReadOnly nor Append are sent.
-    if ((openMode & QFile::WriteOnly) && !(openMode & (QFile::ReadOnly | QFile::Append)))
-        openMode |= QFile::Truncate;
-
-    d->openMode = openMode;
+    d->openMode = res.openMode;
     d->lastFlushFailed = false;
     d->closeFileHandle = (handleFlags & QFile::AutoCloseHandle);
     d->fileEntry.clear();
@@ -309,7 +345,7 @@ bool QFSFileEngine::open(QIODevice::OpenMode openMode, int fd, QFile::FileHandle
     d->fd = -1;
     d->tried_stat = 0;
 
-    return d->openFd(openMode, fd);
+    return d->openFd(d->openMode, fd);
 }
 
 
@@ -516,6 +552,25 @@ bool QFSFileEngine::seek(qint64 pos)
 }
 
 /*!
+    \reimp
+*/
+QDateTime QFSFileEngine::fileTime(FileTime time) const
+{
+    Q_D(const QFSFileEngine);
+
+    if (time == AccessTime) {
+        // always refresh for the access time
+        d->metaData.clearFlags(QFileSystemMetaData::AccessTime);
+    }
+
+    if (d->doStat(QFileSystemMetaData::Times))
+        return d->metaData.fileTime(time);
+
+    return QDateTime();
+}
+
+
+/*!
     \internal
 */
 bool QFSFileEnginePrivate::seekFdFh(qint64 pos)
@@ -699,6 +754,7 @@ qint64 QFSFileEnginePrivate::readLineFdFh(char *data, qint64 maxlen)
 qint64 QFSFileEngine::write(const char *data, qint64 len)
 {
     Q_D(QFSFileEngine);
+    d->metaData.clearFlags(QFileSystemMetaData::Times);
 
     // On Windows' stdlib implementation, the results of calling fread and
     // fwrite are undefined if not called either in sequence, or if preceded
@@ -860,9 +916,9 @@ bool QFSFileEngine::supportsExtension(Extension extension) const
 
 /*! \fn bool QFSFileEngine::copy(const QString &copyName)
 
-  For windows, copy the file to file \a copyName.
+  For Windows or Apple platforms, copy the file to file \a copyName.
 
-  Not implemented for Unix.
+  Not implemented for other Unix platforms.
 */
 
 /*! \fn QString QFSFileEngine::currentPath(const QString &fileName)
@@ -886,11 +942,11 @@ bool QFSFileEngine::supportsExtension(Extension extension) const
   For Unix, the list contains just the root path "/".
 */
 
-/*! \fn QString QFSFileEngine::fileName(FileName file) const
+/*! \fn QString QFSFileEngine::fileName(QAbstractFileEngine::FileName file) const
   \reimp
 */
 
-/*! \fn QDateTime QFSFileEngine::fileTime(FileTime time) const
+/*! \fn bool QFSFileEngine::setFileTime(const QDateTime &newDate, QAbstractFileEngine::FileTime time)
   \reimp
 */
 
@@ -916,7 +972,7 @@ bool QFSFileEngine::supportsExtension(Extension extension) const
   \reimp
 */
 
-/*! \fn uint QFSFileEngine::ownerId(FileOwner own) const
+/*! \fn uint QFSFileEngine::ownerId(QAbstractFileEngine::FileOwner own) const
   In Unix, if stat() is successful, the \c uid is returned if
   \a own is the owner. Otherwise the \c gid is returned. If stat()
   is unsuccessful, -2 is reuturned.
@@ -924,7 +980,7 @@ bool QFSFileEngine::supportsExtension(Extension extension) const
   For Windows, -2 is always returned.
 */
 
-/*! \fn QString QFSFileEngine::owner(FileOwner own) const
+/*! \fn QString QFSFileEngine::owner(QAbstractFileEngine::FileOwner own) const
   \reimp
 */
 
