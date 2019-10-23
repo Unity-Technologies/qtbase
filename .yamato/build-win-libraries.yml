@@ -17,3 +17,4 @@ triggers:
   pushes:
     only:
       - qtbuild.5.13.2
+      - qtbuild.5.13.2-windows
