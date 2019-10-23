@@ -11,6 +11,9 @@ artifacts:
       - build/builds.7z
 
 commands:
+  - sudo cp /etc/apt/sources.list /etc/apt/sources.list~
+  - sudo sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
+  - sudo apt-get update
   - sudo apt-get build-dep qt5-default
   - sudo apt-get install libxcb-xinerama0-dev
   - git clone https://github.com/openssl/openssl
