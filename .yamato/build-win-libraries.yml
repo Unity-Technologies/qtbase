@@ -2,7 +2,7 @@ name: Build QTBase for Windows
   
 agent:
   type: Unity::VM
-  image: core-kaunas/win10-vs2010:latest
+  image: cds-ops/win10-vs2017:stable
   flavor: b1.xlarge
 
 artifacts:
@@ -17,4 +17,3 @@ triggers:
   pushes:
     only:
       - qtbuild.5.13.2
-      - qtbuild.5.13.2-windows
