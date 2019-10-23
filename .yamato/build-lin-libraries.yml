@@ -12,8 +12,9 @@ artifacts:
 
 commands:
   - sudo sed -i -- 's/#deb-src/deb-src/g' /etc/apt/sources.list && sudo sed -i -- 's/# deb-src/deb-src/g' /etc/apt/sources.list
-  - sudo apt-get build-dep qt5-default
-  - sudo apt-get install libxcb-xinerama0-dev
+  - echo "Allowed source repositories"
+  - sudo apt-get -y build-dep qt5-default
+  - sudo apt-get -y install libxcb-xinerama0-dev
   - git clone https://github.com/openssl/openssl
   - git -C /home/bokken/build/output/Unity-Technologies/qtbase/openssl checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
   - sudo mount --bind /dev /toolchains/linux/dev
