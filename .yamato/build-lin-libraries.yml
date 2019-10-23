@@ -13,8 +13,8 @@ artifacts:
 commands:
   - sudo cp /etc/apt/sources.list /etc/apt/sources.list~
   - sudo sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
-  - sudo apt-get -y update
-  - echo "post apt-get -y update"
+  - cat /etc/apt/sources.list | grep deb-src  #  see what will get changed
+  - yes | sudo apt-get -y update
   - sudo apt-get build-dep qt5-default
   - sudo apt-get install libxcb-xinerama0-dev
   - git clone https://github.com/openssl/openssl
