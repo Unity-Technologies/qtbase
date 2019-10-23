@@ -11,9 +11,8 @@ artifacts:
       - build/builds.7z
 
 commands:
-  - sudo cp /etc/apt/sources.list /etc/apt/sources.list~
-  - sudo sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
-  - cat /etc/apt/sources.list | grep deb-src  #  see what will get changed
+  - sudo add-apt-repository -s
+  - cat /etc/apt/sources.list 
   - yes | sudo apt-get -y update
   - sudo apt-get build-dep qt5-default
   - sudo apt-get install libxcb-xinerama0-dev
