@@ -13,7 +13,8 @@ artifacts:
 commands:
   - sudo cp /etc/apt/sources.list /etc/apt/sources.list~
   - sudo sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
-  - sudo DEBIAN_FRONTEND=noninteractive apt-get -y update 
+  - sudo apt-get -y update
+  - echo "post apt-get -y update"
   - sudo apt-get build-dep qt5-default
   - sudo apt-get install libxcb-xinerama0-dev
   - git clone https://github.com/openssl/openssl
@@ -27,3 +28,4 @@ triggers:
   pushes:
     only:
       - qtbuild.5.13.2
+      - qtbuild.5.13.2-linux
