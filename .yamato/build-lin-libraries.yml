@@ -2,7 +2,7 @@ name: Build QTBase for Linux
   
 agent:
   type: Unity::VM
-  image: tokyo-dev/qt-linux-build-image:latest
+  image: desktop/qt-linux-build-image:latest
   flavor: b1.xlarge
 
 artifacts:
