@@ -56,7 +56,8 @@ sub build
 	{
 		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=$path/openssl-$platform");
 		# Seems like this step is not necassary anymore - doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && $platform_dependent{'do_ms'}->{$arch}");
-		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake -f ms\\nt.mak install");
+		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake");
+		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake install");
 	}
 	elsif($os_name eq "linux")
 	{
