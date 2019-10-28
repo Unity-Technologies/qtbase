@@ -54,7 +54,7 @@ sub build
 	my $os_name = $^O;
 	if($os_name eq "MSWin32")
 	{
-		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
+		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=$path/openssl-$platform");
 		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && $platform_dependent{'do_ms'}->{$arch}");
 		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake -f ms\\nt.mak install");
 	}
