@@ -33,7 +33,7 @@ sub clone
 	doSystemCommand ("git clone https://github.com/openssl/openssl.git $path");
 	chdir ("openssl");
 	doSystemCommand ("git fetch");
-	doSystemCommand ("git checkout -b 1.1.0 origin/OpenSSL_1_1_0-stable");
+	doSystemCommand ("git checkout -b 1.1.1 origin/OpenSSL_1_1_1-stable");
 	chdir ("..");
 }
 
