@@ -63,7 +63,7 @@
 #if defined(__cplusplus)
 #if !QT_HAS_BUILTIN(__builtin_available)
 #include <initializer_list>
-#include <QtCore/private/qoperatingsystemversion_p.h>
+#include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/qversionnumber.h>
 
 QT_BEGIN_NAMESPACE
@@ -77,7 +77,7 @@ static inline bool qt_clang_builtin_available(
     const std::initializer_list<qt_clang_builtin_available_os_version_data> &versions)
 {
     for (auto it = versions.begin(); it != versions.end(); ++it) {
-        if (currentType() == it->type) {
+        if (QOperatingSystemVersion::currentType() == it->type) {
             const auto current = QOperatingSystemVersion::current();
             return QVersionNumber(
                 current.majorVersion(),

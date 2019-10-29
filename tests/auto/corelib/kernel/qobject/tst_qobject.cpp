@@ -55,7 +55,6 @@ class tst_QObject : public QObject
 {
     Q_OBJECT
 private slots:
-    void initTestCase();
     void disconnect();
     void connectSlotsByName();
     void connectSignalsToSignalsWithDefaultArguments();
@@ -104,6 +103,7 @@ private slots:
     void deleteQObjectWhenDeletingEvent();
     void overloads();
     void isSignalConnected();
+    void isSignalConnectedAfterDisconnection();
     void qMetaObjectConnect();
     void qMetaObjectDisconnectOne();
     void sameName();
@@ -140,10 +140,12 @@ private slots:
     void connectFunctorWithContext();
     void connectFunctorWithContextUnique();
     void connectFunctorDeadlock();
+    void connectFunctorMoveOnly();
     void connectStaticSlotWithObject();
     void disconnectDoesNotLeakFunctor();
     void contextDoesNotLeakFunctor();
     void connectBase();
+    void connectWarnings();
     void qmlConnect();
     void exceptions();
     void noDeclarativeParentChangedOnDestruction();
@@ -279,14 +281,6 @@ static void playWithObjects()
         QObject::connect(&lotsOfObjects[i], &SenderObject::signal1,
                          &lotsOfObjects[i], &SenderObject::aPublicSlot);
     }
-}
-
-void tst_QObject::initTestCase()
-{
-#if QT_CONFIG(process)
-    const QString testDataDir = QFileInfo(QFINDTESTDATA("signalbug")).absolutePath();
-    QVERIFY2(QDir::setCurrent(testDataDir), qPrintable("Could not chdir to " + testDataDir));
-#endif
 }
 
 void tst_QObject::disconnect()
@@ -2362,8 +2356,8 @@ void tst_QObject::testUserData()
 
     // Randomize the table a bit
     for (int i=0; i<100; ++i) {
-        int p1 = rand() % USER_DATA_COUNT;
-        int p2 = rand() % USER_DATA_COUNT;
+        int p1 = QRandomGenerator::global()->bounded(USER_DATA_COUNT);
+        int p2 = QRandomGenerator::global()->bounded(USER_DATA_COUNT);
 
         int tmp = user_data_ids[p1];
         user_data_ids[p1] = user_data_ids[p2];
@@ -3003,7 +2997,7 @@ void tst_QObject::dynamicProperties()
     QCOMPARE(obj.changedDynamicProperties.count(), 1);
     QCOMPARE(obj.changedDynamicProperties.first(), QByteArray("myuserproperty"));
     QCOMPARE(obj.property("myuserproperty").type(), QVariant::ByteArray);
-    QCOMPARE(obj.property("myuserproperty").toByteArray(), QByteArray("Hello"));
+    QCOMPARE(obj.property("myuserproperty").toString(), QByteArray("Hello"));
 
     // unset the property
     obj.changedDynamicProperties.clear();
@@ -3025,7 +3019,7 @@ void tst_QObject::recursiveSignalEmission()
 #else
     QProcess proc;
     // signalbug helper app should always be next to this test binary
-    const QString path = QStringLiteral("signalbug/signalbug");
+    const QString path = QStringLiteral("signalbug_helper");
     proc.start(path);
     QVERIFY2(proc.waitForStarted(), qPrintable(QString::fromLatin1("Cannot start '%1': %2").arg(path, proc.errorString())));
     QVERIFY(proc.waitForFinished());
@@ -3840,6 +3834,58 @@ void tst_QObject::isSignalConnected()
     QVERIFY(o.isSignalConnected(meta->method(meta->indexOfSignal("destroyed(QObject*)"))));
 
     QVERIFY(!o.isSignalConnected(QMetaMethod()));
+}
+
+void tst_QObject::isSignalConnectedAfterDisconnection()
+{
+    ManySignals o;
+    const QMetaObject *meta = o.metaObject();
+
+    const QMetaMethod sig00 = meta->method(meta->indexOfSignal("sig00()"));
+    QVERIFY(!o.isSignalConnected(sig00));
+    QObject::connect(&o, &ManySignals::sig00, qt_noop);
+    QVERIFY(o.isSignalConnected(sig00));
+    QVERIFY(QObject::disconnect(&o, &ManySignals::sig00, 0, 0));
+    QVERIFY(!o.isSignalConnected(sig00));
+
+    const QMetaMethod sig69 = meta->method(meta->indexOfSignal("sig69()"));
+    QVERIFY(!o.isSignalConnected(sig69));
+    QObject::connect(&o, &ManySignals::sig69, qt_noop);
+    QVERIFY(o.isSignalConnected(sig69));
+    QVERIFY(QObject::disconnect(&o, &ManySignals::sig69, 0, 0));
+    QVERIFY(!o.isSignalConnected(sig69));
+
+    {
+        ManySignals o2;
+        QObject::connect(&o, &ManySignals::sig00, &o2, &ManySignals::sig00);
+        QVERIFY(o.isSignalConnected(sig00));
+        // o2 is destructed
+    }
+    QVERIFY(!o.isSignalConnected(sig00));
+
+    const QMetaMethod sig01 = meta->method(meta->indexOfSignal("sig01()"));
+    QObject::connect(&o, &ManySignals::sig00, qt_noop);
+    QObject::connect(&o, &ManySignals::sig01, qt_noop);
+    QObject::connect(&o, &ManySignals::sig69, qt_noop);
+    QVERIFY(o.isSignalConnected(sig00));
+    QVERIFY(o.isSignalConnected(sig01));
+    QVERIFY(o.isSignalConnected(sig69));
+    QVERIFY(QObject::disconnect(&o, &ManySignals::sig69, 0, 0));
+    QVERIFY(o.isSignalConnected(sig00));
+    QVERIFY(o.isSignalConnected(sig01));
+    QVERIFY(!o.isSignalConnected(sig69));
+    QVERIFY(QObject::disconnect(&o, &ManySignals::sig00, 0, 0));
+    QVERIFY(!o.isSignalConnected(sig00));
+    QVERIFY(o.isSignalConnected(sig01));
+    QVERIFY(!o.isSignalConnected(sig69));
+    QObject::connect(&o, &ManySignals::sig69, qt_noop);
+    QVERIFY(!o.isSignalConnected(sig00));
+    QVERIFY(o.isSignalConnected(sig01));
+    QVERIFY(o.isSignalConnected(sig69));
+    QVERIFY(QObject::disconnect(&o, &ManySignals::sig01, 0, 0));
+    QVERIFY(!o.isSignalConnected(sig00));
+    QVERIFY(!o.isSignalConnected(sig01));
+    QVERIFY(o.isSignalConnected(sig69));
 }
 
 void tst_QObject::qMetaObjectConnect()
@@ -6027,7 +6073,7 @@ public:
 
 struct SlotArgFunctor
 {
-    SlotArgFunctor(int *s) : status(s), context(Q_NULLPTR), sender(Q_NULLPTR) {}
+    SlotArgFunctor(int *s) : status(s), context(nullptr), sender(nullptr) {}
     SlotArgFunctor(ContextObject *context, QObject *sender, int *s) : status(s), context(context), sender(sender) {}
     void operator()() { *status = 2; if (context) context->compareSender(sender); }
 
@@ -6250,6 +6296,47 @@ void tst_QObject::connectFunctorDeadlock()
     sender.emitSignal1();
 }
 
+void tst_QObject::connectFunctorMoveOnly()
+{
+    struct MoveOnlyFunctor {
+        Q_DISABLE_COPY(MoveOnlyFunctor)
+        MoveOnlyFunctor(int *status) : status(status) {}
+        MoveOnlyFunctor(MoveOnlyFunctor &&o) : status(o.status) { o.status = nullptr; };
+        void operator()(int i) { *status = i; }
+        void operator()() { *status = -8; }
+        int *status;
+    };
+
+    int status = 1;
+    SenderObject obj;
+    QEventLoop e;
+
+    connect(&obj, &SenderObject::signal1, MoveOnlyFunctor(&status));
+    QCOMPARE(status, 1);
+    obj.signal1();
+    QCOMPARE(status, -8);
+
+    connect(&obj, &SenderObject::signal7, MoveOnlyFunctor(&status));
+    QCOMPARE(status, -8);
+    obj.signal7(7888, "Hello");
+    QCOMPARE(status, 7888);
+
+    // With a context
+    status = 1;
+    connect(&obj, &SenderObject::signal2, this, MoveOnlyFunctor(&status));
+    QCOMPARE(status, 1);
+    obj.signal2();
+    QCOMPARE(status, -8);
+
+    // QueuedConnection
+    status = 1;
+    connect(&obj, &SenderObject::signal3, this, MoveOnlyFunctor(&status), Qt::QueuedConnection);
+    obj.signal3();
+    QCOMPARE(status, 1);
+    QCoreApplication::processEvents();
+    QCOMPARE(status, -8);
+}
+
 static int s_static_slot_checker = 1;
 
 class StaticSlotChecker : public QObject
@@ -6424,7 +6511,7 @@ Q_SIGNALS:
 static int countedStructObjectsCount = 0;
 struct CountedStruct
 {
-    CountedStruct() : sender(Q_NULLPTR) { ++countedStructObjectsCount; }
+    CountedStruct() : sender(nullptr) { ++countedStructObjectsCount; }
     CountedStruct(GetSenderObject *sender) : sender(sender) { ++countedStructObjectsCount; }
     CountedStruct(const CountedStruct &o) : sender(o.sender) { ++countedStructObjectsCount; }
     CountedStruct &operator=(const CountedStruct &) { return *this; }
@@ -6655,6 +6742,26 @@ void tst_QObject::connectBase()
     QCOMPARE( r1.count_slot3, 1 );
 }
 
+void tst_QObject::connectWarnings()
+{
+    SubSender sub;
+    SenderObject obj;
+    ReceiverObject r1;
+    r1.reset();
+
+    QTest::ignoreMessage(QtWarningMsg, "QObject::connect(SenderObject, ReceiverObject): invalid null parameter");
+    connect(static_cast<const SenderObject *>(nullptr), &SubSender::signal1, &r1, &ReceiverObject::slot1);
+
+    QTest::ignoreMessage(QtWarningMsg, "QObject::connect(SubSender, Unknown): invalid null parameter");
+    connect(&sub, &SubSender::signal1, static_cast<ReceiverObject *>(nullptr), &ReceiverObject::slot1);
+
+    QTest::ignoreMessage(QtWarningMsg, "QObject::connect(SenderObject, ReceiverObject): invalid null parameter");
+    connect(static_cast<const SenderObject *>(nullptr), &SenderObject::signal1, &r1, &ReceiverObject::slot1);
+
+    QTest::ignoreMessage(QtWarningMsg, "QObject::connect(SenderObject, Unknown): invalid null parameter");
+    connect(&obj, &SenderObject::signal1, static_cast<ReceiverObject *>(nullptr), &ReceiverObject::slot1);
+}
+
 struct QmlReceiver : public QtPrivate::QSlotObjectBase
 {
     int callCount;
@@ -6740,7 +6847,7 @@ class CountedExceptionThrower : public QObject
     Q_OBJECT
 
 public:
-    explicit CountedExceptionThrower(bool throwException, QObject *parent = Q_NULLPTR)
+    explicit CountedExceptionThrower(bool throwException, QObject *parent = nullptr)
         : QObject(parent)
     {
         if (throwException)
@@ -6826,7 +6933,7 @@ void tst_QObject::exceptions()
         try {
             class ParentObject : public QObject {
             public:
-                explicit ParentObject(QObject *parent = Q_NULLPTR)
+                explicit ParentObject(QObject *parent = nullptr)
                     : QObject(parent)
                 {
                     new CountedExceptionThrower(false, this);

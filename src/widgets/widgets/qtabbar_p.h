@@ -58,7 +58,9 @@
 #include <qicon.h>
 #include <qtoolbutton.h>
 #include <qdebug.h>
+#if QT_CONFIG(animation)
 #include <qvariantanimation.h>
+#endif
 
 #define ANIMATION_DURATION 250
 
@@ -71,17 +73,17 @@ QT_BEGIN_NAMESPACE
 class QMovableTabWidget : public QWidget
 {
 public:
-    explicit QMovableTabWidget(QWidget *parent = Q_NULLPTR);
+    explicit QMovableTabWidget(QWidget *parent = nullptr);
     void setPixmap(const QPixmap &pixmap);
 
 protected:
-    void paintEvent(QPaintEvent *e) Q_DECL_OVERRIDE;
+    void paintEvent(QPaintEvent *e) override;
 
 private:
     QPixmap m_pixmap;
 };
 
-class QTabBarPrivate  : public QWidgetPrivate
+class Q_WIDGETS_EXPORT QTabBarPrivate : public QWidgetPrivate
 {
     Q_DECLARE_PUBLIC(QTabBar)
 public:
@@ -107,9 +109,9 @@ public:
         inline Tab(const QIcon &ico, const QString &txt)
             : enabled(true) , shortcutId(0), text(txt), icon(ico),
             leftWidget(0), rightWidget(0), lastTab(-1), dragOffset(0)
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
             , animation(0)
-#endif //QT_NO_ANIMATION
+#endif // animation
         {}
         bool operator==(const Tab &other) const { return &other == this; }
         bool enabled;
@@ -136,15 +138,15 @@ public:
         QString accessibleName;
 #endif
 
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
         ~Tab() { delete animation; }
         struct TabBarAnimation : public QVariantAnimation {
             TabBarAnimation(Tab *t, QTabBarPrivate *_priv) : tab(t), priv(_priv)
             { setEasingCurve(QEasingCurve::InOutQuad); }
 
-            void updateCurrentValue(const QVariant &current) Q_DECL_OVERRIDE;
+            void updateCurrentValue(const QVariant &current) override;
 
-            void updateState(State, State newState) Q_DECL_OVERRIDE;
+            void updateState(State newState, State) override;
         private:
             //these are needed for the callbacks
             Tab *tab;
@@ -166,7 +168,7 @@ public:
 #else
         void startAnimation(QTabBarPrivate *priv, int duration)
         { Q_UNUSED(duration); priv->moveTabFinished(priv->tabList.indexOf(*this)); }
-#endif //QT_NO_ANIMATION
+#endif // animation
     };
     QList<Tab> tabList;
     mutable QHash<QString, QSize> textSizes;
@@ -180,7 +182,7 @@ public:
 
     int indexAtPos(const QPoint &p) const;
 
-    inline bool isAnimated() const { Q_Q(const QTabBar); return q->style()->styleHint(QStyle::SH_Widget_Animate, 0, q); }
+    inline bool isAnimated() const { Q_Q(const QTabBar); return q->style()->styleHint(QStyle::SH_Widget_Animation_Duration, 0, q) > 0; }
     inline bool validIndex(int index) const { return index >= 0 && index < tabList.count(); }
     void setCurrentNextEnabledIndex(int offset);
 
@@ -269,21 +271,6 @@ public:
 
     void killSwitchTabTimer();
 
-};
-
-class CloseButton : public QAbstractButton
-{
-    Q_OBJECT
-
-public:
-    explicit CloseButton(QWidget *parent = 0);
-
-    QSize sizeHint() const Q_DECL_OVERRIDE;
-    QSize minimumSizeHint() const Q_DECL_OVERRIDE
-        { return sizeHint(); }
-    void enterEvent(QEvent *event) Q_DECL_OVERRIDE;
-    void leaveEvent(QEvent *event) Q_DECL_OVERRIDE;
-    void paintEvent(QPaintEvent *event) Q_DECL_OVERRIDE;
 };
 
 QT_END_NAMESPACE

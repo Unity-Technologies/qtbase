@@ -71,6 +71,17 @@ QPlatformWindow::~QPlatformWindow()
 }
 
 /*!
+    Called as part of QWindow::create(), after constructing
+    the window. Platforms should prefer to do initialization
+    here instead of in the constructor, as the platform window
+    object will be fully constructed, and associated to the
+    corresponding QWindow, allowing synchronous event delivery.
+*/
+void QPlatformWindow::initialize()
+{
+}
+
+/*!
     Returns the window which belongs to the QPlatformWindow
 */
 QWindow *QPlatformWindow::window() const
@@ -93,7 +104,7 @@ QPlatformWindow *QPlatformWindow::parent() const
 QPlatformScreen *QPlatformWindow::screen() const
 {
     QScreen *scr = window()->screen();
-    return scr ? scr->handle() : Q_NULLPTR;
+    return scr ? scr->handle() : nullptr;
 }
 
 /*!
@@ -105,10 +116,18 @@ QSurfaceFormat QPlatformWindow::format() const
 }
 
 /*!
-    This function is called by Qt whenever a window is moved or the window is resized. The resize
-    can happen programatically(from ie. user application) or by the window manager. This means that
-    there is no need to call this function specifically from the window manager callback, instead
-    call QWindowSystemInterface::handleGeometryChange(QWindow *w, const QRect &newRect);
+    This function is called by Qt whenever a window is moved or resized using the QWindow API.
+
+    Unless you also override QPlatformWindow::geometry(), you need to call the baseclass
+    implementation of this function in any override of QPlatformWindow::setGeometry(), as
+    QWindow::geometry() is expected to report back the set geometry until a confirmation
+    (or rejection) of the new geometry comes back from the window manager and is reported
+    via QWindowSystemInterface::handleGeometryChange().
+
+    Window move/resizes can also be triggered spontaneously by the window manager, or as a
+    response to an earlier requested move/resize via the Qt APIs. There is no need to call
+    this function from the window manager callback, instead call
+    QWindowSystemInterface::handleGeometryChange().
 
     The position(x, y) part of the rect might be inclusive or exclusive of the window frame
     as returned by frameMargins(). You can detect this in the plugin by checking
@@ -121,7 +140,7 @@ void QPlatformWindow::setGeometry(const QRect &rect)
 }
 
 /*!
-    Returnes the current geometry of a window
+    Returns the current geometry of a window
 */
 QRect QPlatformWindow::geometry() const
 {
@@ -271,7 +290,7 @@ QPoint QPlatformWindow::mapFromGlobal(const QPoint &pos) const
 
     Qt::WindowActive can be ignored.
 */
-void QPlatformWindow::setWindowState(Qt::WindowState)
+void QPlatformWindow::setWindowState(Qt::WindowStates)
 {
 }
 
@@ -319,6 +338,20 @@ void QPlatformWindow::setWindowFilePath(const QString &filePath) { Q_UNUSED(file
   Reimplement to set the window icon to \a icon
 */
 void QPlatformWindow::setWindowIcon(const QIcon &icon) { Q_UNUSED(icon); }
+
+/*!
+  Reimplement to let the platform handle non-spontaneous window close.
+
+  When reimplementing make sure to call the base class implementation
+  or QWindowSystemInterface::handleCloseEvent(), which will prompt the
+  user to accept the window close (if needed) and then close the QWindow.
+*/
+bool QPlatformWindow::close()
+{
+    bool accepted = false;
+    QWindowSystemInterface::handleCloseEvent<QWindowSystemInterface::SynchronousDelivery>(window(), &accepted);
+    return accepted;
+}
 
 /*!
   Reimplement to be able to let Qt raise windows to the top of the desktop
@@ -428,14 +461,26 @@ bool QPlatformWindow::setWindowModified(bool modified)
 
 /*!
     Reimplement this method to be able to do any platform specific event
-    handling. All events for window() are passed to this function before being
-    sent to QWindow::event().
+    handling. All non-synthetic events for window() are passed to this
+    function before being sent to QWindow::event().
 
-    The default implementation is empty and does nothing with \a event.
+    Return true if the event should not be passed on to the QWindow.
+
+    Subclasses should always call the base class implementation.
 */
-void QPlatformWindow::windowEvent(QEvent *event)
+bool QPlatformWindow::windowEvent(QEvent *event)
 {
-    Q_UNUSED(event);
+    Q_D(QPlatformWindow);
+
+    if (event->type() == QEvent::Timer) {
+        if (static_cast<QTimerEvent *>(event)->timerId() == d->updateTimer.timerId()) {
+            d->updateTimer.stop();
+            deliverUpdateRequest();
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /*!
@@ -452,6 +497,25 @@ bool QPlatformWindow::startSystemResize(const QPoint &pos, Qt::Corner corner)
 {
     Q_UNUSED(pos)
     Q_UNUSED(corner)
+    return false;
+}
+
+/*!
+    Reimplement this method to start a system move operation if
+    the system supports it and return true to indicate success.
+
+    The \a pos is a position of MouseButtonPress event or TouchBegin
+    event from a sequence of mouse events that triggered the movement.
+    It must be specified in window coordinates.
+
+    The default implementation is empty and does nothing with \a pos.
+
+    \since 5.11
+*/
+
+bool QPlatformWindow::startSystemMove(const QPoint &pos)
+{
+    Q_UNUSED(pos)
     return false;
 }
 
@@ -641,13 +705,20 @@ QRect QPlatformWindow::initialGeometry(const QWindow *w,
                                           w, defaultWidth, defaultHeight);
         return QRect(initialGeometry.topLeft(), QHighDpi::toNative(size, factor));
     }
-    const QScreen *screen = effectiveScreen(w);
+    const auto *wp = qt_window_private(const_cast<QWindow*>(w));
+    const bool position = wp->positionAutomatic && w->type() != Qt::Popup;
+    if (!position && !wp->resizeAutomatic)
+        return initialGeometry;
+    const QScreen *screen = wp->positionAutomatic
+        ? effectiveScreen(w)
+        : QGuiApplication::screenAt(initialGeometry.center());
     if (!screen)
         return initialGeometry;
+    // initialGeometry refers to window's screen
     QRect rect(QHighDpi::fromNativePixels(initialGeometry, w));
-    rect.setSize(fixInitialSize(rect.size(), w, defaultWidth, defaultHeight));
-    if (qt_window_private(const_cast<QWindow*>(w))->positionAutomatic
-            && w->type() != Qt::Popup) {
+    if (wp->resizeAutomatic)
+        rect.setSize(fixInitialSize(rect.size(), w, defaultWidth, defaultHeight));
+    if (position) {
         const QRect availableGeometry = screen->availableGeometry();
         // Center unless the geometry ( + unknown window frame) is too large for the screen).
         if (rect.height() < (availableGeometry.height() * 8) / 9
@@ -672,7 +743,7 @@ QRect QPlatformWindow::initialGeometry(const QWindow *w,
 
     QPlatformWindow subclasses can re-implement this function to
     provide display refresh synchronized updates. The event
-    should be delivered using QWindowPrivate::deliverUpdateRequest()
+    should be delivered using QPlatformWindow::deliverUpdateRequest()
     to not get out of sync with the the internal state of QWindow.
 
     The default implementation posts an UpdateRequest event to the
@@ -682,18 +753,44 @@ QRect QPlatformWindow::initialGeometry(const QWindow *w,
 */
 void QPlatformWindow::requestUpdate()
 {
-    static int timeout = -1;
-    if (timeout == -1) {
+    Q_D(QPlatformWindow);
+
+    static int updateInterval = []() {
         bool ok = false;
-        timeout = qEnvironmentVariableIntValue("QT_QPA_UPDATE_IDLE_TIME", &ok);
-        if (!ok)
-            timeout = 5;
-    }
+        int customUpdateInterval = qEnvironmentVariableIntValue("QT_QPA_UPDATE_IDLE_TIME", &ok);
+        return ok ? customUpdateInterval : 5;
+    }();
+
+    Q_ASSERT(!d->updateTimer.isActive());
+    d->updateTimer.start(updateInterval, Qt::PreciseTimer, window());
+}
+
+/*!
+    Returns true if the window has a pending update request.
+
+    \sa requestUpdate(), deliverUpdateRequest()
+*/
+bool QPlatformWindow::hasPendingUpdateRequest() const
+{
+    return qt_window_private(window())->updateRequestPending;
+}
+
+/*!
+    Delivers an QEvent::UpdateRequest event to the window.
+
+    QPlatformWindow subclasses can re-implement this function to
+    provide e.g. logging or tracing of the delivery, but should
+    always call the base class function.
+*/
+void QPlatformWindow::deliverUpdateRequest()
+{
+    Q_ASSERT(hasPendingUpdateRequest());
 
     QWindow *w = window();
-    QWindowPrivate *wp = (QWindowPrivate *) QObjectPrivate::get(w);
-    Q_ASSERT(wp->updateTimer == 0);
-    wp->updateTimer = w->startTimer(timeout, Qt::PreciseTimer);
+    QWindowPrivate *wp = qt_window_private(w);
+    wp->updateRequestPending = false;
+    QEvent request(QEvent::UpdateRequest);
+    QCoreApplication::sendEvent(w, &request);
 }
 
 /*!

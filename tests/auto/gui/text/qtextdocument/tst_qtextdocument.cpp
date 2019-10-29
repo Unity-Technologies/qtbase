@@ -187,6 +187,9 @@ private slots:
     void cssInheritance();
 
     void lineHeightType();
+    void cssLineHeightMultiplier();
+
+    void clearUndoRedoStacks();
 private:
     void backgroundImage_checkExpectedHtml(const QTextDocument &doc);
     void buildRegExpData();
@@ -318,6 +321,15 @@ void tst_QTextDocument::find_data()
     QTest::newRow("nbsp") << "Hello" + QString(QChar(QChar::Nbsp)) +"World" << " " << int(QTextDocument::FindCaseSensitively) << 0 << 5 << 6;
 
     QTest::newRow("from-the-end") << "Hello World" << "Hello World" << int(QTextDocument::FindCaseSensitively| QTextDocument::FindBackward) << 11 << 0 << 11;
+
+    QTest::newRow("bw-cross-paras-1") << "a1\na2\nb1" << "a" << int(QTextDocument::FindBackward) << 7 << 3 << 4;
+    QTest::newRow("bw-cross-paras-2") << "a1\na2\nb1" << "a" << int(QTextDocument::FindBackward) << 6 << 3 << 4;
+    QTest::newRow("bw-cross-paras-3") << "a1\na2\nb1" << "a" << int(QTextDocument::FindBackward) << 5 << 3 << 4;
+    QTest::newRow("bw-cross-paras-4") << "a1\na2\nb1" << "a" << int(QTextDocument::FindBackward) << 3 << 0 << 1;
+    QTest::newRow("bw-cross-paras-5") << "xa\n\nb1" << "a" << int(QTextDocument::FindBackward) << 5 << 1 << 2;
+    QTest::newRow("bw-cross-paras-6") << "xa\n\nb1" << "a" << int(QTextDocument::FindBackward) << 4 << 1 << 2;
+    QTest::newRow("bw-cross-paras-7") << "xa\n\nb1" << "a" << int(QTextDocument::FindBackward) << 3 << 1 << 2;
+    QTest::newRow("bw-cross-paras-8") << "xa\n\nb1" << "a" << int(QTextDocument::FindBackward) << 2 << 1 << 2;
 }
 
 void tst_QTextDocument::find()
@@ -610,7 +622,7 @@ void tst_QTextDocument::task240325()
     QFontMetrics fm(p.font());
 
     // Set page size to contain image and one "Foobar"
-    doc->setPageSize(QSize(100 + fm.width("Foobar")*2, 1000));
+    doc->setPageSize(QSize(100 + fm.horizontalAdvance("Foobar")*2, 1000));
 
     // Force layout
     doc->drawContents(&p);
@@ -618,7 +630,11 @@ void tst_QTextDocument::task240325()
     QCOMPARE(doc->blockCount(), 1);
     for (QTextBlock block = doc->begin() ; block!=doc->end() ; block = block.next()) {
         QTextLayout *layout = block.layout();
+#ifdef Q_OS_ANDROID
+        QEXPECT_FAIL("", "QTBUG-69242", Abort);
+#endif
         QCOMPARE(layout->lineCount(), 4);
+
         for (int lineIdx=0;lineIdx<layout->lineCount();++lineIdx) {
             QTextLine line = layout->lineAt(lineIdx);
 
@@ -3398,6 +3414,33 @@ void tst_QTextDocument::lineHeightType()
 
     {
         QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: fixed; line-height: 10; -qt-line-height-type: fixed; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 10.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: proportional; line-height: 3; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 3.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 2.5; -qt-line-height-type: proportional; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 2.5);
+    }
+
+    {
+        QTextDocument td;
         td.setHtml("<html><head><style type=\"text/css\">body { line-height: 33; -qt-line-height-type: minimum; }</style></head><body>Foobar</body></html>");
         QTextBlock block = td.begin();
         QTextBlockFormat format = block.blockFormat();
@@ -3423,6 +3466,38 @@ void tst_QTextDocument::lineHeightType()
         QCOMPARE(format.lineHeight(), 200.0);
     }
 }
+
+void tst_QTextDocument::cssLineHeightMultiplier()
+{
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 10; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 1000.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body {line-height: 1.38; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 138.0);
+    }
+}
+
+void tst_QTextDocument::clearUndoRedoStacks()
+{
+    QTextDocument doc;
+    QTextCursor c(&doc);
+    c.insertText(QStringLiteral("lorem ipsum"));
+    QVERIFY(doc.isUndoAvailable());
+    doc.clearUndoRedoStacks(QTextDocument::UndoStack); // Don't crash
+    QVERIFY(!doc.isUndoAvailable());
+}
+
 
 QTEST_MAIN(tst_QTextDocument)
 #include "tst_qtextdocument.moc"

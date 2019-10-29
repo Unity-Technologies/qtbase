@@ -215,7 +215,7 @@ private:
     bool fast;
 };
 
-class Q_AUTOTEST_EXPORT QComboBoxPrivateContainer : public QFrame
+class Q_WIDGETS_EXPORT QComboBoxPrivateContainer : public QFrame
 {
     Q_OBJECT
 
@@ -234,6 +234,7 @@ public:
 
 public Q_SLOTS:
     void scrollItemView(int action);
+    void hideScrollers();
     void updateScrollers();
     void viewDestroyed();
 
@@ -247,6 +248,7 @@ protected:
     void timerEvent(QTimerEvent *timerEvent) override;
     void leaveEvent(QEvent *e) override;
     void resizeEvent(QResizeEvent *e) override;
+    void paintEvent(QPaintEvent *e) override;
     QStyleOptionComboBox comboStyleOption() const;
 
 Q_SIGNALS:

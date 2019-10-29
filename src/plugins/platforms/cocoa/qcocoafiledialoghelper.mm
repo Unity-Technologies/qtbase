@@ -50,20 +50,19 @@
 #include <private/qguiapplication_p.h>
 #include "qt_mac_p.h"
 #include "qcocoahelpers.h"
-#include "qcocoamenubar.h"
 #include "qcocoaeventdispatcher.h"
 #include <qregexp.h>
 #include <qbuffer.h>
 #include <qdebug.h>
 #include <qstringlist.h>
-#include <qtextcodec.h>
 #include <qvarlengtharray.h>
 #include <stdlib.h>
 #include <qabstracteventdispatcher.h>
 #include <qsysinfo.h>
 #include <qoperatingsystemversion.h>
 #include <qglobal.h>
-#include <QDir>
+#include <qdir.h>
+#include <qregularexpression.h>
 
 #include <qpa/qplatformnativeinterface.h>
 
@@ -80,23 +79,6 @@ typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
 
 @interface QT_MANGLE_NAMESPACE(QNSOpenSavePanelDelegate)
     : NSObject<NSOpenSavePanelDelegate>
-{
-    @public
-    NSOpenPanel *mOpenPanel;
-    NSSavePanel *mSavePanel;
-    NSView *mAccessoryView;
-    NSPopUpButton *mPopUpButton;
-    NSTextField *mTextField;
-    QCocoaFileDialogHelper *mHelper;
-    NSString *mCurrentDir;
-
-    int mReturnCode;
-
-    SharedPointerFileDialogOptions mOptions;
-    QString *mCurrentSelection;
-    QStringList *mNameFilterDropDownList;
-    QStringList *mSelectedNameFilter;
-}
 
 - (NSString *)strip:(const QString &)label;
 - (BOOL)panel:(id)sender shouldEnableURL:(NSURL *)url;
@@ -116,12 +98,27 @@ typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
 
 QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSOpenSavePanelDelegate);
 
-@implementation QNSOpenSavePanelDelegate
+@implementation QNSOpenSavePanelDelegate {
+    @public
+    NSOpenPanel *mOpenPanel;
+    NSSavePanel *mSavePanel;
+    NSView *mAccessoryView;
+    NSPopUpButton *mPopUpButton;
+    NSTextField *mTextField;
+    QCocoaFileDialogHelper *mHelper;
+    NSString *mCurrentDir;
 
-- (id)initWithAcceptMode:
-    (const QString &)selectFile
-    options:(SharedPointerFileDialogOptions)options
-    helper:(QCocoaFileDialogHelper *)helper
+    int mReturnCode;
+
+    SharedPointerFileDialogOptions mOptions;
+    QString *mCurrentSelection;
+    QStringList *mNameFilterDropDownList;
+    QStringList *mSelectedNameFilter;
+}
+
+- (instancetype)initWithAcceptMode:(const QString &)selectFile
+                           options:(SharedPointerFileDialogOptions)options
+                            helper:(QCocoaFileDialogHelper *)helper
 {
     self = [super init];
     mOptions = options;
@@ -131,7 +128,7 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSOpenSavePanelDelegate);
     } else {
         mSavePanel = [NSSavePanel savePanel];
         [mSavePanel setCanSelectHiddenExtension:YES];
-        mOpenPanel = 0;
+        mOpenPanel = nil;
     }
 
     if ([mSavePanel respondsToSelector:@selector(setLevel:)])
@@ -161,11 +158,7 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSOpenSavePanelDelegate);
     // resetting our mCurrentDir, set the delegate
     // here to make sure it gets the correct value.
     [mSavePanel setDelegate:self];
-
-#if QT_OSX_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_11)
-    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::OSXElCapitan)
-        mOpenPanel.accessoryViewDisclosed = YES;
-#endif
+    mOpenPanel.accessoryViewDisclosed = YES;
 
     if (mOptions->isLabelExplicitlySet(QFileDialogOptions::Accept))
         [mSavePanel setPrompt:[self strip:options->labelText(QFileDialogOptions::Accept)]];
@@ -197,7 +190,7 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSOpenSavePanelDelegate);
 
 static QString strippedText(QString s)
 {
-    s.remove( QString::fromLatin1("...") );
+    s.remove(QLatin1String("..."));
     return QPlatformTheme::removeMnemonics(s).trimmed();
 }
 
@@ -225,13 +218,12 @@ static QString strippedText(QString s)
             || [self panel:nil shouldEnableURL:url];
 
         [self updateProperties];
-        QCocoaMenuBar::redirectKnownMenuItemsToFirstResponder();
         [mSavePanel setNameFieldStringValue:selectable ? info.fileName().toNSString() : @""];
 
         [mOpenPanel beginWithCompletionHandler:^(NSInteger result){
             mReturnCode = result;
             if (mHelper)
-                mHelper->QNSOpenSavePanelDelegate_panelClosed(result == NSOKButton);
+                mHelper->QNSOpenSavePanelDelegate_panelClosed(result == NSModalResponseOK);
         }];
     }
 }
@@ -255,17 +247,15 @@ static QString strippedText(QString s)
     // Make sure we don't interrupt the runModal call below.
     QCocoaEventDispatcher::clearCurrentThreadCocoaEventDispatcherInterruptFlag();
 
-    QCocoaMenuBar::redirectKnownMenuItemsToFirstResponder();
     mReturnCode = [mSavePanel runModal];
-    QCocoaMenuBar::resetKnownMenuItemsToQt();
 
     QAbstractEventDispatcher::instance()->interrupt();
-    return (mReturnCode == NSOKButton);
+    return (mReturnCode == NSModalResponseOK);
 }
 
 - (QPlatformDialogHelper::DialogCode)dialogResultCode
 {
-    return (mReturnCode == NSOKButton) ? QPlatformDialogHelper::Accepted : QPlatformDialogHelper::Rejected;
+    return (mReturnCode == NSModalResponseOK) ? QPlatformDialogHelper::Accepted : QPlatformDialogHelper::Rejected;
 }
 
 - (void)showWindowModalSheet:(QWindow *)parent
@@ -277,7 +267,6 @@ static QString strippedText(QString s)
         || [self panel:nil shouldEnableURL:url];
 
     [self updateProperties];
-    QCocoaMenuBar::redirectKnownMenuItemsToFirstResponder();
     [mSavePanel setDirectoryURL: [NSURL fileURLWithPath:mCurrentDir]];
 
     [mSavePanel setNameFieldStringValue:selectable ? info.fileName().toNSString() : @""];
@@ -286,7 +275,7 @@ static QString strippedText(QString s)
     [mSavePanel beginSheetModalForWindow:nsparent completionHandler:^(NSInteger result){
         mReturnCode = result;
         if (mHelper)
-            mHelper->QNSOpenSavePanelDelegate_panelClosed(result == NSOKButton);
+            mHelper->QNSOpenSavePanelDelegate_panelClosed(result == NSModalResponseOK);
     }];
 }
 
@@ -295,7 +284,7 @@ static QString strippedText(QString s)
     BOOL hidden = NO;
     if (url) {
         CFBooleanRef isHiddenProperty;
-        if (CFURLCopyResourcePropertyForKey((__bridge CFURLRef)url, kCFURLIsHiddenKey, &isHiddenProperty, NULL)) {
+        if (CFURLCopyResourcePropertyForKey((__bridge CFURLRef)url, kCFURLIsHiddenKey, &isHiddenProperty, nullptr)) {
             hidden = CFBooleanGetValue(isHiddenProperty);
             CFRelease(isHiddenProperty);
         }
@@ -409,9 +398,9 @@ static QString strippedText(QString s)
 {
     if (mOpenPanel) {
         QList<QUrl> result;
-        NSArray* array = [mOpenPanel URLs];
-        for (NSUInteger i=0; i<[array count]; ++i) {
-            QString path = QString::fromNSString([[array objectAtIndex:i] path]).normalized(QString::NormalizationForm_C);
+        NSArray<NSURL *> *array = [mOpenPanel URLs];
+        for (NSURL *url in array) {
+            QString path = QString::fromNSString(url.path).normalized(QString::NormalizationForm_C);
             result << QUrl::fromLocalFile(path);
         }
         return result;
@@ -513,9 +502,10 @@ static QString strippedText(QString s)
 
 - (QString)removeExtensions:(const QString &)filter
 {
-    QRegExp regExp(QString::fromLatin1(QPlatformFileDialogHelper::filterRegExp));
-    if (regExp.indexIn(filter) != -1)
-        return regExp.cap(1).trimmed();
+    QRegularExpression regExp(QString::fromLatin1(QPlatformFileDialogHelper::filterRegExp));
+    QRegularExpressionMatch match = regExp.match(filter);
+    if (match.hasMatch())
+        return match.captured(1).trimmed();
     return filter;
 }
 
@@ -524,8 +514,8 @@ static QString strippedText(QString s)
     NSRect textRect = { { 0.0, 3.0 }, { 100.0, 25.0 } };
     mTextField = [[NSTextField alloc] initWithFrame:textRect];
     [[mTextField cell] setFont:[NSFont systemFontOfSize:
-            [NSFont systemFontSizeForControlSize:NSRegularControlSize]]];
-    [mTextField setAlignment:NSRightTextAlignment];
+            [NSFont systemFontSizeForControlSize:NSControlSizeRegular]]];
+    [mTextField setAlignment:NSTextAlignmentRight];
     [mTextField setEditable:false];
     [mTextField setSelectable:false];
     [mTextField setBordered:false];
@@ -578,7 +568,7 @@ static QString strippedText(QString s)
 QT_BEGIN_NAMESPACE
 
 QCocoaFileDialogHelper::QCocoaFileDialogHelper()
-    :mDelegate(0)
+    : mDelegate(nil)
 {
 }
 
@@ -588,7 +578,7 @@ QCocoaFileDialogHelper::~QCocoaFileDialogHelper()
         return;
     QMacAutoReleasePool pool;
     [mDelegate release];
-    mDelegate = 0;
+    mDelegate = nil;
 }
 
 void QCocoaFileDialogHelper::QNSOpenSavePanelDelegate_selectionChanged(const QString &newPath)
@@ -598,7 +588,6 @@ void QCocoaFileDialogHelper::QNSOpenSavePanelDelegate_selectionChanged(const QSt
 
 void QCocoaFileDialogHelper::QNSOpenSavePanelDelegate_panelClosed(bool accepted)
 {
-    QCocoaMenuBar::resetKnownMenuItemsToQt();
     if (accepted) {
         emit accept();
     } else {

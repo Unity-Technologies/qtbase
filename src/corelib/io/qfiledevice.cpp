@@ -740,6 +740,76 @@ bool QFileDevice::unmap(uchar *address)
     return false;
 }
 
+/*!
+    \enum QFileDevice::FileTime
+    \since 5.10
+
+    This enum is used by the fileTime() and setFileTime() functions.
+
+    \value FileAccessTime           When the file was most recently accessed
+                                    (e.g. read or written to).
+    \value FileBirthTime            When the file was created (may not be not
+                                    supported on UNIX).
+    \value FileMetadataChangeTime   When the file's metadata was last changed.
+    \value FileModificationTime     When the file was most recently modified.
+
+    \sa setFileTime(), fileTime(), QFileInfo::fileTime()
+*/
+
+static inline QAbstractFileEngine::FileTime FileDeviceTimeToAbstractFileEngineTime(QFileDevice::FileTime time)
+{
+    Q_STATIC_ASSERT(int(QFileDevice::FileAccessTime) == int(QAbstractFileEngine::AccessTime));
+    Q_STATIC_ASSERT(int(QFileDevice::FileBirthTime) == int(QAbstractFileEngine::BirthTime));
+    Q_STATIC_ASSERT(int(QFileDevice::FileMetadataChangeTime) == int(QAbstractFileEngine::MetadataChangeTime));
+    Q_STATIC_ASSERT(int(QFileDevice::FileModificationTime) == int(QAbstractFileEngine::ModificationTime));
+    return QAbstractFileEngine::FileTime(time);
+}
+
+/*!
+    \since 5.10
+    Returns the file time specified by \a time.
+    If the time cannot be determined return QDateTime() (an invalid
+    date time).
+
+    \sa setFileTime(), FileTime, QDateTime::isValid()
+*/
+QDateTime QFileDevice::fileTime(QFileDevice::FileTime time) const
+{
+    Q_D(const QFileDevice);
+
+    if (d->engine())
+        return d->engine()->fileTime(FileDeviceTimeToAbstractFileEngineTime(time));
+
+    return QDateTime();
+}
+
+/*!
+    \since 5.10
+    Sets the file time specified by \a fileTime to \a newDate, returning true
+    if successful; otherwise returns false.
+
+    \note The file must be open to use this function.
+
+    \sa fileTime(), FileTime
+*/
+bool QFileDevice::setFileTime(const QDateTime &newDate, QFileDevice::FileTime fileTime)
+{
+    Q_D(QFileDevice);
+
+    if (!d->engine()) {
+        d->setError(QFileDevice::UnspecifiedError, tr("No file engine available"));
+        return false;
+    }
+
+    if (!d->fileEngine->setFileTime(newDate, FileDeviceTimeToAbstractFileEngineTime(fileTime))) {
+        d->setError(d->fileEngine->error(), d->fileEngine->errorString());
+        return false;
+    }
+
+    unsetError();
+    return true;
+}
+
 QT_END_NAMESPACE
 
 #ifndef QT_NO_QOBJECT

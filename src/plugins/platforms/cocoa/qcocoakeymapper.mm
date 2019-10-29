@@ -72,14 +72,6 @@ static const Qt::KeyboardModifiers ModsTbl[] = {
 
 bool qt_mac_eat_unicode_key = false;
 
-Q_GUI_EXPORT void qt_mac_secure_keyboard(bool b)
-{
-    static bool secure = false;
-    if (b != secure){
-        b ? EnableSecureEventInput() : DisableSecureEventInput();
-        secure = b;
-    }
-}
 
 /* key maps */
 struct qt_mac_enum_mapper
@@ -349,8 +341,6 @@ static int qt_mac_get_key(int modif, const QChar &key, int virtualKey)
 QCocoaKeyMapper::QCocoaKeyMapper()
 {
     memset(keyLayout, 0, sizeof(keyLayout));
-    keyboard_layout_format.unicode = 0;
-    currentInputSource = 0;
 }
 
 QCocoaKeyMapper::~QCocoaKeyMapper()
@@ -360,42 +350,38 @@ QCocoaKeyMapper::~QCocoaKeyMapper()
 
 Qt::KeyboardModifiers QCocoaKeyMapper::queryKeyboardModifiers()
 {
-    return qt_mac_get_modifiers(GetCurrentEventKeyModifiers());
+    return qt_mac_get_modifiers(GetCurrentKeyModifiers());
 }
 
 bool QCocoaKeyMapper::updateKeyboard()
 {
-    const UCKeyboardLayout *uchrData = 0;
+    const UCKeyboardLayout *uchrData = nullptr;
     QCFType<TISInputSourceRef> source = TISCopyInputMethodKeyboardLayoutOverride();
     if (!source)
         source = TISCopyCurrentKeyboardInputSource();
     if (keyboard_mode != NullMode && source == currentInputSource) {
         return false;
     }
-    Q_ASSERT(source != 0);
+    Q_ASSERT(source);
     CFDataRef data = static_cast<CFDataRef>(TISGetInputSourceProperty(source,
                                                                  kTISPropertyUnicodeKeyLayoutData));
-    uchrData = data ? reinterpret_cast<const UCKeyboardLayout *>(CFDataGetBytePtr(data)) : 0;
+    uchrData = data ? reinterpret_cast<const UCKeyboardLayout *>(CFDataGetBytePtr(data)) : nullptr;
 
     keyboard_kind = LMGetKbdType();
     if (uchrData) {
-        keyboard_layout_format.unicode = uchrData;
+        keyboard_layout_format = uchrData;
         keyboard_mode = UnicodeMode;
+    } else {
+        keyboard_layout_format = nullptr;
+        keyboard_mode = NullMode;
     }
     currentInputSource = source;
     keyboard_dead = 0;
-    CFStringRef iso639Code;
 
-    CFArrayRef array = static_cast<CFArrayRef>(TISGetInputSourceProperty(currentInputSource, kTISPropertyInputSourceLanguages));
-    iso639Code = static_cast<CFStringRef>(CFArrayGetValueAtIndex(array, 0)); // Actually a RFC3066bis, but it's close enough
+    const auto newMode = keyboard_mode;
+    deleteLayouts();
+    keyboard_mode = newMode;
 
-    if (iso639Code) {
-        keyboardInputLocale = QLocale(QString::fromCFString(iso639Code));
-        keyboardInputDirection = keyboardInputLocale.textDirection();
-    } else {
-        keyboardInputLocale = QLocale::c();
-        keyboardInputDirection = Qt::LeftToRight;
-    }
     return true;
 }
 
@@ -405,7 +391,7 @@ void QCocoaKeyMapper::deleteLayouts()
     for (int i = 0; i < 255; ++i) {
         if (keyLayout[i]) {
             delete keyLayout[i];
-            keyLayout[i] = 0;
+            keyLayout[i] = nullptr;
         }
     }
 }
@@ -418,10 +404,8 @@ void QCocoaKeyMapper::clearMappings()
 
 void QCocoaKeyMapper::updateKeyMap(unsigned short macVirtualKey, QChar unicodeKey)
 {
-    if (updateKeyboard()) {
-        // ### Qt 4 did this:
-        // QKeyMapper::changeKeyboard();
-    }
+    updateKeyboard();
+
     if (keyLayout[macVirtualKey])
         return;
 
@@ -433,7 +417,7 @@ void QCocoaKeyMapper::updateKeyMap(unsigned short macVirtualKey, QChar unicodeKe
         keyLayout[macVirtualKey]->qtKey[i] = 0;
 
         const UInt32 keyModifier = ((qt_mac_get_mac_modifiers(ModsTbl[i]) >> 8) & 0xFF);
-        OSStatus err = UCKeyTranslate(keyboard_layout_format.unicode, macVirtualKey, kUCKeyActionDown, keyModifier,
+        OSStatus err = UCKeyTranslate(keyboard_layout_format, macVirtualKey, kUCKeyActionDown, keyModifier,
                                       keyboard_kind, 0, &keyboard_dead, buffer_size, &out_buffer_size, buffer);
         if (err == noErr && out_buffer_size) {
             const QChar unicode(buffer[0]);

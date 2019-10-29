@@ -27,6 +27,7 @@
 **
 ****************************************************************************/
 
+#include <emulationdetector.h>
 
 #include <QtTest/QtTest>
 #include <QtCore/QProcess>
@@ -127,7 +128,8 @@ private slots:
     void systemEnvironment();
     void lockupsInStartDetached();
     void waitForReadyReadForNonexistantProcess();
-    void detachedWorkingDirectoryAndPid();
+    void detachedProcessParameters_data();
+    void detachedProcessParameters();
     void startFinishStartFinish();
     void invalidProgramString_data();
     void invalidProgramString();
@@ -284,7 +286,7 @@ void tst_QProcess::startWithOldOpen()
     class OverriddenOpen : public QProcess
     {
     public:
-        virtual bool open(OpenMode mode) Q_DECL_OVERRIDE
+        virtual bool open(OpenMode mode) override
         { return QIODevice::open(mode); }
     };
 
@@ -707,7 +709,7 @@ void tst_QProcess::restartProcessDeadlock()
     QCOMPARE(process.write("", 1), qlonglong(1));
     QVERIFY(process.waitForFinished(5000));
 
-    QObject::disconnect(&process, static_cast<QProcessFinishedSignal1>(&QProcess::finished), Q_NULLPTR, Q_NULLPTR);
+    QObject::disconnect(&process, static_cast<QProcessFinishedSignal1>(&QProcess::finished), nullptr, nullptr);
 
     QCOMPARE(process.write("", 1), qlonglong(1));
     QVERIFY(process.waitForFinished(5000));
@@ -846,7 +848,7 @@ void tst_QProcess::emitReadyReadOnlyWhenNewDataArrives()
     QVERIFY(QTestEventLoop::instance().timeout());
     QVERIFY(!proc.waitForReadyRead(250));
 
-    QObject::disconnect(&proc, &QIODevice::readyRead, Q_NULLPTR, Q_NULLPTR);
+    QObject::disconnect(&proc, &QIODevice::readyRead, nullptr, nullptr);
     proc.write("B");
     QVERIFY(proc.waitForReadyRead(5000));
 
@@ -1045,32 +1047,50 @@ void tst_QProcess::mergedChannels()
 
 void tst_QProcess::forwardedChannels_data()
 {
+    QTest::addColumn<bool>("detach");
     QTest::addColumn<int>("mode");
     QTest::addColumn<int>("inmode");
     QTest::addColumn<QByteArray>("outdata");
     QTest::addColumn<QByteArray>("errdata");
 
-    QTest::newRow("separate") << int(QProcess::SeparateChannels) << int(QProcess::ManagedInputChannel)
-                              << QByteArray() << QByteArray();
-    QTest::newRow("forwarded") << int(QProcess::ForwardedChannels) << int(QProcess::ManagedInputChannel)
-                               << QByteArray("forwarded") << QByteArray("forwarded");
-    QTest::newRow("stdout") << int(QProcess::ForwardedOutputChannel) << int(QProcess::ManagedInputChannel)
-                            << QByteArray("forwarded") << QByteArray();
-    QTest::newRow("stderr") << int(QProcess::ForwardedErrorChannel) << int(QProcess::ManagedInputChannel)
-                            << QByteArray() << QByteArray("forwarded");
-    QTest::newRow("fwdinput") << int(QProcess::ForwardedErrorChannel) << int(QProcess::ForwardedInputChannel)
-                            << QByteArray() << QByteArray("input");
+    QTest::newRow("separate")
+            << false
+            << int(QProcess::SeparateChannels) << int(QProcess::ManagedInputChannel)
+            << QByteArray() << QByteArray();
+    QTest::newRow("forwarded")
+            << false
+            << int(QProcess::ForwardedChannels) << int(QProcess::ManagedInputChannel)
+            << QByteArray("forwarded") << QByteArray("forwarded");
+    QTest::newRow("stdout")
+            << false
+            << int(QProcess::ForwardedOutputChannel) << int(QProcess::ManagedInputChannel)
+            << QByteArray("forwarded") << QByteArray();
+    QTest::newRow("stderr")
+            << false
+            << int(QProcess::ForwardedErrorChannel) << int(QProcess::ManagedInputChannel)
+            << QByteArray() << QByteArray("forwarded");
+    QTest::newRow("fwdinput")
+            << false
+            << int(QProcess::ForwardedErrorChannel) << int(QProcess::ForwardedInputChannel)
+            << QByteArray() << QByteArray("input");
+    QTest::newRow("detached-default-forwarding")
+            << true
+            << int(QProcess::SeparateChannels) << int(QProcess::ManagedInputChannel)
+            << QByteArray("out data") << QByteArray("err data");
 }
 
 void tst_QProcess::forwardedChannels()
 {
+    QFETCH(bool, detach);
     QFETCH(int, mode);
     QFETCH(int, inmode);
     QFETCH(QByteArray, outdata);
     QFETCH(QByteArray, errdata);
 
     QProcess process;
-    process.start("testForwarding/testForwarding", QStringList() << QString::number(mode) << QString::number(inmode));
+    process.start("testForwarding/testForwarding",
+                  QStringList() << QString::number(mode) << QString::number(inmode)
+                                << QString::number(bool(detach)));
     QVERIFY(process.waitForStarted(5000));
     QCOMPARE(process.write("input"), 5);
     process.closeWriteChannel();
@@ -1087,7 +1107,9 @@ void tst_QProcess::forwardedChannels()
     case 4: err = "did not finish"; break;
     case 5: err = "unexpected stdout"; break;
     case 6: err = "unexpected stderr"; break;
-    case 13: err = "parameter error"; break;
+    case 12: err = "cannot create temp file"; break;
+    case 13: err = "startDetached failed"; break;
+    case 14: err = "waitForDoneFileWritten timed out"; break;
     default: err = "unknown exit code"; break;
     }
     QVERIFY2(!process.exitCode(), err);
@@ -1164,6 +1186,8 @@ void tst_QProcess::processInAThread()
 
 void tst_QProcess::processesInMultipleThreads()
 {
+    if (EmulationDetector::isRunningArmOnX86())
+        QSKIP("Flakily hangs in QEMU. QTBUG-67760");
     for (int i = 0; i < 10; ++i) {
         // run from 1 to 10 threads, but run at least some tests
         // with more threads than the ideal
@@ -2072,21 +2096,54 @@ void tst_QProcess::fileWriterProcess()
     } while (stopWatch.elapsed() < 3000);
 }
 
-void tst_QProcess::detachedWorkingDirectoryAndPid()
+void tst_QProcess::detachedProcessParameters_data()
 {
+    QTest::addColumn<QString>("outChannel");
+    QTest::newRow("none") << QString();
+    QTest::newRow("stdout") << QString("stdout");
+    QTest::newRow("stderr") << QString("stderr");
+}
+
+void tst_QProcess::detachedProcessParameters()
+{
+    QFETCH(QString, outChannel);
     qint64 pid;
 
     QFile infoFile(m_temporaryDir.path() + QLatin1String("/detachedinfo.txt"));
     if (infoFile.exists())
         QVERIFY(infoFile.remove());
+    QFile channelFile(m_temporaryDir.path() + QLatin1String("detachedinfo2.txt"));
+    if (channelFile.exists())
+        QVERIFY(channelFile.remove());
 
     QString workingDir = QDir::currentPath() + "/testDetached";
 
     QVERIFY(QFile::exists(workingDir));
 
-    QStringList args;
-    args << infoFile.fileName();
-    QVERIFY(QProcess::startDetached(QDir::currentPath() + QLatin1String("/testDetached/testDetached"), args, workingDir, &pid));
+    QVERIFY(qgetenv("tst_QProcess").isEmpty());
+    QByteArray envVarValue("foobarbaz");
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("tst_QProcess"), QString::fromUtf8(envVarValue));
+
+    QProcess process;
+    process.setProgram(QDir::currentPath() + QLatin1String("/testDetached/testDetached"));
+#ifdef Q_OS_WIN
+    int modifierCalls = 0;
+    process.setCreateProcessArgumentsModifier(
+        [&modifierCalls] (QProcess::CreateProcessArguments *) { modifierCalls++; });
+#endif
+    QStringList args(infoFile.fileName());
+    if (!outChannel.isEmpty()) {
+        args << QStringLiteral("--out-channel=") + outChannel;
+        if (outChannel == "stdout")
+            process.setStandardOutputFile(channelFile.fileName());
+        else if (outChannel == "stderr")
+            process.setStandardErrorFile(channelFile.fileName());
+    }
+    process.setArguments(args);
+    process.setWorkingDirectory(workingDir);
+    process.setProcessEnvironment(environment);
+    QVERIFY(process.startDetached(&pid));
 
     QFileInfo fi(infoFile);
     fi.setCaching(false);
@@ -2097,12 +2154,24 @@ void tst_QProcess::detachedWorkingDirectoryAndPid()
     }
 
     QVERIFY(infoFile.open(QIODevice::ReadOnly | QIODevice::Text));
-    QString actualWorkingDir = QString::fromUtf8(infoFile.readLine());
-    actualWorkingDir.chop(1); // strip off newline
-    QByteArray processIdString = infoFile.readLine();
-    processIdString.chop(1);
+    QString actualWorkingDir = QString::fromUtf8(infoFile.readLine()).trimmed();
+    QByteArray processIdString = infoFile.readLine().trimmed();
+    QByteArray actualEnvVarValue = infoFile.readLine().trimmed();
+    QByteArray infoFileContent;
+    if (!outChannel.isEmpty()) {
+        infoFile.seek(0);
+        infoFileContent = infoFile.readAll();
+    }
     infoFile.close();
     infoFile.remove();
+
+    if (!outChannel.isEmpty()) {
+        QVERIFY(channelFile.open(QIODevice::ReadOnly | QIODevice::Text));
+        QByteArray channelContent = channelFile.readAll();
+        channelFile.close();
+        channelFile.remove();
+        QCOMPARE(channelContent, infoFileContent);
+    }
 
     bool ok = false;
     qint64 actualPid = processIdString.toLongLong(&ok);
@@ -2110,6 +2179,10 @@ void tst_QProcess::detachedWorkingDirectoryAndPid()
 
     QCOMPARE(actualWorkingDir, workingDir);
     QCOMPARE(actualPid, pid);
+    QCOMPARE(actualEnvVarValue, envVarValue);
+#ifdef Q_OS_WIN
+    QCOMPARE(modifierCalls, 1);
+#endif
 }
 
 void tst_QProcess::switchReadChannels()

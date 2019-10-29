@@ -41,11 +41,9 @@
 
 #include "qregularexpression.h"
 
-#ifndef QT_NO_REGULAREXPRESSION
-
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qhashfunctions.h>
-#include <QtCore/qreadwritelock.h>
+#include <QtCore/qmutex.h>
 #include <QtCore/qvector.h>
 #include <QtCore/qstringlist.h>
 #include <QtCore/qdebug.h>
@@ -485,6 +483,11 @@ QT_BEGIN_NAMESPACE
     Note the usage of the non-capturing group in order to preserve the meaning
     of the branch operator inside the pattern.
 
+    The QRegularExpression::anchoredPattern() helper method does exactly that for
+    you.
+
+    \sa anchoredPattern
+
     \section3 Porting from QRegExp's Partial Matching
 
     When using QRegExp::exactMatch(), if an exact match was not found, one
@@ -518,10 +521,10 @@ QT_BEGIN_NAMESPACE
 
     \section2 Wildcard matching
 
-    There is no equivalent of wildcard matching in QRegularExpression.
-    Nevertheless, rewriting a regular expression in wildcard syntax to a
-    Perl-compatible regular expression is a very easy task, given the fact
-    that wildcard syntax supported by QRegExp is very simple.
+    There is no direct way to do wildcard matching in QRegularExpression.
+    However, the wildcardToRegularExpression method is provided to translate
+    glob patterns into a Perl-compatible regular expression that can be used
+    for that purpose.
 
     \section2 Other pattern syntaxes
 
@@ -722,21 +725,14 @@ QT_BEGIN_NAMESPACE
         to the \c{/u} modifier in Perl regular expressions.
 
     \value OptimizeOnFirstUsageOption
-        The regular expression will be optimized (and possibly
-        JIT-compiled) on its first usage, instead of after a certain (undefined)
-        number of usages. See also \l{QRegularExpression::}{optimize()}.
-        This enum value has been introduced in Qt 5.4.
+        This option is ignored. A regular expression is automatically optimized
+        (including JIT compiling) the first time it is used. This enum value
+        was introduced in Qt 5.4.
 
     \value DontAutomaticallyOptimizeOption
-        Regular expressions are automatically optimized after a
-        certain number of usages; setting this option prevents such
-        optimizations, therefore avoiding possible unpredictable spikes in
-        CPU and memory usage. If both this option and the
-        \c{OptimizeOnFirstUsageOption} option are set, then this option takes
-        precedence. Note: this option will still let the regular expression
-        to be optimized by manually calling
-        \l{QRegularExpression::}{optimize()}. This enum value has been
-        introduced in Qt 5.4.
+        This option is ignored. A regular expression is automatically optimized
+        (including JIT compiling) the first time it is used. This enum value
+        was introduced in Qt 5.4.
 */
 
 /*!
@@ -793,13 +789,6 @@ QT_BEGIN_NAMESPACE
         Qt 5.4.
 */
 
-// after how many usages we optimize the regexp
-#ifdef QT_BUILD_INTERNAL
-Q_AUTOTEST_EXPORT unsigned int qt_qregularexpression_optimize_after_use_count = 10;
-#else
-static const unsigned int qt_qregularexpression_optimize_after_use_count = 10;
-#endif // QT_BUILD_INTERNAL
-
 /*!
     \internal
 */
@@ -849,13 +838,7 @@ struct QRegularExpressionPrivate : QSharedData
     void cleanCompiledPattern();
     void compilePattern();
     void getPatternInfo();
-
-    enum OptimizePatternOption {
-        LazyOptimizeOption,
-        ImmediateOptimizeOption
-    };
-
-    void optimizePattern(OptimizePatternOption option);
+    void optimizePattern();
 
     enum CheckSubjectStringOption {
         CheckSubjectString,
@@ -871,7 +854,7 @@ struct QRegularExpressionPrivate : QSharedData
                                             CheckSubjectStringOption checkSubjectStringOption = CheckSubjectString,
                                             const QRegularExpressionMatchPrivate *previous = 0) const;
 
-    int captureIndexForName(const QString &name) const;
+    int captureIndexForName(QStringView name) const;
 
     // sizeof(QSharedData) == 4, so start our members with an enum
     QRegularExpression::PatternOptions patternOptions;
@@ -880,16 +863,15 @@ struct QRegularExpressionPrivate : QSharedData
     // *All* of the following members are managed while holding this mutex,
     // except for isDirty which is set to true by QRegularExpression setters
     // (right after a detach happened).
-    mutable QReadWriteLock mutex;
+    mutable QMutex mutex;
 
     // The PCRE code pointer is reference-counted by the QRegularExpressionPrivate
     // objects themselves; when the private is copied (i.e. a detach happened)
-    // they are set to 0
+    // it is set to nullptr
     pcre2_code_16 *compiledPattern;
     int errorCode;
     int errorOffset;
     int capturingCount;
-    unsigned int usedCount;
     bool usingCrLfNewlines;
     bool isDirty;
 };
@@ -954,11 +936,10 @@ QRegularExpressionPrivate::QRegularExpressionPrivate()
       patternOptions(0),
       pattern(),
       mutex(),
-      compiledPattern(0),
+      compiledPattern(nullptr),
       errorCode(0),
       errorOffset(-1),
       capturingCount(0),
-      usedCount(0),
       usingCrLfNewlines(false),
       isDirty(true)
 {
@@ -976,8 +957,8 @@ QRegularExpressionPrivate::~QRegularExpressionPrivate()
     \internal
 
     Copies the private, which means copying only the pattern and the pattern
-    options. The compiledPattern and the studyData pointers are NOT copied (we
-    do not own them any more), and in general all the members set when
+    options. The compiledPattern pointer is NOT copied (we
+    do not own it any more), and in general all the members set when
     compiling a pattern are set to default values. isDirty is set back to true
     so that the pattern has to be recompiled again.
 */
@@ -986,11 +967,10 @@ QRegularExpressionPrivate::QRegularExpressionPrivate(const QRegularExpressionPri
       patternOptions(other.patternOptions),
       pattern(other.pattern),
       mutex(),
-      compiledPattern(0),
+      compiledPattern(nullptr),
       errorCode(0),
       errorOffset(-1),
       capturingCount(0),
-      usedCount(0),
       usingCrLfNewlines(false),
       isDirty(true)
 {
@@ -1002,11 +982,10 @@ QRegularExpressionPrivate::QRegularExpressionPrivate(const QRegularExpressionPri
 void QRegularExpressionPrivate::cleanCompiledPattern()
 {
     pcre2_code_free_16(compiledPattern);
-    compiledPattern = 0;
+    compiledPattern = nullptr;
     errorCode = 0;
     errorOffset = -1;
     capturingCount = 0;
-    usedCount = 0;
     usingCrLfNewlines = false;
 }
 
@@ -1015,7 +994,7 @@ void QRegularExpressionPrivate::cleanCompiledPattern()
 */
 void QRegularExpressionPrivate::compilePattern()
 {
-    const QWriteLocker lock(&mutex);
+    const QMutexLocker lock(&mutex);
 
     if (!isDirty)
         return;
@@ -1042,6 +1021,7 @@ void QRegularExpressionPrivate::compilePattern()
         errorCode = 0;
     }
 
+    optimizePattern();
     getPatternInfo();
 }
 
@@ -1142,26 +1122,16 @@ static bool isJitEnabled()
     The purpose of the function is to call pcre2_jit_compile_16, which
     JIT-compiles the pattern.
 
-    It gets called by doMatch() every time a match is performed.
-
-    As of now, the optimizations on the pattern are performed after a certain
-    number of usages (i.e. the qt_qregularexpression_optimize_after_use_count
-    constant) unless the DontAutomaticallyOptimizeOption option is set on the
-    QRegularExpression object, or anyhow by calling optimize() (which will pass
-    ImmediateOptimizeOption).
+    It gets called when a pattern is recompiled by us (in compilePattern()),
+    under mutex protection.
 */
-void QRegularExpressionPrivate::optimizePattern(OptimizePatternOption option)
+void QRegularExpressionPrivate::optimizePattern()
 {
     Q_ASSERT(compiledPattern);
 
     static const bool enableJit = isJitEnabled();
 
     if (!enableJit)
-        return;
-
-    const QWriteLocker lock(&mutex);
-
-    if ((option == LazyOptimizeOption) && (++usedCount != qt_qregularexpression_optimize_after_use_count))
         return;
 
     pcre2_jit_compile_16(compiledPattern, PCRE2_JIT_COMPLETE | PCRE2_JIT_PARTIAL_SOFT | PCRE2_JIT_PARTIAL_HARD);
@@ -1173,14 +1143,14 @@ void QRegularExpressionPrivate::optimizePattern(OptimizePatternOption option)
     Returns the capturing group number for the given name. Duplicated names for
     capturing groups are not supported.
 */
-int QRegularExpressionPrivate::captureIndexForName(const QString &name) const
+int QRegularExpressionPrivate::captureIndexForName(QStringView name) const
 {
     Q_ASSERT(!name.isEmpty());
 
     if (!compiledPattern)
         return -1;
 
-    int index = pcre2_substring_number_from_name_16(compiledPattern, name.utf16());
+    int index = pcre2_substring_number_from_name_16(compiledPattern, reinterpret_cast<PCRE2_SPTR16>(name.utf16()));
     if (index >= 0)
         return index;
 
@@ -1269,20 +1239,10 @@ QRegularExpressionMatchPrivate *QRegularExpressionPrivate::doMatch(const QString
         return priv;
     }
 
-    // skip optimizing and doing the actual matching if NoMatch type was requested
+    // skip doing the actual matching if NoMatch type was requested
     if (matchType == QRegularExpression::NoMatch) {
         priv->isValid = true;
         return priv;
-    }
-
-    if (!(patternOptions & QRegularExpression::DontAutomaticallyOptimizeOption)) {
-        const OptimizePatternOption optimizePatternOption =
-                (patternOptions & QRegularExpression::OptimizeOnFirstUsageOption)
-                    ? ImmediateOptimizeOption
-                    : LazyOptimizeOption;
-
-        // this is mutex protected
-        const_cast<QRegularExpressionPrivate *>(this)->optimizePattern(optimizePatternOption);
     }
 
     int pcreOptions = convertToPcreOptions(matchOptions);
@@ -1308,8 +1268,6 @@ QRegularExpressionMatchPrivate *QRegularExpressionPrivate::doMatch(const QString
     const unsigned short * const subjectUtf16 = subject.utf16() + subjectStart;
 
     int result;
-
-    QReadLocker lock(&mutex);
 
     if (!previousMatchWasEmpty) {
         result = safe_pcre2_match_16(compiledPattern,
@@ -1341,8 +1299,6 @@ QRegularExpressionMatchPrivate *QRegularExpressionPrivate::doMatch(const QString
                                          matchData, matchContext);
         }
     }
-
-    lock.unlock();
 
 #ifdef QREGULAREXPRESSION_DEBUG
     qDebug() << "Matching" <<  pattern << "against" << subject
@@ -1604,15 +1560,11 @@ int QRegularExpression::captureCount() const
 
     For instance, given the regular expression
 
-    \code
-        (?<day>\d\d)-(?<month>\d\d)-(?<year>\d\d\d\d) (\w+) (?<name>\w+)
-    \endcode
+    \snippet code/src_corelib_tools_qregularexpression.cpp 32
 
     namedCaptureGroups() will return the following list:
 
-    \code
-        ("", "day", "month", "year", "", "name")
-    \endcode
+    \snippet code/src_corelib_tools_qregularexpression.cpp 33
 
     which corresponds to the fact that the capturing group #0 (corresponding to
     the whole match) has no name, the capturing group #1 has name "day", the
@@ -1812,22 +1764,14 @@ QRegularExpressionMatchIterator QRegularExpression::globalMatch(const QStringRef
 /*!
     \since 5.4
 
-    Forces an immediate optimization of the pattern, including
-    JIT-compiling it (if the JIT compiler is enabled).
+    Compiles the pattern immediately, including JIT compiling it (if
+    the JIT is enabled) for optimization.
 
-    Patterns are normally optimized only after a certain number of usages.
-    If you can predict that this QRegularExpression object is going to be
-    used for several matches, it may be convenient to optimize it in
-    advance by calling this function.
-
-    \sa QRegularExpression::OptimizeOnFirstUsageOption
+    \sa isValid(), {Debugging Code that Uses QRegularExpression}
 */
 void QRegularExpression::optimize() const
 {
-    if (!isValid()) // will compile the pattern
-        return;
-
-    d->optimizePattern(QRegularExpressionPrivate::ImmediateOptimizeOption);
+    d.data()->compilePattern();
 }
 
 /*!
@@ -1926,6 +1870,141 @@ QString QRegularExpression::escape(const QString &str)
     result.squeeze();
     return result;
 }
+
+/*!
+    \since 5.12
+
+    Returns a regular expression representation of the given glob \a pattern.
+    The transformation is targeting file path globbing, which means in particular
+    that path separators receive special treatment. This implies that it is not
+    just a basic translation from "*" to ".*".
+
+    \snippet code/src_corelib_tools_qregularexpression.cpp 31
+
+    \warning Unlike QRegExp, this implementation follows closely the definition
+    of wildcard for glob patterns:
+    \table
+    \row \li \b{c}
+         \li Any character represents itself apart from those mentioned
+         below. Thus \b{c} matches the character \e c.
+    \row \li \b{?}
+         \li Matches any single character. It is the same as
+         \b{.} in full regexps.
+    \row \li \b{*}
+         \li Matches zero or more of any characters. It is the
+         same as \b{.*} in full regexps.
+    \row \li \b{[abc]}
+         \li Matches one character given in the bracket.
+    \row \li \b{[a-c]}
+         \li Matches one character from the range given in the bracket.
+    \row \li \b{[!abc]}
+         \li Matches one character that is not given in the bracket. It is the
+         same as \b{[^abc]} in full regexp.
+    \row \li \b{[!a-c]}
+         \li Matches one character that is not from the range given in the
+         bracket. It is the same as \b{[^a-c]} in full regexp.
+    \endtable
+
+    \note The backslash (\\) character is \e not an escape char in this context.
+    In order to match one of the special characters, place it in square brackets
+    (for example, "[?]").
+
+    More information about the implementation can be found in:
+    \list
+    \li \l {https://en.wikipedia.org/wiki/Glob_(programming)} {The Wikipedia Glob article}
+    \li \c man 7 glob
+    \endlist
+
+    \sa escape()
+*/
+QString QRegularExpression::wildcardToRegularExpression(const QString &pattern)
+{
+    const int wclen = pattern.length();
+    QString rx;
+    rx.reserve(wclen + wclen / 16);
+    int i = 0;
+    const QChar *wc = pattern.unicode();
+
+#ifdef Q_OS_WIN
+    const QLatin1Char nativePathSeparator('\\');
+    const QLatin1String starEscape("[^/\\\\]*");
+    const QLatin1String questionMarkEscape("[^/\\\\]");
+#else
+    const QLatin1Char nativePathSeparator('/');
+    const QLatin1String starEscape("[^/]*");
+    const QLatin1String questionMarkEscape("[^/]");
+#endif
+
+    while (i < wclen) {
+        const QChar c = wc[i++];
+        switch (c.unicode()) {
+        case '*':
+            rx += starEscape;
+            break;
+        case '?':
+            rx += questionMarkEscape;
+            break;
+        case '\\':
+#ifdef Q_OS_WIN
+        case '/':
+            rx += QLatin1String("[/\\\\]");
+            break;
+#endif
+        case '$':
+        case '(':
+        case ')':
+        case '+':
+        case '.':
+        case '^':
+        case '{':
+        case '|':
+        case '}':
+            rx += QLatin1Char('\\');
+            rx += c;
+            break;
+        case '[':
+            rx += c;
+            // Support for the [!abc] or [!a-c] syntax
+            if (i < wclen) {
+                if (wc[i] == QLatin1Char('!')) {
+                    rx += QLatin1Char('^');
+                    ++i;
+                }
+
+                if (i < wclen && wc[i] == QLatin1Char(']'))
+                    rx += wc[i++];
+
+                while (i < wclen && wc[i] != QLatin1Char(']')) {
+                    // The '/' appearing in a character class invalidates the
+                    // regular expression parsing. It also concerns '\\' on
+                    // Windows OS types.
+                    if (wc[i] == QLatin1Char('/') || wc[i] == nativePathSeparator)
+                        return rx;
+                    if (wc[i] == QLatin1Char('\\'))
+                        rx += QLatin1Char('\\');
+                    rx += wc[i++];
+                }
+            }
+            break;
+        default:
+            rx += c;
+            break;
+        }
+    }
+
+    return anchoredPattern(rx);
+}
+
+/*!
+    \fn QRegularExpression::anchoredPattern(const QString &expression)
+
+    \since 5.12
+
+    Returns the \a expression wrapped between the \c{\A} and \c{\z} anchors to
+    be used for exact matching.
+
+    \sa {Porting from QRegExp's Exact Matching}
+*/
 
 /*!
     \since 5.1
@@ -2054,11 +2133,15 @@ int QRegularExpressionMatch::lastCapturedIndex() const
 }
 
 /*!
-    Returns the substring captured by the \a nth capturing group. If the \a nth
-    capturing group did not capture a string or doesn't exist, returns a null
-    QString.
+    Returns the substring captured by the \a nth capturing group.
 
-    \sa capturedRef(), lastCapturedIndex(), capturedStart(), capturedEnd(),
+    If the \a nth capturing group did not capture a string, or if there is no
+    such capturing group, returns a null QString.
+
+    \note The implicit capturing group number 0 captures the substring matched
+    by the entire pattern.
+
+    \sa capturedRef(), capturedView(), lastCapturedIndex(), capturedStart(), capturedEnd(),
     capturedLength(), QString::isNull()
 */
 QString QRegularExpressionMatch::captured(int nth) const
@@ -2076,10 +2159,14 @@ QString QRegularExpressionMatch::captured(int nth) const
 
 /*!
     Returns a reference to the substring captured by the \a nth capturing group.
-    If the \a nth capturing group did not capture a string or doesn't exist,
-    returns a null QStringRef.
 
-    \sa captured(), lastCapturedIndex(), capturedStart(), capturedEnd(),
+    If the \a nth capturing group did not capture a string, or if there is no
+    such capturing group, returns a null QStringRef.
+
+    \note The implicit capturing group number 0 captures the substring matched
+    by the entire pattern.
+
+    \sa captured(), capturedView(), lastCapturedIndex(), capturedStart(), capturedEnd(),
     capturedLength(), QStringRef::isNull()
 */
 QStringRef QRegularExpressionMatch::capturedRef(int nth) const
@@ -2096,14 +2183,67 @@ QStringRef QRegularExpressionMatch::capturedRef(int nth) const
 }
 
 /*!
-    Returns the substring captured by the capturing group named \a name. If the
-    capturing group named \a name did not capture a string or doesn't exist,
-    returns a null QString.
+    \since 5.10
 
-    \sa capturedRef(), capturedStart(), capturedEnd(), capturedLength(),
+    Returns a view of the substring captured by the \a nth capturing group.
+
+    If the \a nth capturing group did not capture a string, or if there is no
+    such capturing group, returns a null QStringView.
+
+    \note The implicit capturing group number 0 captures the substring matched
+    by the entire pattern.
+
+    \sa captured(), capturedRef(), lastCapturedIndex(), capturedStart(), capturedEnd(),
+    capturedLength(), QStringView::isNull()
+*/
+QStringView QRegularExpressionMatch::capturedView(int nth) const
+{
+    return capturedRef(nth);
+}
+
+#if QT_STRINGVIEW_LEVEL < 2
+/*!
+    Returns the substring captured by the capturing group named \a name.
+
+    If the named capturing group \a name did not capture a string, or if
+    there is no capturing group named \a name, returns a null QString.
+
+    \sa capturedRef(), capturedView(), capturedStart(), capturedEnd(), capturedLength(),
     QString::isNull()
 */
 QString QRegularExpressionMatch::captured(const QString &name) const
+{
+    return captured(qToStringViewIgnoringNull(name));
+}
+
+/*!
+    Returns a reference to the string captured by the capturing group named \a
+    name.
+
+    If the named capturing group \a name did not capture a string, or if
+    there is no capturing group named \a name, returns a null QStringRef.
+
+    \sa captured(), capturedView(), capturedStart(), capturedEnd(), capturedLength(),
+    QStringRef::isNull()
+*/
+QStringRef QRegularExpressionMatch::capturedRef(const QString &name) const
+{
+    return capturedRef(qToStringViewIgnoringNull(name));
+}
+#endif // QT_STRINGVIEW_LEVEL < 2
+
+/*!
+    \since 5.10
+
+    Returns the substring captured by the capturing group named \a name.
+
+    If the named capturing group \a name did not capture a string, or if
+    there is no capturing group named \a name, returns a null QString.
+
+    \sa capturedRef(), capturedView(), capturedStart(), capturedEnd(), capturedLength(),
+    QString::isNull()
+*/
+QString QRegularExpressionMatch::captured(QStringView name) const
 {
     if (name.isEmpty()) {
         qWarning("QRegularExpressionMatch::captured: empty capturing group name passed");
@@ -2116,14 +2256,18 @@ QString QRegularExpressionMatch::captured(const QString &name) const
 }
 
 /*!
-    Returns a reference to the string captured by the capturing group named \a
-    name. If the capturing group named \a name did not capture a string or
-    doesn't exist, returns a null QStringRef.
+    \since 5.10
 
-    \sa captured(), capturedStart(), capturedEnd(), capturedLength(),
+    Returns a reference to the string captured by the capturing group named \a
+    name.
+
+    If the named capturing group \a name did not capture a string, or if
+    there is no capturing group named \a name, returns a null QStringRef.
+
+    \sa captured(), capturedView(), capturedStart(), capturedEnd(), capturedLength(),
     QStringRef::isNull()
 */
-QStringRef QRegularExpressionMatch::capturedRef(const QString &name) const
+QStringRef QRegularExpressionMatch::capturedRef(QStringView name) const
 {
     if (name.isEmpty()) {
         qWarning("QRegularExpressionMatch::capturedRef: empty capturing group name passed");
@@ -2136,8 +2280,34 @@ QStringRef QRegularExpressionMatch::capturedRef(const QString &name) const
 }
 
 /*!
+    \since 5.10
+
+    Returns a view of the string captured by the capturing group named \a
+    name.
+
+    If the named capturing group \a name did not capture a string, or if
+    there is no capturing group named \a name, returns a null QStringView.
+
+    \sa captured(), capturedRef(), capturedStart(), capturedEnd(), capturedLength(),
+    QStringRef::isNull()
+*/
+QStringView QRegularExpressionMatch::capturedView(QStringView name) const
+{
+    if (name.isEmpty()) {
+        qWarning("QRegularExpressionMatch::capturedView: empty capturing group name passed");
+        return QStringView();
+    }
+    int nth = d->regularExpression.d->captureIndexForName(name);
+    if (nth == -1)
+        return QStringView();
+    return capturedView(nth);
+}
+
+/*!
     Returns a list of all strings captured by capturing groups, in the order
-    the groups themselves appear in the pattern string.
+    the groups themselves appear in the pattern string. The list includes the
+    implicit capturing group number 0, capturing the substring matched by the
+    entire pattern.
 */
 QStringList QRegularExpressionMatch::capturedTexts() const
 {
@@ -2193,6 +2363,7 @@ int QRegularExpressionMatch::capturedEnd(int nth) const
     return d->capturedOffsets.at(nth * 2 + 1);
 }
 
+#if QT_STRINGVIEW_LEVEL < 2
 /*!
     Returns the offset inside the subject string corresponding to the starting
     position of the substring captured by the capturing group named \a name.
@@ -2202,6 +2373,49 @@ int QRegularExpressionMatch::capturedEnd(int nth) const
     \sa capturedEnd(), capturedLength(), captured()
 */
 int QRegularExpressionMatch::capturedStart(const QString &name) const
+{
+    return capturedStart(qToStringViewIgnoringNull(name));
+}
+
+/*!
+    Returns the length of the substring captured by the capturing group named
+    \a name.
+
+    \note This function returns 0 if the capturing group named \a name did not
+    capture a string or doesn't exist.
+
+    \sa capturedStart(), capturedEnd(), captured()
+*/
+int QRegularExpressionMatch::capturedLength(const QString &name) const
+{
+    return capturedLength(qToStringViewIgnoringNull(name));
+}
+
+/*!
+    Returns the offset inside the subject string immediately after the ending
+    position of the substring captured by the capturing group named \a name. If
+    the capturing group named \a name did not capture a string or doesn't
+    exist, returns -1.
+
+    \sa capturedStart(), capturedLength(), captured()
+*/
+int QRegularExpressionMatch::capturedEnd(const QString &name) const
+{
+    return capturedEnd(qToStringViewIgnoringNull(name));
+}
+#endif // QT_STRINGVIEW_LEVEL < 2
+
+/*!
+    \since 5.10
+
+    Returns the offset inside the subject string corresponding to the starting
+    position of the substring captured by the capturing group named \a name.
+    If the capturing group named \a name did not capture a string or doesn't
+    exist, returns -1.
+
+    \sa capturedEnd(), capturedLength(), captured()
+*/
+int QRegularExpressionMatch::capturedStart(QStringView name) const
 {
     if (name.isEmpty()) {
         qWarning("QRegularExpressionMatch::capturedStart: empty capturing group name passed");
@@ -2214,15 +2428,17 @@ int QRegularExpressionMatch::capturedStart(const QString &name) const
 }
 
 /*!
-    Returns the offset inside the subject string corresponding to the starting
-    position of the substring captured by the capturing group named \a name.
+    \since 5.10
+
+    Returns the length of the substring captured by the capturing group named
+    \a name.
 
     \note This function returns 0 if the capturing group named \a name did not
     capture a string or doesn't exist.
 
     \sa capturedStart(), capturedEnd(), captured()
 */
-int QRegularExpressionMatch::capturedLength(const QString &name) const
+int QRegularExpressionMatch::capturedLength(QStringView name) const
 {
     if (name.isEmpty()) {
         qWarning("QRegularExpressionMatch::capturedLength: empty capturing group name passed");
@@ -2235,6 +2451,8 @@ int QRegularExpressionMatch::capturedLength(const QString &name) const
 }
 
 /*!
+    \since 5.10
+
     Returns the offset inside the subject string immediately after the ending
     position of the substring captured by the capturing group named \a name. If
     the capturing group named \a name did not capture a string or doesn't
@@ -2242,7 +2460,7 @@ int QRegularExpressionMatch::capturedLength(const QString &name) const
 
     \sa capturedStart(), capturedLength(), captured()
 */
-int QRegularExpressionMatch::capturedEnd(const QString &name) const
+int QRegularExpressionMatch::capturedEnd(QStringView name) const
 {
     if (name.isEmpty()) {
         qWarning("QRegularExpressionMatch::capturedEnd: empty capturing group name passed");
@@ -2531,10 +2749,13 @@ QDebug operator<<(QDebug debug, QRegularExpression::PatternOptions patternOption
             flags.append("DontCaptureOption|");
         if (patternOptions & QRegularExpression::UseUnicodePropertiesOption)
             flags.append("UseUnicodePropertiesOption|");
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
         if (patternOptions & QRegularExpression::OptimizeOnFirstUsageOption)
             flags.append("OptimizeOnFirstUsageOption|");
         if (patternOptions & QRegularExpression::DontAutomaticallyOptimizeOption)
             flags.append("DontAutomaticallyOptimizeOption|");
+QT_WARNING_POP
         flags.chop(1);
     }
 
@@ -2784,5 +3005,3 @@ static const char *pcreCompileErrorCodes[] =
 #endif // #if 0
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_REGULAREXPRESSION

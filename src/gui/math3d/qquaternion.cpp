@@ -325,15 +325,11 @@ void QQuaternion::normalize()
     Rotates \a vector with this quaternion to produce a new vector
     in 3D space.  The following code:
 
-    \code
-    QVector3D result = q.rotatedVector(vector);
-    \endcode
+    \snippet code/src_gui_math3d_qquaternion.cpp 0
 
     is equivalent to the following:
 
-    \code
-    QVector3D result = (q * QQuaternion(0, vector) * q.conjugated()).vector();
-    \endcode
+    \snippet code/src_gui_math3d_qquaternion.cpp 1
 */
 QVector3D QQuaternion::rotatedVector(const QVector3D& vector) const
 {
@@ -408,7 +404,7 @@ QQuaternion QQuaternion::fromAxisAndAngle(const QVector3D& axis, float angle)
     // http://www.j3d.org/matrix_faq/matrfaq_latest.html#Q56
     // We normalize the result just in case the values are close
     // to zero, as suggested in the above FAQ.
-    float a = (angle / 2.0f) * M_PI / 180.0f;
+    float a = qDegreesToRadians(angle / 2.0f);
     float s = std::sin(a);
     float c = std::cos(a);
     QVector3D ax = axis.normalized();
@@ -467,7 +463,7 @@ QQuaternion QQuaternion::fromAxisAndAngle
         y /= length;
         z /= length;
     }
-    float a = (angle / 2.0f) * M_PI / 180.0f;
+    float a = qDegreesToRadians(angle / 2.0f);
     float s = std::sin(a);
     float c = std::cos(a);
     return QQuaternion(c, x * s, y * s, z * s).normalized();

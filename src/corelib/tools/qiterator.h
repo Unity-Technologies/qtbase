@@ -179,6 +179,37 @@ public: \
       n = c->end(); return false; } \
 };
 
+template<typename Key, typename T, class Iterator>
+class QKeyValueIterator
+{
+public:
+    typedef typename Iterator::iterator_category iterator_category;
+    typedef typename Iterator::difference_type difference_type;
+    typedef std::pair<Key, T> value_type;
+    typedef const value_type *pointer;
+    typedef const value_type &reference;
+
+    QKeyValueIterator() = default;
+    Q_DECL_CONSTEXPR explicit QKeyValueIterator(Iterator o) Q_DECL_NOEXCEPT_EXPR(std::is_nothrow_move_constructible<Iterator>::value)
+        : i(std::move(o)) {}
+
+    std::pair<Key, T> operator*() const {
+        return std::pair<Key, T>(i.key(), i.value());
+    }
+
+    friend bool operator==(QKeyValueIterator lhs, QKeyValueIterator rhs) Q_DECL_NOEXCEPT { return lhs.i == rhs.i; }
+    friend bool operator!=(QKeyValueIterator lhs, QKeyValueIterator rhs) Q_DECL_NOEXCEPT { return lhs.i != rhs.i; }
+
+    inline QKeyValueIterator &operator++() { ++i; return *this; }
+    inline QKeyValueIterator operator++(int) { return QKeyValueIterator(i++);}
+    inline QKeyValueIterator &operator--() { --i; return *this; }
+    inline QKeyValueIterator operator--(int) { return QKeyValueIterator(i--); }
+    Iterator base() const { return i; }
+
+private:
+    Iterator i;
+};
+
 QT_END_NAMESPACE
 
 #endif // QITERATOR_H

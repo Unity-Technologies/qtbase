@@ -312,8 +312,9 @@ QIODevicePrivate::~QIODevicePrivate()
 
     \value NotOpen   The device is not open.
     \value ReadOnly  The device is open for reading.
-    \value WriteOnly The device is open for writing. Note that this mode implies
-                     Truncate.
+    \value WriteOnly The device is open for writing. Note that, for file-system
+                     subclasses (e.g. QFile), this mode implies Truncate unless
+                     combined with ReadOnly, Append or NewOnly.
     \value ReadWrite The device is open for reading and writing.
     \value Append    The device is opened in append mode so that all data is
                      written to the end of the file.
@@ -324,6 +325,23 @@ QIODevicePrivate::~QIODevicePrivate()
                      terminators are translated to the local encoding, for
                      example '\\r\\n' for Win32.
     \value Unbuffered Any buffer in the device is bypassed.
+    \value NewOnly   Fail if the file to be opened already exists. Create and
+                     open the file only if it does not exist. There is a
+                     guarantee from the operating system that you are the only
+                     one creating and opening the file. Note that this mode
+                     implies WriteOnly, and combining it with ReadWrite is
+                     allowed. This flag currently only affects QFile. Other
+                     classes might use this flag in the future, but until then
+                     using this flag with any classes other than QFile may
+                     result in undefined behavior. (since Qt 5.11)
+    \value ExistingOnly Fail if the file to be opened does not exist. This flag
+                     must be specified alongside ReadOnly, WriteOnly, or
+                     ReadWrite. Note that using this flag with ReadOnly alone
+                     is redundant, as ReadOnly already fails when the file does
+                     not exist. This flag currently only affects QFile. Other
+                     classes might use this flag in the future, but until then
+                     using this flag with any classes other than QFile may
+                     result in undefined behavior. (since Qt 5.11)
 
     Certain flags, such as \c Unbuffered and \c Truncate, are
     meaningless when used with some subclasses. Some of these
@@ -775,6 +793,7 @@ bool QIODevice::open(OpenMode mode)
     d->writeBuffers.clear();
     d->setReadChannelCount(isReadable() ? 1 : 0);
     d->setWriteChannelCount(isWritable() ? 1 : 0);
+    d->errorString.clear();
 #if defined QIODEVICE_DEBUG
     printf("%p QIODevice::open(0x%x)\n", this, quint32(mode));
 #endif
@@ -801,7 +820,6 @@ void QIODevice::close()
     emit aboutToClose();
 #endif
     d->openMode = NotOpen;
-    d->errorString.clear();
     d->pos = 0;
     d->transactionStarted = false;
     d->transactionPos = 0;
@@ -1876,6 +1894,128 @@ QByteArray QIODevice::peek(qint64 maxSize)
     CHECK_READABLE(peek, QByteArray());
 
     return d->peek(maxSize);
+}
+
+/*!
+    \since 5.10
+
+    Skips up to \a maxSize bytes from the device. Returns the number of bytes
+    actually skipped, or -1 on error.
+
+    This function does not wait and only discards the data that is already
+    available for reading.
+
+    If the device is opened in text mode, end-of-line terminators are
+    translated to '\n' symbols and count as a single byte identically to the
+    read() and peek() behavior.
+
+    This function works for all devices, including sequential ones that cannot
+    seek(). It is optimized to skip unwanted data after a peek() call.
+
+    For random-access devices, skip() can be used to seek forward from the
+    current position. Negative \a maxSize values are not allowed.
+
+    \sa peek(), seek(), read()
+*/
+qint64 QIODevice::skip(qint64 maxSize)
+{
+    Q_D(QIODevice);
+    CHECK_MAXLEN(skip, qint64(-1));
+    CHECK_READABLE(skip, qint64(-1));
+
+    const bool sequential = d->isSequential();
+
+#if defined QIODEVICE_DEBUG
+    printf("%p QIODevice::skip(%lld), d->pos = %lld, d->buffer.size() = %lld\n",
+           this, maxSize, d->pos, d->buffer.size());
+#endif
+
+    if ((sequential && d->transactionStarted) || (d->openMode & QIODevice::Text) != 0)
+        return d->skipByReading(maxSize);
+
+    // First, skip over any data in the internal buffer.
+    qint64 skippedSoFar = 0;
+    if (!d->buffer.isEmpty()) {
+        skippedSoFar = d->buffer.skip(maxSize);
+#if defined QIODEVICE_DEBUG
+        printf("%p \tskipping %lld bytes in buffer\n", this, skippedSoFar);
+#endif
+        if (!sequential)
+            d->pos += skippedSoFar;
+        if (d->buffer.isEmpty())
+            readData(nullptr, 0);
+        if (skippedSoFar == maxSize)
+            return skippedSoFar;
+
+        maxSize -= skippedSoFar;
+    }
+
+    // Try to seek on random-access device. At this point,
+    // the internal read buffer is empty.
+    if (!sequential) {
+        const qint64 bytesToSkip = qMin(size() - d->pos, maxSize);
+
+        // If the size is unknown or file position is at the end,
+        // fall back to reading below.
+        if (bytesToSkip > 0) {
+            if (!seek(d->pos + bytesToSkip))
+                return skippedSoFar ? skippedSoFar : Q_INT64_C(-1);
+            if (bytesToSkip == maxSize)
+                return skippedSoFar + bytesToSkip;
+
+            skippedSoFar += bytesToSkip;
+            maxSize -= bytesToSkip;
+        }
+    }
+
+    const qint64 skipResult = d->skip(maxSize);
+    if (skippedSoFar == 0)
+        return skipResult;
+
+    if (skipResult == -1)
+        return skippedSoFar;
+
+    return skippedSoFar + skipResult;
+}
+
+/*!
+    \internal
+*/
+qint64 QIODevicePrivate::skipByReading(qint64 maxSize)
+{
+    qint64 readSoFar = 0;
+    do {
+        char dummy[4096];
+        const qint64 readBytes = qMin<qint64>(maxSize, sizeof(dummy));
+        const qint64 readResult = read(dummy, readBytes);
+
+        // Do not try again, if we got less data.
+        if (readResult != readBytes) {
+            if (readSoFar == 0)
+                return readResult;
+
+            if (readResult == -1)
+                return readSoFar;
+
+            return readSoFar + readResult;
+        }
+
+        readSoFar += readResult;
+        maxSize -= readResult;
+    } while (maxSize > 0);
+
+    return readSoFar;
+}
+
+/*!
+    \internal
+*/
+qint64 QIODevicePrivate::skip(qint64 maxSize)
+{
+    // Base implementation discards the data by reading into the dummy buffer.
+    // It's slow, but this works for all types of devices. Subclasses can
+    // reimplement this function to improve on that.
+    return skipByReading(maxSize);
 }
 
 /*!

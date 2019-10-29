@@ -99,6 +99,10 @@ QT_END_NAMESPACE
 #include <private/qcore_unix_p.h>
 #endif
 
+#if QT_HAS_INCLUDE(<paths.h>)
+#include <paths.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 /*!
@@ -108,12 +112,12 @@ QT_BEGIN_NAMESPACE
     \relates QProcess
 
     Disables the
-    \l {QProcess::start(const QString &, OpenMode)}{QProcess::start()}
-    overload taking a single string.
+    \l {QProcess::start(const QString &, QIODevice::OpenMode)}
+    {QProcess::start}() overload taking a single string.
     In most cases where it is used, the user intends for the first argument
     to be treated atomically as per the other overload.
 
-    \sa QProcess::start(const QString &command, OpenMode mode)
+    \sa QProcess::start(const QString &command, QIODevice::OpenMode mode)
 */
 
 /*!
@@ -450,11 +454,6 @@ void QProcessPrivate::Channel::clear()
     process = 0;
 }
 
-/*! \fn bool QProcessPrivate::startDetached(const QString &program, const QStringList &arguments, const QString &workingDirectory, qint64 *pid)
-
-\internal
- */
-
 /*!
     \class QProcess
     \inmodule QtCore
@@ -776,6 +775,7 @@ void QProcessPrivate::Channel::clear()
 
 /*!
     \class QProcess::CreateProcessArguments
+    \inmodule QtCore
     \note This struct is only available on the Windows platform.
 
     This struct is a representation of all parameters of the Windows API
@@ -1058,10 +1058,7 @@ bool QProcessPrivate::tryReadFromChannel(Channel *channel)
     readBuffer.chop(available - readBytes);
 
     bool didRead = false;
-    if (readBytes == 0) {
-        if (channel->notifier)
-            channel->notifier->setEnabled(false);
-    } else if (currentReadChannel == channelIdx) {
+    if (currentReadChannel == channelIdx) {
         didRead = true;
         if (!emittedReadyRead) {
             emittedReadyRead = true;
@@ -1098,10 +1095,9 @@ bool QProcessPrivate::_q_canReadStandardError()
 */
 bool QProcessPrivate::_q_canWrite()
 {
-    if (stdinChannel.notifier)
-        stdinChannel.notifier->setEnabled(false);
-
     if (writeBuffer.isEmpty()) {
+        if (stdinChannel.notifier)
+            stdinChannel.notifier->setEnabled(false);
 #if defined QPROCESS_DEBUG
         qDebug("QProcessPrivate::canWrite(), not writing anything (empty write buffer).");
 #endif
@@ -1110,10 +1106,10 @@ bool QProcessPrivate::_q_canWrite()
 
     const bool writeSucceeded = writeToStdin();
 
-    if (stdinChannel.notifier && !writeBuffer.isEmpty())
-        stdinChannel.notifier->setEnabled(true);
     if (writeBuffer.isEmpty() && stdinChannel.closed)
         closeWriteChannel();
+    else if (stdinChannel.notifier)
+        stdinChannel.notifier->setEnabled(!writeBuffer.isEmpty());
     return writeSucceeded;
 }
 
@@ -2114,6 +2110,68 @@ void QProcess::start(OpenMode mode)
 }
 
 /*!
+    \since 5.10
+
+    Starts the program set by setProgram() with arguments set by setArguments()
+    in a new process, and detaches from it. Returns \c true on success;
+    otherwise returns \c false. If the calling process exits, the
+    detached process will continue to run unaffected.
+
+    \b{Unix:} The started process will run in its own session and act
+    like a daemon.
+
+    The process will be started in the directory set by setWorkingDirectory().
+    If workingDirectory() is empty, the working directory is inherited
+    from the calling process.
+
+    \note On QNX, this may cause all application threads to
+    temporarily freeze.
+
+    If the function is successful then *\a pid is set to the process identifier
+    of the started process. Note that the child process may exit and the PID
+    may become invalid without notice. Furthermore, after the child process
+    exits, the same PID may be recycled and used by a completely different
+    process. User code should be careful when using this variable, especially
+    if one intends to forcibly terminate the process by operating system means.
+
+    Only the following property setters are supported by startDetached():
+    \list
+    \li setArguments()
+    \li setCreateProcessArgumentsModifier()
+    \li setNativeArguments()
+    \li setProcessEnvironment()
+    \li setProgram()
+    \li setStandardErrorFile()
+    \li setStandardInputFile()
+    \li setStandardOutputFile()
+    \li setWorkingDirectory()
+    \endlist
+    All other properties of the QProcess object are ignored.
+
+    \note The called process inherits the console window of the calling
+    process. To suppress console output, redirect standard/error output to
+    QProcess::nullDevice().
+
+    \sa start()
+    \sa startDetached(const QString &program, const QStringList &arguments,
+                      const QString &workingDirectory, qint64 *pid)
+    \sa startDetached(const QString &command)
+*/
+bool QProcess::startDetached(qint64 *pid)
+{
+    Q_D(QProcess);
+    if (d->processState != NotRunning) {
+        qWarning("QProcess::startDetached: Process is already running");
+        return false;
+    }
+    if (d->program.isEmpty()) {
+        d->setErrorAndEmit(QProcess::FailedToStart, tr("No program defined"));
+        return false;
+    }
+    return d->startDetached(pid);
+}
+
+/*!
     Starts the program set by setProgram() with arguments set by setArguments().
     The OpenMode is set to \a mode.
 
@@ -2447,6 +2505,8 @@ int QProcess::execute(const QString &command)
 }
 
 /*!
+    \overload startDetached()
+
     Starts the program \a program with the arguments \a arguments in a
     new process, and detaches from it. Returns \c true on success;
     otherwise returns \c false. If the calling process exits, the
@@ -2454,15 +2514,9 @@ int QProcess::execute(const QString &command)
 
     Argument handling is identical to the respective start() overload.
 
-    \b{Unix:} The started process will run in its own session and act
-    like a daemon.
-
     The process will be started in the directory \a workingDirectory.
     If \a workingDirectory is empty, the working directory is inherited
     from the calling process.
-
-    \note On QNX, this may cause all application threads to
-    temporarily freeze.
 
     If the function is successful then *\a pid is set to the process
     identifier of the started process.
@@ -2474,10 +2528,11 @@ bool QProcess::startDetached(const QString &program,
                              const QString &workingDirectory,
                              qint64 *pid)
 {
-    return QProcessPrivate::startDetached(program,
-                                          arguments,
-                                          workingDirectory,
-                                          pid);
+    QProcess process;
+    process.setProgram(program);
+    process.setArguments(arguments);
+    process.setWorkingDirectory(workingDirectory);
+    return process.startDetached(pid);
 }
 
 /*!
@@ -2486,11 +2541,14 @@ bool QProcess::startDetached(const QString &program,
 bool QProcess::startDetached(const QString &program,
                              const QStringList &arguments)
 {
-    return QProcessPrivate::startDetached(program, arguments);
+    QProcess process;
+    process.setProgram(program);
+    process.setArguments(arguments);
+    return process.startDetached();
 }
 
 /*!
-    \overload
+    \overload startDetached()
 
     Starts the command \a command in a new process, and detaches from it.
     Returns \c true on success; otherwise returns \c false.
@@ -2500,7 +2558,7 @@ bool QProcess::startDetached(const QString &program,
     After the \a command string has been split and unquoted, this function
     behaves like the overload which takes the arguments as a string list.
 
-    \sa start(const QString &command, OpenMode mode)
+    \sa start(const QString &command, QIODevice::OpenMode mode)
 */
 bool QProcess::startDetached(const QString &command)
 {
@@ -2508,9 +2566,10 @@ bool QProcess::startDetached(const QString &command)
     if (args.isEmpty())
         return false;
 
-    const QString prog = args.takeFirst();
-
-    return QProcessPrivate::startDetached(prog, args);
+    QProcess process;
+    process.setProgram(args.takeFirst());
+    process.setArguments(args);
+    return process.startDetached();
 }
 
 QT_BEGIN_INCLUDE_NAMESPACE
@@ -2587,6 +2646,8 @@ QString QProcess::nullDevice()
 {
 #ifdef Q_OS_WIN
     return QStringLiteral("\\\\.\\NUL");
+#elif defined(_PATH_DEVNULL)
+    return QStringLiteral(_PATH_DEVNULL);
 #else
     return QStringLiteral("/dev/null");
 #endif

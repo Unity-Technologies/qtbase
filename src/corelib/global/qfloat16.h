@@ -83,10 +83,15 @@ private:
     Q_CORE_EXPORT static const quint32 shifttable[];
 
     friend bool qIsNull(qfloat16 f) Q_DECL_NOTHROW;
+#if !defined(QT_NO_FLOAT16_OPERATORS)
     friend qfloat16 operator-(qfloat16 a) Q_DECL_NOTHROW;
+#endif
 };
 
 Q_DECLARE_TYPEINFO(qfloat16, Q_PRIMITIVE_TYPE);
+
+Q_CORE_EXPORT void qFloatToFloat16(qfloat16 *, const float *, qsizetype length) Q_DECL_NOTHROW;
+Q_CORE_EXPORT void qFloatFromFloat16(float *, const qfloat16 *, qsizetype length) Q_DECL_NOTHROW;
 
 Q_REQUIRED_RESULT Q_CORE_EXPORT bool qIsInf(qfloat16 f) Q_DECL_NOTHROW;    // complements qnumeric.h
 Q_REQUIRED_RESULT Q_CORE_EXPORT bool qIsNaN(qfloat16 f) Q_DECL_NOTHROW;    // complements qnumeric.h
@@ -120,6 +125,7 @@ Q_REQUIRED_RESULT inline bool qIsNull(qfloat16 f) Q_DECL_NOTHROW
 inline int qIntCast(qfloat16 f) Q_DECL_NOTHROW
 { return int(static_cast<float>(f)); }
 
+#ifndef Q_QDOC
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_CLANG("-Wc99-extensions")
 QT_WARNING_DISABLE_GCC("-Wold-style-cast")
@@ -130,7 +136,7 @@ inline qfloat16::qfloat16(float f) Q_DECL_NOTHROW
     __m128i packhalf = _mm_cvtps_ph(packsingle, 0);
     b16 = _mm_extract_epi16(packhalf, 0);
 #elif defined (__ARM_FP16_FORMAT_IEEE)
-    __fp16 f16 = f;
+    __fp16 f16 = __fp16(f);
     memcpy(&b16, &f16, sizeof(quint16));
 #else
     quint32 u;
@@ -159,7 +165,9 @@ inline qfloat16::operator float() const Q_DECL_NOTHROW
     return f;
 #endif
 }
+#endif
 
+#if !defined(QT_NO_FLOAT16_OPERATORS)
 inline qfloat16 operator-(qfloat16 a) Q_DECL_NOTHROW
 {
     qfloat16 f;
@@ -176,7 +184,8 @@ inline qfloat16 operator/(qfloat16 a, qfloat16 b) Q_DECL_NOTHROW { return qfloat
     inline FP operator OP(qfloat16 lhs, FP rhs) Q_DECL_NOTHROW { return static_cast<FP>(lhs) OP rhs; } \
     inline FP operator OP(FP lhs, qfloat16 rhs) Q_DECL_NOTHROW { return lhs OP static_cast<FP>(rhs); }
 #define QF16_MAKE_ARITH_OP_EQ_FP(FP, OP_EQ, OP) \
-    inline qfloat16& operator OP_EQ(qfloat16& lhs, FP rhs) Q_DECL_NOTHROW { lhs = qfloat16(static_cast<FP>(lhs) OP rhs); return lhs; }
+    inline qfloat16& operator OP_EQ(qfloat16& lhs, FP rhs) Q_DECL_NOTHROW \
+    { lhs = qfloat16(float(static_cast<FP>(lhs) OP rhs)); return lhs; }
 #define QF16_MAKE_ARITH_OP(FP) \
     QF16_MAKE_ARITH_OP_FP(FP, +) \
     QF16_MAKE_ARITH_OP_FP(FP, -) \
@@ -240,6 +249,7 @@ QF16_MAKE_BOOL_OP_INT(!=)
 #undef QF16_MAKE_BOOL_OP_INT
 
 QT_WARNING_POP
+#endif // QT_NO_FLOAT16_OPERATORS
 
 /*!
   \internal

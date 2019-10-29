@@ -56,7 +56,7 @@ QAndroidPlatformWindow::QAndroidPlatformWindow(QWindow *window)
     m_windowState = Qt::WindowNoState;
     static QAtomicInt winIdGenerator(1);
     m_windowId = winIdGenerator.fetchAndAddRelaxed(1);
-    setWindowState(window->windowState());
+    setWindowState(window->windowStates());
 }
 
 void QAndroidPlatformWindow::lower()
@@ -73,7 +73,6 @@ void QAndroidPlatformWindow::raise()
 void QAndroidPlatformWindow::setGeometry(const QRect &rect)
 {
     QWindowSystemInterface::handleGeometryChange(window(), rect);
-    QPlatformWindow::setGeometry(rect);
 }
 
 void QAndroidPlatformWindow::setVisible(bool visible)
@@ -98,7 +97,7 @@ void QAndroidPlatformWindow::setVisible(bool visible)
         QPlatformWindow::setVisible(visible);
 }
 
-void QAndroidPlatformWindow::setWindowState(Qt::WindowState state)
+void QAndroidPlatformWindow::setWindowState(Qt::WindowStates state)
 {
     if (m_windowState == state)
         return;

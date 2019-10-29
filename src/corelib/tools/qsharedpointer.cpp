@@ -46,7 +46,7 @@
 /*!
     \class QSharedPointer
     \inmodule QtCore
-    \brief The QSharedPointer class holds a strong reference to a shared pointer
+    \brief The QSharedPointer class holds a strong reference to a shared pointer.
     \since 4.5
 
     \reentrant
@@ -65,14 +65,19 @@
 
     \section1 Thread-Safety
 
-    QSharedPointer and QWeakPointer are thread-safe and operate
-    atomically on the pointer value. Different threads can also access
-    the QSharedPointer or QWeakPointer pointing to the same object at
-    the same time without need for locking mechanisms.
+    QSharedPointer and QWeakPointer are reentrant classes. This means that, in
+    general, a given QSharedPointer or QWeakPointer object \b{cannot} be
+    accessed by multiple threads at the same time without synchronization.
 
-    It should be noted that, while the pointer value can be accessed
-    in this manner, QSharedPointer and QWeakPointer provide no
-    guarantee about the object being pointed to. Thread-safety and
+    Different QSharedPointer and QWeakPointer objects can safely be accessed
+    by multiple threads at the same time. This includes the case where they
+    hold pointers to the same object; the reference counting mechanism
+    is atomic, and no manual synchronization is required.
+
+    It should be noted that, while the pointer value can be accessed in this
+    manner (that is, by multiple threads at the same time, without
+    synchronization), QSharedPointer and QWeakPointer provide no guarantee
+    about the object being pointed to. The specific thread-safety and
     reentrancy rules for that object still apply.
 
     \section1 Other Pointer Classes
@@ -309,13 +314,13 @@
 
     \endomit
 
-    \sa QSharedDataPointer, QWeakPointer, QScopedPointer
+    \sa QSharedDataPointer, QWeakPointer, QScopedPointer, QEnableSharedFromThis
 */
 
 /*!
     \class QWeakPointer
     \inmodule QtCore
-    \brief The QWeakPointer class holds a weak reference to a shared pointer
+    \brief The QWeakPointer class holds a weak reference to a shared pointer.
     \since 4.5
     \reentrant
 
@@ -373,7 +378,7 @@
 /*!
     \class QEnableSharedFromThis
     \inmodule QtCore
-    \brief A base class that allows obtaining a QSharedPointer for an object already managed by a shared pointer
+    \brief A base class that allows obtaining a QSharedPointer for an object already managed by a shared pointer.
     \since 5.4
 
     You can inherit this class when you need to create a QSharedPointer
@@ -388,61 +393,31 @@
     sharedFromThis() that return a QSharedPointer<T> and
     QSharedPointer<const T>, depending on constness, to \c this:
 
-    \code
-    class Y: public QEnableSharedFromThis<Y>
-    {
-    public:
-        QSharedPointer<Y> f()
-        {
-            return sharedFromThis();
-        }
-    };
-
-    int main()
-    {
-        QSharedPointer<Y> p(new Y());
-        QSharedPointer<Y> y = p->f();
-        Q_ASSERT(p == y); // p and q must share ownership
-    }
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 0
 
     It is also possible to get a shared pointer from an object outside of
     the class itself. This is especially useful in code that provides an
     interface to scripts, where it is currently not possible to use shared
     pointers. For example:
 
-    \code
-    class ScriptInterface : public QObject
-    {
-        Q_OBJECT
-
-        // ...
-
-    public slots:
-        void slotCalledByScript(Y *managedBySharedPointer)
-        {
-            QSharedPointer<Y> yPtr = managedBySharedPointer->sharedFromThis();
-            // Some other code unrelated to scripts that expects a QSharedPointer<Y> ...
-        }
-    };
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 1
 */
 
 /*!
-    \fn QSharedPointer::QSharedPointer()
+    \fn template <class T> QSharedPointer<T>::QSharedPointer()
 
     Creates a QSharedPointer that points to null (0).
 */
 
 /*!
-    \fn QSharedPointer::~QSharedPointer()
+    \fn template <class T> QSharedPointer<T>::~QSharedPointer()
 
     Destroys this QSharedPointer object. If it is the last reference to
     the pointer stored, this will delete the pointer as well.
 */
 
 /*!
-    \fn QSharedPointer::QSharedPointer(X *ptr)
+    \fn template <class T> template <typename X> QSharedPointer<T>::QSharedPointer(X *ptr)
 
     Creates a QSharedPointer that points to \a ptr. The pointer \a ptr
     becomes managed by this QSharedPointer and must not be passed to
@@ -455,47 +430,30 @@
 */
 
 /*!
-    \fn QSharedPointer::QSharedPointer(X *ptr, Deleter deleter)
+  \fn template <class T> template <typename X, typename Deleter> QSharedPointer<T>::QSharedPointer(X *ptr, Deleter d)
 
     Creates a QSharedPointer that points to \a ptr. The pointer \a ptr
     becomes managed by this QSharedPointer and must not be passed to
     another QSharedPointer object or deleted outside this object.
 
-    The \a deleter parameter specifies the custom deleter for this
+    The deleter parameter \a d specifies the custom deleter for this
     object. The custom deleter is called, instead of the operator delete(),
     when the strong reference count drops to 0. This is useful,
     for instance, for calling \l {QObject::}{deleteLater()} on a QObject instead:
 
-    \code
-    static void doDeleteLater(MyObject *obj)
-    {
-        obj->deleteLater();
-    }
-
-    void otherFunction()
-    {
-        QSharedPointer<MyObject> obj =
-            QSharedPointer<MyObject>(new MyObject, doDeleteLater);
-
-        // continue using obj
-        obj.clear();    // calls obj->deleteLater();
-    }
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 2
 
     Note that the custom deleter function will be called with a pointer to type
     \c X, even if the QSharedPointer template parameter \c T is not the same.
 
     It is also possible to specify a member function directly, as in:
-    \code
-        QSharedPointer<MyObject> obj =
-            QSharedPointer<MyObject>(new MyObject, &QObject::deleteLater);
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 3
 
     \sa clear()
 */
 
 /*!
-    \fn QSharedPointer::QSharedPointer(std::nullptr_t)
+    \fn template <class T> QSharedPointer<T>::QSharedPointer(std::nullptr_t)
     \since 5.8
 
     Creates a QSharedPointer that is null. This is equivalent to the
@@ -503,15 +461,19 @@
 */
 
 /*!
-    \fn QSharedPointer::QSharedPointer(std::nullptr_t, Deleter)
+  \fn template <class T> template <typename Deleter> QSharedPointer<T>::QSharedPointer(std::nullptr_t, Deleter d)
     \since 5.8
 
     Creates a QSharedPointer that is null. This is equivalent to the
     QSharedPointer default constructor.
+
+    The deleter parameter \a d specifies the custom deleter for this
+    object. The custom deleter is called, instead of the operator
+    delete(), when the strong reference count drops to 0.
 */
 
 /*!
-    \fn QSharedPointer::QSharedPointer(const QSharedPointer<T> &other)
+    \fn template <class T> QSharedPointer<T>::QSharedPointer(const QSharedPointer<T> &other)
 
     Creates a QSharedPointer object that shares \a other's pointer.
 
@@ -521,7 +483,7 @@
 */
 
 /*!
-    \fn QSharedPointer::QSharedPointer(const QWeakPointer<T> &other)
+    \fn template <class T> QSharedPointer<T>::QSharedPointer(const QWeakPointer<T> &other)
 
     Creates a QSharedPointer by promoting the weak reference \a other
     to strong reference and sharing its pointer.
@@ -534,7 +496,7 @@
 */
 
 /*!
-    \fn QSharedPointer &QSharedPointer::operator=(const QSharedPointer<T> &other)
+    \fn template <class T> QSharedPointer &QSharedPointer<T>::operator=(const QSharedPointer<T> &other)
 
     Makes this object share \a other's pointer. The current pointer
     reference is discarded and, if it was the last, the pointer will
@@ -546,7 +508,7 @@
 */
 
 /*!
-    \fn QSharedPointer &QSharedPointer::operator=(const QWeakPointer<T> &other)
+    \fn template <class T> QSharedPointer &QSharedPointer<T>::operator=(const QWeakPointer<T> &other)
 
     Promotes \a other to a strong reference and makes this object
     share a reference to the pointer referenced by it. The current pointer
@@ -559,7 +521,7 @@
 */
 
 /*!
-    \fn void QSharedPointer::swap(QSharedPointer<T> &other);
+    \fn template <class T> void QSharedPointer<T>::swap(QSharedPointer<T> &other);
     \since 5.3
 
     Swaps this shared pointer instance with \a other. This function is
@@ -567,7 +529,7 @@
 */
 
 /*!
-    \fn T *QSharedPointer::data() const
+    \fn template <class T> T *QSharedPointer<T>::data() const
 
     Returns the value of the pointer referenced by this object.
 
@@ -577,7 +539,16 @@
 */
 
 /*!
-    \fn T &QSharedPointer::operator *() const
+    \fn template <class T> T *QSharedPointer<T>::get() const
+    \since 5.11
+
+    Same as data().
+
+    This function is provided for API compatibility with \c{std::shared_ptr}.
+*/
+
+/*!
+    \fn template <class T> T &QSharedPointer<T>::operator *() const
 
     Provides access to the shared pointer's members.
 
@@ -585,7 +556,7 @@
 */
 
 /*!
-    \fn T *QSharedPointer::operator ->() const
+    \fn template <class T> T *QSharedPointer<T>::operator ->() const
 
     Provides access to the shared pointer's members.
 
@@ -593,40 +564,36 @@
 */
 
 /*!
-    \fn bool QSharedPointer::isNull() const
+    \fn template <class T> bool QSharedPointer<T>::isNull() const
 
     Returns \c true if this object is holding a reference to a null
     pointer.
 */
 
 /*!
-    \fn QSharedPointer::operator bool() const
+    \fn template <class T> QSharedPointer<T>::operator bool() const
 
     Returns \c true if this object is not null. This function is suitable
     for use in \tt if-constructs, like:
 
-    \code
-        if (sharedptr) { ... }
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 4
 
     \sa isNull()
 */
 
 /*!
-    \fn bool QSharedPointer::operator !() const
+    \fn template <class T> bool QSharedPointer<T>::operator !() const
 
     Returns \c true if this object is null. This function is suitable
     for use in \tt if-constructs, like:
 
-    \code
-        if (!sharedptr) { ... }
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 5
 
     \sa isNull()
 */
 
 /*!
-    \fn QSharedPointer<X> QSharedPointer::staticCast() const
+  \fn template <class T> template <class X> QSharedPointer<X> QSharedPointer<T>::staticCast() const
 
     Performs a static cast from this pointer's type to \tt X and returns
     a QSharedPointer that shares the reference. This function can be
@@ -641,7 +608,7 @@
 */
 
 /*!
-    \fn QSharedPointer<X> QSharedPointer::dynamicCast() const
+    \fn template <class T> template <class X> QSharedPointer<X> QSharedPointer<T>::dynamicCast() const
 
     Performs a dynamic cast from this pointer's type to \tt X and
     returns a QSharedPointer that shares the reference. If this
@@ -658,7 +625,7 @@
 */
 
 /*!
-    \fn QSharedPointer<X> QSharedPointer::constCast() const
+    \fn template <class T> template <class X> QSharedPointer<X> QSharedPointer<T>::constCast() const
 
     Performs a \tt const_cast from this pointer's type to \tt X and returns
     a QSharedPointer that shares the reference. This function can be
@@ -669,7 +636,7 @@
 */
 
 /*!
-    \fn QSharedPointer<X> QSharedPointer::objectCast() const
+    \fn template <class T> template <class X> QSharedPointer<X> QSharedPointer<T>::objectCast() const
     \since 4.6
 
     Performs a \l qobject_cast() from this pointer's type to \tt X and
@@ -687,19 +654,7 @@
 */
 
 /*!
-    \fn QSharedPointer<T> QSharedPointer::create()
-    \since 5.1
-
-    Creates a QSharedPointer object and allocates a new item of type \tt T. The
-    QSharedPointer internals and the object are allocated in one single memory
-    allocation, which could help reduce memory fragmentation in a long-running
-    application.
-
-    This function calls the default constructor for type \tt T.
-*/
-
-/*!
-    \fn QSharedPointer<T> QSharedPointer::create(...)
+    \fn template <class T> template <typename... Args> QSharedPointer<T> QSharedPointer<T>::create(Args &&... args)
     \overload
     \since 5.1
 
@@ -709,22 +664,11 @@
     application.
 
     This function will attempt to call a constructor for type \tt T that can
-    accept all the arguments passed. Arguments will be perfectly-forwarded.
-
-    \note This function is only fully available with a C++11 compiler that
-    supports perfect forwarding of an arbitrary number of arguments.
-
-    If the compiler does not support the necessary C++11 features,
-    then a restricted version is available since Qt 5.4: you may pass
-    one (but just one) argument, and it will always be passed by const
-    reference.
-
-    If you target Qt before version 5.4, you must use the overload
-    that calls the default constructor.
+    accept all the arguments passed (\a args). Arguments will be perfectly-forwarded.
 */
 
 /*!
-    \fn QWeakPointer<T> QSharedPointer::toWeakRef() const
+    \fn template <class T> QWeakPointer<T> QSharedPointer<T>::toWeakRef() const
 
     Returns a weak reference object that shares the pointer referenced
     by this object.
@@ -733,7 +677,7 @@
 */
 
 /*!
-    \fn void QSharedPointer::clear()
+    \fn template <class T> void QSharedPointer<T>::clear()
 
     Clears this QSharedPointer object, dropping the reference that it
     may have had to the pointer. If this was the last reference, then
@@ -741,49 +685,45 @@
 */
 
 /*!
-    \fn void QSharedPointer::reset()
+    \fn template <class T> void QSharedPointer<T>::reset()
     \since 5.0
 
     Same as clear(). For std::shared_ptr compatibility.
 */
 
 /*!
-    \fn void QSharedPointer::reset(T *t)
+    \fn template <class T> void QSharedPointer<T>::reset(T *t)
     \since 5.0
 
     Resets this QSharedPointer object to point to \a t
     instead. Equivalent to:
-    \code
-    QSharedPointer<T> other(t); this->swap(other);
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 6
 */
 
 /*!
-    \fn void QSharedPointer::reset(T *t, Deleter deleter)
+  \fn template <class T> template <typename Deleter> void QSharedPointer<T>::reset(T *t, Deleter deleter)
     \since 5.0
 
     Resets this QSharedPointer object to point to \a t
-    instead, with deleter \a deleter. Equivalent to:
-    \code
-    QSharedPointer<T> other(t, deleter); this->swap(other);
-    \endcode
+    instead, with the Deleter \a deleter. Equivalent to:
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 7
 */
 
 /*!
-    \fn QWeakPointer::QWeakPointer()
+    \fn template <class T> QWeakPointer<T>::QWeakPointer()
 
     Creates a QWeakPointer that points to nothing.
 */
 
 /*!
-    \fn QWeakPointer::~QWeakPointer()
+    \fn template <class T> QWeakPointer<T>::~QWeakPointer()
 
     Destroys this QWeakPointer object. The pointer referenced
     by this object will not be deleted.
 */
 
 /*!
-    \fn QWeakPointer::QWeakPointer(const QWeakPointer<T> &other)
+    \fn template <class T> QWeakPointer<T>::QWeakPointer(const QWeakPointer<T> &other)
 
     Creates a QWeakPointer that holds a weak reference to the
     pointer referenced by \a other.
@@ -794,7 +734,7 @@
 */
 
 /*!
-    \fn QWeakPointer::QWeakPointer(const QSharedPointer<T> &other)
+    \fn template <class T> QWeakPointer<T>::QWeakPointer(const QSharedPointer<T> &other)
 
     Creates a QWeakPointer that holds a weak reference to the
     pointer referenced by \a other.
@@ -805,12 +745,12 @@
 */
 
 /*!
-    \fn QWeakPointer::QWeakPointer(const QObject *obj)
+    \fn template <class T> QWeakPointer<T>::QWeakPointer(const QObject *other)
     \since 4.6
     \deprecated
 
     Creates a QWeakPointer that holds a weak reference directly to the
-    QObject \a obj. This constructor is only available if the template type
+    QObject \a other. This constructor is only available if the template type
     \tt T is QObject or derives from it (otherwise a compilation error will
     result).
 
@@ -824,19 +764,19 @@
 */
 
 /*!
-    \fn QWeakPointer &QWeakPointer::operator=(const QObject *obj)
+    \fn template <class T> QWeakPointer &QWeakPointer<T>::operator=(const QObject *other)
     \since 4.6
     \deprecated
 
     Makes this QWeakPointer hold a weak reference directly to the QObject
-    \a obj. This function is only available if the template type \tt T is
+    \a other. This function is only available if the template type \tt T is
     QObject or derives from it.
 
     \sa QPointer
 */
 
 /*!
-    \fn QWeakPointer &QWeakPointer::operator=(const QWeakPointer<T> &other)
+    \fn template <class T> QWeakPointer &QWeakPointer<T>::operator=(const QWeakPointer<T> &other)
 
     Makes this object share \a other's pointer. The current pointer
     reference is discarded but is not deleted.
@@ -847,7 +787,7 @@
 */
 
 /*!
-    \fn QWeakPointer &QWeakPointer::operator=(const QSharedPointer<T> &other)
+    \fn template <class T> QWeakPointer &QWeakPointer<T>::operator=(const QSharedPointer<T> &other)
 
     Makes this object share \a other's pointer. The current pointer
     reference is discarded but is not deleted.
@@ -858,7 +798,7 @@
 */
 
 /*!
-    \fn void QWeakPointer::swap(QWeakPointer<T> &other)
+    \fn template <class T> void QWeakPointer<T>::swap(QWeakPointer<T> &other)
     \since 5.4
 
     Swaps this weak pointer instance with \a other. This function is
@@ -866,7 +806,7 @@
 */
 
 /*!
-    \fn bool QWeakPointer::isNull() const
+    \fn template <class T> bool QWeakPointer<T>::isNull() const
 
     Returns \c true if this object is holding a reference to a null
     pointer.
@@ -878,14 +818,12 @@
 */
 
 /*!
-    \fn QWeakPointer::operator bool() const
+    \fn template <class T> QWeakPointer<T>::operator bool() const
 
     Returns \c true if this object is not null. This function is suitable
     for use in \tt if-constructs, like:
 
-    \code
-        if (weakref) { ... }
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 8
 
     Note that, due to the nature of weak references, the pointer that
     QWeakPointer references can become null at any moment, so
@@ -896,14 +834,12 @@
 */
 
 /*!
-    \fn bool QWeakPointer::operator !() const
+    \fn template <class T> bool QWeakPointer<T>::operator !() const
 
     Returns \c true if this object is null. This function is suitable
     for use in \tt if-constructs, like:
 
-    \code
-        if (!weakref) { ... }
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 9
 
     Note that, due to the nature of weak references, the pointer that
     QWeakPointer references can become null at any moment, so
@@ -914,21 +850,19 @@
 */
 
 /*!
-    \fn T *QWeakPointer::data() const
+    \fn template <class T> T *QWeakPointer<T>::data() const
     \since 4.6
 
     Returns the value of the pointer being tracked by this QWeakPointer,
     \b without ensuring that it cannot get deleted. To have that guarantee,
     use toStrongRef(), which returns a QSharedPointer object. If this
     function can determine that the pointer has already been deleted, it
-    returns 0.
+    returns \nullptr.
 
     It is ok to obtain the value of the pointer and using that value itself,
     like for example in debugging statements:
 
-    \code
-        qDebug("Tracking %p", weakref.data());
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 10
 
     However, dereferencing the pointer is only allowed if you can guarantee
     by external means that the pointer does not get deleted. For example,
@@ -937,18 +871,7 @@
 
     If that is the case, then the following code is valid:
 
-    \code
-        // this pointer cannot be used in another thread
-        // so other threads cannot delete it
-        QWeakPointer<int> weakref = obtainReference();
-
-        Object *obj = weakref.data();
-        if (obj) {
-            // if the pointer wasn't deleted yet, we know it can't get
-            // deleted by our own code here nor the functions we call
-            otherFunction(obj);
-        }
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 11
 
     Use this function with care.
 
@@ -956,7 +879,7 @@
 */
 
 /*!
-    \fn QSharedPointer<T> QWeakPointer::toStrongRef() const
+    \fn template <class T> QSharedPointer<T> QWeakPointer<T>::toStrongRef() const
 
     Promotes this weak reference to a strong one and returns a
     QSharedPointer object holding that reference. When promoting to
@@ -973,23 +896,13 @@
     to a strong reference and, if it succeeded, it prints the value of the
     integer that was held:
 
-    \code
-        QWeakPointer<int> weakref;
-
-        // ...
-
-        QSharedPointer<int> strong = weakref.toStrongRef();
-        if (strong)
-            qDebug() << "The value is:" << *strong;
-        else
-            qDebug() << "The value has already been deleted";
-    \endcode
+    \snippet code/src_corelib_tools_qsharedpointer.cpp 12
 
     \sa QSharedPointer::QSharedPointer()
 */
 
 /*!
-    \fn QSharedPointer<T> QWeakPointer::lock() const
+    \fn template <class T> QSharedPointer<T> QWeakPointer<T>::lock() const
     \since 5.4
 
     Same as toStrongRef().
@@ -998,14 +911,14 @@
 */
 
 /*!
-    \fn void QWeakPointer::clear()
+    \fn template <class T> void QWeakPointer<T>::clear()
 
     Clears this QWeakPointer object, dropping the reference that it
     may have had to the pointer.
 */
 
 /*!
-    \fn QSharedPointer<T> QEnableSharedFromThis::sharedFromThis()
+    \fn template <class T> QSharedPointer<T> QEnableSharedFromThis<T>::sharedFromThis()
     \since 5.4
 
     If \c this (that is, the subclass instance invoking this method) is being
@@ -1014,7 +927,7 @@
 */
 
 /*!
-    \fn QSharedPointer<const T> QEnableSharedFromThis::sharedFromThis() const
+    \fn template <class T> QSharedPointer<const T> QEnableSharedFromThis<T>::sharedFromThis() const
     \overload
     \since 5.4
 
@@ -1022,7 +935,7 @@
 */
 
 /*!
-    \fn bool operator==(const QSharedPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator==(const QSharedPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
     \relates QSharedPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is the
@@ -1036,7 +949,7 @@
 */
 
 /*!
-    \fn bool operator!=(const QSharedPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator!=(const QSharedPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
     \relates QSharedPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is not the
@@ -1050,7 +963,7 @@
 */
 
 /*!
-    \fn bool operator==(const QSharedPointer<T> &ptr1, const X *ptr2)
+    \fn template <class T> template <class X> bool operator==(const QSharedPointer<T> &ptr1, const X *ptr2)
     \relates QSharedPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is the
@@ -1064,7 +977,7 @@
 */
 
 /*!
-    \fn bool operator!=(const QSharedPointer<T> &ptr1, const X *ptr2)
+    \fn template <class T> template <class X> bool operator!=(const QSharedPointer<T> &ptr1, const X *ptr2)
     \relates QSharedPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is not the
@@ -1078,7 +991,7 @@
 */
 
 /*!
-    \fn bool operator==(const T *ptr1, const QSharedPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator==(const T *ptr1, const QSharedPointer<X> &ptr2)
     \relates QSharedPointer
 
     Returns \c true if the pointer \a ptr1 is the
@@ -1092,7 +1005,7 @@
 */
 
 /*!
-    \fn bool operator!=(const T *ptr1, const QSharedPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator!=(const T *ptr1, const QSharedPointer<X> &ptr2)
     \relates QSharedPointer
 
     Returns \c true if the pointer \a ptr1 is not the
@@ -1106,7 +1019,7 @@
 */
 
 /*!
-    \fn bool operator==(const QSharedPointer<T> &ptr1, const QWeakPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator==(const QSharedPointer<T> &ptr1, const QWeakPointer<X> &ptr2)
     \relates QWeakPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is the
@@ -1120,7 +1033,7 @@
 */
 
 /*!
-    \fn bool operator!=(const QSharedPointer<T> &ptr1, const QWeakPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator!=(const QSharedPointer<T> &ptr1, const QWeakPointer<X> &ptr2)
     \relates QWeakPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is not the
@@ -1134,7 +1047,7 @@
 */
 
 /*!
-    \fn bool operator==(const QWeakPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator==(const QWeakPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
     \relates QWeakPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is the
@@ -1148,7 +1061,7 @@
 */
 
 /*!
-    \fn bool operator==(const QSharedPointer<T> &lhs, std::nullptr_t)
+    \fn template <class T> bool operator==(const QSharedPointer<T> &lhs, std::nullptr_t)
     \relates QSharedPointer
     \since 5.8
 
@@ -1158,7 +1071,7 @@
 */
 
 /*!
-    \fn bool operator==(std::nullptr_t, const QSharedPointer<T> &rhs)
+    \fn template <class T> bool operator==(std::nullptr_t, const QSharedPointer<T> &rhs)
     \relates QSharedPointer
     \since 5.8
 
@@ -1168,7 +1081,7 @@
 */
 
 /*!
-    \fn bool operator!=(const QSharedPointer<T> &lhs, std::nullptr_t)
+    \fn template <class T> bool operator!=(const QSharedPointer<T> &lhs, std::nullptr_t)
     \relates QSharedPointer
     \since 5.8
 
@@ -1179,7 +1092,7 @@
 */
 
 /*!
-    \fn bool operator!=(std::nullptr_t, const QSharedPointer<T> &rhs)
+    \fn template <class T> bool operator!=(std::nullptr_t, const QSharedPointer<T> &rhs)
     \relates QSharedPointer
     \since 5.8
 
@@ -1190,7 +1103,7 @@
 */
 
 /*!
-    \fn bool operator==(const QWeakPointer<T> &lhs, std::nullptr_t)
+    \fn template <class T> bool operator==(const QWeakPointer<T> &lhs, std::nullptr_t)
     \relates QWeakPointer
     \since 5.8
 
@@ -1200,7 +1113,7 @@
 */
 
 /*!
-    \fn bool operator==(std::nullptr_t, const QWeakPointer<T> &rhs)
+    \fn template <class T> bool operator==(std::nullptr_t, const QWeakPointer<T> &rhs)
     \relates QWeakPointer
     \since 5.8
 
@@ -1210,7 +1123,7 @@
 */
 
 /*!
-    \fn bool operator!=(const QWeakPointer<T> &lhs, std::nullptr_t)
+    \fn template <class T> bool operator!=(const QWeakPointer<T> &lhs, std::nullptr_t)
     \relates QWeakPointer
     \since 5.8
 
@@ -1221,7 +1134,7 @@
 */
 
 /*!
-    \fn bool operator!=(std::nullptr_t, const QWeakPointer<T> &rhs)
+    \fn template <class T> bool operator!=(std::nullptr_t, const QWeakPointer<T> &rhs)
     \relates QWeakPointer
     \since 5.8
 
@@ -1232,7 +1145,7 @@
 */
 
 /*!
-    \fn bool operator!=(const QWeakPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
+    \fn template <class T> template <class X> bool operator!=(const QWeakPointer<T> &ptr1, const QSharedPointer<X> &ptr2)
     \relates QWeakPointer
 
     Returns \c true if the pointer referenced by \a ptr1 is not the
@@ -1246,7 +1159,7 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerCast(const QSharedPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerCast(const QSharedPointer<T> &other)
     \relates QSharedPointer
 
     Returns a shared pointer to the pointer held by \a other, cast to
@@ -1261,7 +1174,7 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerCast(const QWeakPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerCast(const QWeakPointer<T> &other)
     \relates QSharedPointer
     \relates QWeakPointer
 
@@ -1282,10 +1195,10 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerDynamicCast(const QSharedPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerDynamicCast(const QSharedPointer<T> &src)
     \relates QSharedPointer
 
-    Returns a shared pointer to the pointer held by \a other, using a
+    Returns a shared pointer to the pointer held by \a src, using a
     dynamic cast to type \tt X to obtain an internal pointer of the
     appropriate type. If the \tt dynamic_cast fails, the object
     returned will be null.
@@ -1298,16 +1211,16 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerDynamicCast(const QWeakPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerDynamicCast(const QWeakPointer<T> &src)
     \relates QSharedPointer
     \relates QWeakPointer
 
-    Returns a shared pointer to the pointer held by \a other, using a
+    Returns a shared pointer to the pointer held by \a src, using a
     dynamic cast to type \tt X to obtain an internal pointer of the
     appropriate type. If the \tt dynamic_cast fails, the object
     returned will be null.
 
-    The \a other object is converted first to a strong reference. If
+    The \a src object is converted first to a strong reference. If
     that conversion fails (because the object it's pointing to has
     already been deleted), this function also returns a null
     QSharedPointer.
@@ -1320,10 +1233,10 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerConstCast(const QSharedPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerConstCast(const QSharedPointer<T> &src)
     \relates QSharedPointer
 
-    Returns a shared pointer to the pointer held by \a other, cast to
+    Returns a shared pointer to the pointer held by \a src, cast to
     type \tt X.  The types \tt T and \tt X must belong to one
     hierarchy for the \tt const_cast to succeed. The \tt const and \tt
     volatile differences between \tt T and \tt X are ignored.
@@ -1332,16 +1245,16 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerConstCast(const QWeakPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerConstCast(const QWeakPointer<T> &src)
     \relates QSharedPointer
     \relates QWeakPointer
 
-    Returns a shared pointer to the pointer held by \a other, cast to
+    Returns a shared pointer to the pointer held by \a src, cast to
     type \tt X. The types \tt T and \tt X must belong to one
     hierarchy for the \tt const_cast to succeed. The \tt const and
     \tt volatile differences between \tt T and \tt X are ignored.
 
-    The \a other object is converted first to a strong reference. If
+    The \a src object is converted first to a strong reference. If
     that conversion fails (because the object it's pointing to has
     already been deleted), this function returns a null
     QSharedPointer.
@@ -1350,13 +1263,13 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerObjectCast(const QSharedPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerObjectCast(const QSharedPointer<T> &src)
     \relates QSharedPointer
     \since 4.6
 
     \brief The qSharedPointerObjectCast function is for casting a shared pointer.
 
-    Returns a shared pointer to the pointer held by \a other, using a
+    Returns a shared pointer to the pointer held by \a src, using a
     \l qobject_cast() to type \tt X to obtain an internal pointer of the
     appropriate type. If the \tt qobject_cast fails, the object
     returned will be null.
@@ -1369,19 +1282,19 @@
 */
 
 /*!
-    \fn QSharedPointer<X> qSharedPointerObjectCast(const QWeakPointer<T> &other)
+    \fn template <class X> template <class T> QSharedPointer<X> qSharedPointerObjectCast(const QWeakPointer<T> &src)
     \relates QSharedPointer
     \relates QWeakPointer
     \since 4.6
 
     \brief The qSharedPointerObjectCast function is for casting a shared pointer.
 
-    Returns a shared pointer to the pointer held by \a other, using a
+    Returns a shared pointer to the pointer held by \a src, using a
     \l qobject_cast() to type \tt X to obtain an internal pointer of the
     appropriate type. If the \tt qobject_cast fails, the object
     returned will be null.
 
-    The \a other object is converted first to a strong reference. If
+    The \a src object is converted first to a strong reference. If
     that conversion fails (because the object it's pointing to has
     already been deleted), this function also returns a null
     QSharedPointer.
@@ -1395,10 +1308,10 @@
 
 
 /*!
-    \fn QWeakPointer<X> qWeakPointerCast(const QWeakPointer<T> &other)
+    \fn template <class X> template <class T> QWeakPointer<X> qWeakPointerCast(const QWeakPointer<T> &src)
     \relates QWeakPointer
 
-    Returns a weak pointer to the pointer held by \a other, cast to
+    Returns a weak pointer to the pointer held by \a src, cast to
     type \tt X. The types \tt T and \tt X must belong to one
     hierarchy for the \tt static_cast to succeed.
 
@@ -1452,12 +1365,18 @@ QtSharedPointer::ExternalRefCountData *QtSharedPointer::ExternalRefCountData::ge
     ExternalRefCountData *x = new ExternalRefCountData(Qt::Uninitialized);
     x->strongref.store(-1);
     x->weakref.store(2);  // the QWeakPointer that called us plus the QObject itself
-    if (!d->sharedRefcount.testAndSetRelease(0, x)) {
+
+    ExternalRefCountData *ret;
+    if (d->sharedRefcount.testAndSetOrdered(nullptr, x, ret)) {     // ought to be release+acquire; this is acq_rel+acquire
+        ret = x;
+    } else {
+        // ~ExternalRefCountData has a Q_ASSERT, so we use this trick to
+        // only execute this if Q_ASSERTs are enabled
+        Q_ASSERT((x->weakref.store(0), true));
         delete x;
-        x = d->sharedRefcount.loadAcquire();
-        x->weakref.ref();
+        ret->weakref.ref();
     }
-    return x;
+    return ret;
 }
 
 /**

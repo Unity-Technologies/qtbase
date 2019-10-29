@@ -110,6 +110,8 @@ public:
 
     static QScreen *primaryScreen();
     static QList<QScreen *> screens();
+    static QScreen *screenAt(const QPoint &point);
+
     qreal devicePixelRatio() const;
 
 #ifndef QT_NO_CURSOR
@@ -155,7 +157,7 @@ public:
     static Qt::ApplicationState applicationState();
 
     static int exec();
-    bool notify(QObject *, QEvent *) Q_DECL_OVERRIDE;
+    bool notify(QObject *, QEvent *) override;
 
 #ifndef QT_NO_SESSIONMANAGER
     // session management
@@ -185,10 +187,11 @@ Q_SIGNALS:
 #endif
     void paletteChanged(const QPalette &pal);
     void applicationDisplayNameChanged();
+    void fontChanged(const QFont &font);
 
 protected:
-    bool event(QEvent *) Q_DECL_OVERRIDE;
-    bool compressEvent(QEvent *, QObject *receiver, QPostEventList *) Q_DECL_OVERRIDE;
+    bool event(QEvent *) override;
+    bool compressEvent(QEvent *, QObject *receiver, QPostEventList *) override;
 
     QGuiApplication(QGuiApplicationPrivate &p);
 

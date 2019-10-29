@@ -43,7 +43,7 @@
 #include <QtCore/qt_windows.h>
 #include "qwindowsopenglcontext.h"
 
-#include <QtGui/QOpenGLContext>
+#include <QtGui/qopenglcontext.h>
 
 #include <vector>
 
@@ -122,7 +122,7 @@ struct QWindowsOpengl32DLL
     void (APIENTRY * glGetIntegerv)(GLenum pname, GLint* params);
     const GLubyte * (APIENTRY * glGetString)(GLenum name);
 
-    FARPROC resolve(const char *name);
+    QFunctionPointer resolve(const char *name);
 private:
     HMODULE m_lib;
     bool m_nonOpengl32;
@@ -139,7 +139,8 @@ class QOpenGLStaticContext : public QWindowsStaticOpenGLContext
 public:
     enum Extensions
     {
-        SampleBuffers = 0x1
+        SampleBuffers = 0x1,
+        sRGBCapableFramebuffer = 0x2
     };
 
     typedef bool
@@ -160,19 +161,24 @@ public:
     typedef int
         (APIENTRY *WglGetSwapInternalExt)(void);
 
+    typedef const char *
+        (APIENTRY *WglGetExtensionsStringARB)(HDC);
+
     bool hasExtensions() const
         { return wglGetPixelFormatAttribIVARB && wglChoosePixelFormatARB && wglCreateContextAttribsARB; }
 
     static QOpenGLStaticContext *create(bool softwareRendering = false);
     static QByteArray getGlString(unsigned int which);
 
-    QWindowsOpenGLContext *createContext(QOpenGLContext *context);
-    void *moduleHandle() const { return opengl32.moduleHandle(); }
-    QOpenGLContext::OpenGLModuleType moduleType() const { return QOpenGLContext::LibGL; }
+    QWindowsOpenGLContext *createContext(QOpenGLContext *context) override;
+    void *moduleHandle() const override { return opengl32.moduleHandle(); }
+    QOpenGLContext::OpenGLModuleType moduleType() const override
+    { return QOpenGLContext::LibGL; }
 
     // For a regular opengl32.dll report the ThreadedOpenGL capability.
     // For others, which are likely to be software-only, don't.
-    bool supportsThreadedOpenGL() const { return !opengl32.moduleIsNotOpengl32(); }
+    bool supportsThreadedOpenGL() const override
+    { return !opengl32.moduleIsNotOpengl32(); }
 
     const QByteArray vendor;
     const QByteArray renderer;
@@ -185,6 +191,7 @@ public:
     WglCreateContextAttribsARB wglCreateContextAttribsARB;
     WglSwapInternalExt wglSwapInternalExt;
     WglGetSwapInternalExt wglGetSwapInternalExt;
+    WglGetExtensionsStringARB wglGetExtensionsStringARB;
 
     static QWindowsOpengl32DLL opengl32;
 };
@@ -193,7 +200,7 @@ class QWindowsGLContext : public QWindowsOpenGLContext
 {
 public:
     explicit QWindowsGLContext(QOpenGLStaticContext *staticContext, QOpenGLContext *context);
-    ~QWindowsGLContext();
+    ~QWindowsGLContext() override;
     bool isSharing() const override { return m_context->shareHandle(); }
     bool isValid() const override { return m_renderingContext && !m_lost; }
     QSurfaceFormat format() const override { return m_obtainedFormat; }
@@ -212,6 +219,8 @@ public:
     void *nativeContext() const override { return m_renderingContext; }
 
 private:
+    typedef GLenum (APIENTRY *GlGetGraphicsResetStatusArbType)();
+
     inline void releaseDCs();
     bool updateObtainedParams(HDC hdc, int *obtainedSwapInterval = 0);
 
@@ -225,7 +234,7 @@ private:
     bool m_extensionsUsed;
     int m_swapInterval;
     bool m_ownsContext;
-    GLenum (APIENTRY * m_getGraphicsResetStatus)();
+    GlGetGraphicsResetStatusArbType m_getGraphicsResetStatus;
     bool m_lost;
 };
 #endif

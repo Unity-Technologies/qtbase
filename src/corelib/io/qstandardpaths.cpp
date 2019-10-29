@@ -48,6 +48,14 @@
 #include <qcoreapplication.h>
 #endif
 
+#if QT_HAS_INCLUDE(<paths.h>)
+#include <paths.h>
+#endif
+
+#ifdef Q_OS_UNIX
+#include <unistd.h>
+#endif
+
 #ifndef QT_NO_STANDARDPATHS
 
 QT_BEGIN_NAMESPACE
@@ -86,7 +94,8 @@ QT_BEGIN_NAMESPACE
     Data interchange with other users is out of the scope of QStandardPaths.
 
     \value DesktopLocation Returns the user's desktop directory. This is a generic value.
-           On systems with no concept of a desktop.
+           On systems with no concept of a desktop, this is the same as
+           QStandardPaths::HomeLocation.
     \value DocumentsLocation Returns the directory containing user document files.
            This is a generic value. The returned path is never empty.
     \value FontsLocation Returns the directory containing user's fonts. This is a generic value.
@@ -183,7 +192,7 @@ QT_BEGIN_NAMESPACE
          \li "C:/Users/<USER>"
     \row \li DataLocation
          \li "~/Library/Application Support/<APPNAME>", "/Library/Application Support/<APPNAME>". "<APPDIR>/../Resources"
-         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data"
+         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data", "<APPDIR>/data/<APPNAME>"
     \row \li CacheLocation
          \li "~/Library/Caches/<APPNAME>", "/Library/Caches/<APPNAME>"
          \li "C:/Users/<USER>/AppData/Local/<APPNAME>/cache"
@@ -207,10 +216,10 @@ QT_BEGIN_NAMESPACE
          \li "C:/Users/<USER>/AppData/Local/cache"
     \row \li AppDataLocation
          \li "~/Library/Application Support/<APPNAME>", "/Library/Application Support/<APPNAME>". "<APPDIR>/../Resources"
-         \li "C:/Users/<USER>/AppData/Roaming/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data"
+         \li "C:/Users/<USER>/AppData/Roaming/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data", "<APPDIR>/data/<APPNAME>"
     \row \li AppLocalDataLocation
          \li "~/Library/Application Support/<APPNAME>", "/Library/Application Support/<APPNAME>". "<APPDIR>/../Resources"
-         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data"
+         \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>", "<APPDIR>", "<APPDIR>/data", "<APPDIR>/data/<APPNAME>"
     \row \li AppConfigLocation
          \li "~/Library/Preferences/<APPNAME>"
          \li "C:/Users/<USER>/AppData/Local/<APPNAME>", "C:/ProgramData/<APPNAME>"
@@ -509,6 +518,27 @@ QString QStandardPaths::findExecutable(const QString &executableName, const QStr
     QStringList searchPaths = paths;
     if (paths.isEmpty()) {
         QByteArray pEnv = qgetenv("PATH");
+        if (Q_UNLIKELY(pEnv.isNull())) {
+            // Get a default path. POSIX.1 does not actually require this, but
+            // most Unix libc fall back to confstr(_CS_PATH) if the PATH
+            // environment variable isn't set. Let's try to do the same.
+#if defined(_PATH_DEFPATH)
+            // BSD API.
+            pEnv = _PATH_DEFPATH;
+#elif defined(_CS_PATH)
+            // POSIX API.
+            size_t n = confstr(_CS_PATH, nullptr, 0);
+            if (n) {
+                pEnv.resize(n);
+                // size()+1 is ok because QByteArray always has an extra NUL-terminator
+                confstr(_CS_PATH, pEnv.data(), pEnv.size() + 1);
+            }
+#else
+            // Windows SDK's execvpe() does not have a fallback, so we won't
+            // apply one either.
+#endif
+        }
+
         // Remove trailing slashes, which occur on Windows.
         const QStringList rawPaths = QString::fromLocal8Bit(pEnv.constData()).split(QDir::listSeparator(), QString::SkipEmptyParts);
         searchPaths.reserve(rawPaths.size());

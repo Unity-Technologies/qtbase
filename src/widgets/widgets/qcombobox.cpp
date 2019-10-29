@@ -45,6 +45,7 @@
 #include <qlineedit.h>
 #include <qapplication.h>
 #include <qdesktopwidget.h>
+#include <private/qdesktopwidget_p.h>
 #include <qlistview.h>
 #if QT_CONFIG(tableview)
 #include <qtableview.h>
@@ -72,16 +73,14 @@
 #include <private/qabstractitemmodel_p.h>
 #include <private/qabstractscrollarea_p.h>
 #include <private/qlineedit_p.h>
+#if QT_CONFIG(completer)
 #include <private/qcompleter_p.h>
-#include <qdebug.h>
-#if 0 /* Used to be included in Qt4 for Q_WS_MAC */ && QT_CONFIG(effetcts) && QT_CONFIG(style_mac)
-#include <private/qcore_mac_p.h>
-#include <private/qmacstyle_mac_p.h>
-#include <private/qt_cocoa_helpers_mac_p.h>
 #endif
+#include <qdebug.h>
 #if QT_CONFIG(effects)
 # include <private/qeffects_p.h>
 #endif
+#include <private/qstyle_p.h>
 #ifndef QT_NO_ACCESSIBILITY
 #include "qaccessible.h"
 #endif
@@ -204,7 +203,21 @@ void QComboBoxPrivate::_q_completerActivated(const QModelIndex &index)
     if (index.isValid() && q->completer()) {
         QAbstractProxyModel *proxy = qobject_cast<QAbstractProxyModel *>(q->completer()->completionModel());
         if (proxy) {
-            q->setCurrentIndex(proxy->mapToSource(index).row());
+            const QModelIndex &completerIndex = proxy->mapToSource(index);
+            int row = -1;
+            if (completerIndex.model() == model) {
+                row = completerIndex.row();
+            } else {
+                // if QCompleter uses a proxy model to host widget's one - map again
+                QAbstractProxyModel *completerProxy = qobject_cast<QAbstractProxyModel *>(q->completer()->model());
+                if (completerProxy && completerProxy->sourceModel() == model) {
+                    row = completerProxy->mapToSource(completerIndex).row();
+                } else {
+                    QString match = q->completer()->model()->data(completerIndex).toString();
+                    row = q->findText(match, matchFlags());
+                }
+            }
+            q->setCurrentIndex(row);
             emitActivated(currentIndex);
         }
     }
@@ -249,16 +262,11 @@ void QComboBoxPrivate::_q_modelDestroyed()
     model = QAbstractItemModelPrivate::staticEmptyModel();
 }
 
-
-//Windows and KDE allows menus to cover the taskbar, while GNOME and Mac don't
 QRect QComboBoxPrivate::popupGeometry(int screen) const
 {
-    bool useFullScreenForPopupMenu = false;
-    if (const QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme())
-        useFullScreenForPopupMenu = theme->themeHint(QPlatformTheme::UseFullScreenForPopupMenu).toBool();
-    return useFullScreenForPopupMenu ?
-           QApplication::desktop()->screenGeometry(screen) :
-           QApplication::desktop()->availableGeometry(screen);
+    return QStylePrivate::useFullScreenForPopup()
+        ? QDesktopWidgetPrivate::screenGeometry(screen)
+        : QDesktopWidgetPrivate::availableGeometry(screen);
 }
 
 bool QComboBoxPrivate::updateHoverControl(const QPoint &pos)
@@ -303,7 +311,7 @@ int QComboBoxPrivate::computeWidthHint() const
     const QFontMetrics &fontMetrics = q->fontMetrics();
 
     for (int i = 0; i < count; ++i) {
-        const int textWidth = fontMetrics.width(q->itemText(i));
+        const int textWidth = fontMetrics.horizontalAdvance(q->itemText(i));
         if (q->itemIcon(i).isNull())
             width = (qMax(width, textWidth));
         else
@@ -332,7 +340,7 @@ QSize QComboBoxPrivate::recomputeSizeHint(QSize &sh) const
             case QComboBox::AdjustToContents:
             case QComboBox::AdjustToContentsOnFirstShow:
                 if (count == 0) {
-                    sh.rwidth() = 7 * fm.width(QLatin1Char('x'));
+                    sh.rwidth() = 7 * fm.horizontalAdvance(QLatin1Char('x'));
                 } else {
                     for (int i = 0; i < count; ++i) {
                         if (!q->itemIcon(i).isNull()) {
@@ -355,7 +363,7 @@ QSize QComboBoxPrivate::recomputeSizeHint(QSize &sh) const
                 hasIcon = !q->itemIcon(i).isNull();
         }
         if (minimumContentsLength > 0)
-            sh.setWidth(qMax(sh.width(), minimumContentsLength * fm.width(QLatin1Char('X')) + (hasIcon ? iconSize.width() + 4 : 0)));
+            sh.setWidth(qMax(sh.width(), minimumContentsLength * fm.horizontalAdvance(QLatin1Char('X')) + (hasIcon ? iconSize.width() + 4 : 0)));
 
 
         // height
@@ -417,6 +425,20 @@ void QComboBoxPrivateContainer::resizeEvent(QResizeEvent *e)
         clearMask();
     }
     QFrame::resizeEvent(e);
+}
+
+void QComboBoxPrivateContainer::paintEvent(QPaintEvent *e)
+{
+    QStyleOptionComboBox cbOpt = comboStyleOption();
+    if (combo->style()->styleHint(QStyle::SH_ComboBox_Popup, &cbOpt, combo)
+            && mask().isEmpty()) {
+        QStyleOption opt;
+        opt.initFrom(this);
+        QPainter p(this);
+        style()->drawPrimitive(QStyle::PE_PanelMenu, &opt, &p, this);
+    }
+
+    QFrame::paintEvent(e);
 }
 
 void QComboBoxPrivateContainer::leaveEvent(QEvent *)
@@ -486,6 +508,14 @@ void QComboBoxPrivateContainer::scrollItemView(int action)
     if (view->verticalScrollBar())
         view->verticalScrollBar()->triggerAction(static_cast<QAbstractSlider::SliderAction>(action));
 #endif
+}
+
+void QComboBoxPrivateContainer::hideScrollers()
+{
+    if (top)
+        top->hide();
+    if (bottom)
+        bottom->hide();
 }
 
 /*
@@ -2614,7 +2644,7 @@ void QComboBox::showPopup()
     QComboBoxPrivateContainer* container = d->viewContainer();
     QRect listRect(style->subControlRect(QStyle::CC_ComboBox, &opt,
                                          QStyle::SC_ComboBoxListBoxPopup, this));
-    QRect screen = d->popupGeometry(QApplication::desktop()->screenNumber(this));
+    QRect screen = d->popupGeometry(QDesktopWidgetPrivate::screenNumber(this));
 
     QPoint below = mapToGlobal(listRect.bottomLeft());
     int belowHeight = screen.bottom() - below.y();
@@ -2749,6 +2779,11 @@ void QComboBox::showPopup()
     if (needHorizontalScrollBar) {
         listRect.adjust(0, 0, 0, sb->height());
     }
+
+    // Hide the scrollers here, so that the listrect gets the full height of the container
+    // If the scrollers are truly needed, the later call to container->updateScrollers()
+    // will make them visible again.
+    container->hideScrollers();
     container->setGeometry(listRect);
 
 #ifndef Q_OS_MAC
@@ -3121,7 +3156,6 @@ void QComboBoxPrivate::showPopupFromMouseEvent(QMouseEvent *e)
 #endif
             // We've restricted the next couple of lines, because by not calling
             // viewContainer(), we avoid creating the QComboBoxPrivateContainer.
-            viewContainer()->blockMouseReleaseTimer.start(QApplication::doubleClickInterval());
             viewContainer()->initialClickPosition = q->mapToGlobal(e->pos());
 #ifdef QT_KEYPAD_NAVIGATION
         }
@@ -3130,8 +3164,10 @@ void QComboBoxPrivate::showPopupFromMouseEvent(QMouseEvent *e)
         // The code below ensures that regular mousepress and pick item still works
         // If it was not called the viewContainer would ignore event since it didn't have
         // a mousePressEvent first.
-        if (viewContainer())
+        if (viewContainer()) {
+            viewContainer()->blockMouseReleaseTimer.start(QApplication::doubleClickInterval());
             viewContainer()->maybeIgnoreMouseButtonRelease = false;
+        }
     } else {
 #ifdef QT_KEYPAD_NAVIGATION
         if (QApplication::keypadNavigationEnabled() && sc == QStyle::SC_ComboBoxEditField && lineEdit) {
@@ -3180,7 +3216,7 @@ void QComboBox::keyPressEvent(QKeyEvent *e)
     case Qt::Key_Up:
         if (e->modifiers() & Qt::ControlModifier)
             break; // pass to line edit for auto completion
-        // fall through
+        Q_FALLTHROUGH();
     case Qt::Key_PageUp:
 #ifdef QT_KEYPAD_NAVIGATION
         if (QApplication::keypadNavigationEnabled())
@@ -3268,7 +3304,7 @@ void QComboBox::keyPressEvent(QKeyEvent *e)
         switch (move) {
         case MoveFirst:
             newIndex = -1;
-            // fall through
+            Q_FALLTHROUGH();
         case MoveDown:
             newIndex++;
             while (newIndex < rowCount && !(d->model->index(newIndex, d->modelColumn, d->root).flags() & Qt::ItemIsEnabled))
@@ -3276,7 +3312,7 @@ void QComboBox::keyPressEvent(QKeyEvent *e)
             break;
         case MoveLast:
             newIndex = rowCount;
-            // fall through
+            Q_FALLTHROUGH();
         case MoveUp:
             newIndex--;
             while ((newIndex >= 0) && !(d->model->flags(d->model->index(newIndex,d->modelColumn,d->root)) & Qt::ItemIsEnabled))
@@ -3315,11 +3351,11 @@ void QComboBox::keyReleaseEvent(QKeyEvent *e)
 #if QT_CONFIG(wheelevent)
 void QComboBox::wheelEvent(QWheelEvent *e)
 {
-#ifdef Q_OS_DARWIN
-    Q_UNUSED(e);
-#else
     Q_D(QComboBox);
-    if (!d->viewContainer()->isVisible()) {
+    QStyleOptionComboBox opt;
+    initStyleOption(&opt);
+    if (style()->styleHint(QStyle::SH_ComboBox_AllowWheelScrolling, &opt, this) &&
+        !d->viewContainer()->isVisible()) {
         const int rowCount = count();
         int newIndex = currentIndex();
 
@@ -3339,7 +3375,6 @@ void QComboBox::wheelEvent(QWheelEvent *e)
         }
         e->accept();
     }
-#endif
 }
 #endif
 

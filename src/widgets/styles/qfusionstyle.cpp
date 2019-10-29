@@ -208,55 +208,6 @@ static QColor mergedColors(const QColor &colorA, const QColor &colorB, int facto
     return tmp;
 }
 
-static QPixmap colorizedImage(const QString &fileName, const QColor &color, int rotation = 0) {
-
-    QString pixmapName = QLatin1String("$qt_ia-") % fileName % HexString<uint>(color.rgba()) % QString::number(rotation);
-    QPixmap pixmap;
-    if (!QPixmapCache::find(pixmapName, pixmap)) {
-        QImage image(fileName);
-
-        if (image.format() != QImage::Format_ARGB32_Premultiplied)
-            image = image.convertToFormat( QImage::Format_ARGB32_Premultiplied);
-
-        int width = image.width();
-        int height = image.height();
-        int source = color.rgba();
-
-        unsigned char sourceRed = qRed(source);
-        unsigned char sourceGreen = qGreen(source);
-        unsigned char sourceBlue = qBlue(source);
-
-        for (int y = 0; y < height; ++y)
-        {
-            QRgb *data = (QRgb*) image.scanLine(y);
-            for (int x = 0 ; x < width ; x++) {
-                QRgb col = data[x];
-                unsigned int colorDiff = (qBlue(col) - qRed(col));
-                unsigned char gray = qGreen(col);
-                unsigned char red = gray + qt_div_255(sourceRed * colorDiff);
-                unsigned char green = gray + qt_div_255(sourceGreen * colorDiff);
-                unsigned char blue = gray + qt_div_255(sourceBlue * colorDiff);
-                unsigned char alpha = qt_div_255(qAlpha(col) * qAlpha(source));
-                data[x] = qRgba(std::min(alpha, red),
-                                std::min(alpha, green),
-                                std::min(alpha, blue),
-                                alpha);
-            }
-        }
-        if (rotation != 0) {
-            QTransform transform;
-            transform.translate(-image.width()/2, -image.height()/2);
-            transform.rotate(rotation);
-            transform.translate(image.width()/2, image.height()/2);
-            image = image.transformed(transform);
-        }
-
-        pixmap = QPixmap::fromImage(image);
-        QPixmapCache::insert(pixmapName, pixmap);
-    }
-    return pixmap;
-}
-
 // The default button and handle gradient
 static QLinearGradient qt_fusion_gradient(const QRect &rect, const QBrush &baseColor, Direction direction = TopDown)
 {
@@ -294,6 +245,62 @@ static QLinearGradient qt_fusion_gradient(const QRect &rect, const QBrush &baseC
     return gradient;
 }
 
+static void qt_fusion_draw_arrow(Qt::ArrowType type, QPainter *painter, const QStyleOption *option, const QRect &rect, const QColor &color)
+{
+    if (rect.isEmpty())
+        return;
+
+    const int arrowWidth = QStyleHelper::dpiScaled(14);
+    const int arrowHeight = QStyleHelper::dpiScaled(8);
+
+    const int arrowMax = qMin(arrowHeight, arrowWidth);
+    const int rectMax = qMin(rect.height(), rect.width());
+    const int size = qMin(arrowMax, rectMax);
+
+    QPixmap cachePixmap;
+    QString cacheKey = QStyleHelper::uniqueName(QLatin1String("fusion-arrow"), option, rect.size())
+            % HexString<uint>(type)
+            % HexString<uint>(color.rgba());
+    if (!QPixmapCache::find(cacheKey, cachePixmap)) {
+        cachePixmap = styleCachePixmap(rect.size());
+        cachePixmap.fill(Qt::transparent);
+        QPainter cachePainter(&cachePixmap);
+
+        QRectF arrowRect;
+        arrowRect.setWidth(size);
+        arrowRect.setHeight(arrowHeight * size / arrowWidth);
+        if (type == Qt::LeftArrow || type == Qt::RightArrow)
+            arrowRect = arrowRect.transposed();
+        arrowRect.moveTo((rect.width() - arrowRect.width()) / 2.0,
+                         (rect.height() - arrowRect.height()) / 2.0);
+
+        QPolygonF triangle;
+        triangle.reserve(3);
+        switch (type) {
+        case Qt::DownArrow:
+            triangle << arrowRect.topLeft() << arrowRect.topRight() << QPointF(arrowRect.center().x(), arrowRect.bottom());
+            break;
+        case Qt::RightArrow:
+            triangle << arrowRect.topLeft() << arrowRect.bottomLeft() << QPointF(arrowRect.right(), arrowRect.center().y());
+            break;
+        case Qt::LeftArrow:
+            triangle << arrowRect.topRight() << arrowRect.bottomRight() << QPointF(arrowRect.left(), arrowRect.center().y());
+            break;
+        default:
+            triangle << arrowRect.bottomLeft() << arrowRect.bottomRight() << QPointF(arrowRect.center().x(), arrowRect.top());
+            break;
+        }
+
+        cachePainter.setPen(Qt::NoPen);
+        cachePainter.setBrush(color);
+        cachePainter.setRenderHint(QPainter::Antialiasing);
+        cachePainter.drawPolygon(triangle);
+
+        QPixmapCache::insert(cacheKey, cachePixmap);
+    }
+
+    painter->drawPixmap(rect, cachePixmap);
+}
 
 static void qt_fusion_draw_mdibutton(QPainter *painter, const QStyleOptionTitleBar *option, const QRect &tmp, bool hover, bool sunken)
 {
@@ -533,43 +540,22 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
         if (option->rect.width() <= 1 || option->rect.height() <= 1)
             break;
         QColor arrowColor = option->palette.foreground().color();
-        QPixmap arrow;
-        int rotation = 0;
+        arrowColor.setAlpha(160);
+        Qt::ArrowType arrow = Qt::UpArrow;
         switch (elem) {
         case PE_IndicatorArrowDown:
-            rotation = 180;
+            arrow = Qt::DownArrow;
             break;
         case PE_IndicatorArrowRight:
-            rotation = 90;
+            arrow = Qt::RightArrow;
             break;
         case PE_IndicatorArrowLeft:
-            rotation = -90;
+            arrow = Qt::LeftArrow;
             break;
         default:
             break;
         }
-        arrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor, rotation);
-        if (arrow.isNull())
-            break;
-
-        QRect rect = option->rect;
-        QRect arrowRect;
-        int imageMax = qMin(arrow.height(), arrow.width());
-        int rectMax = qMin(rect.height(), rect.width());
-        int size = qMin(imageMax, rectMax);
-
-        arrowRect.setWidth(size);
-        arrowRect.setHeight(size);
-        if (arrow.width() > arrow.height())
-            arrowRect.setHeight(arrow.height() * size / arrow.width());
-        else
-            arrowRect.setWidth(arrow.width() * size / arrow.height());
-
-        arrowRect.moveTopLeft(rect.center() - arrowRect.center());
-        painter->save();
-        painter->setRenderHint(QPainter::SmoothPixmapTransform);
-        painter->drawPixmap(arrowRect, arrow);
-        painter->restore();
+        qt_fusion_draw_arrow(arrow, painter, option, option->rect, arrowColor);
     }
         break;
     case PE_IndicatorViewItemCheck:
@@ -583,29 +569,23 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
     case PE_IndicatorHeaderArrow:
         if (const QStyleOptionHeader *header = qstyleoption_cast<const QStyleOptionHeader *>(option)) {
             QRect r = header->rect;
-            QPixmap arrow;
             QColor arrowColor = header->palette.foreground().color();
-            QPoint offset = QPoint(0, -1);
+            arrowColor.setAlpha(180);
+            QPoint offset = QPoint(0, -2);
 
 #if defined(Q_OS_LINUX)
             if (header->sortIndicator & QStyleOptionHeader::SortUp) {
-                arrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor);
+                qt_fusion_draw_arrow(Qt::UpArrow, painter, option, r.translated(offset), arrowColor);
             } else if (header->sortIndicator & QStyleOptionHeader::SortDown) {
-                arrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor, 180);
+                qt_fusion_draw_arrow(Qt::DownArrow, painter, option, r.translated(offset), arrowColor);
             }
 #else
             if (header->sortIndicator & QStyleOptionHeader::SortUp) {
-                arrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor, 180);
+                qt_fusion_draw_arrow(Qt::DownArrow, painter, option, r.translated(offset), arrowColor);
             } else if (header->sortIndicator & QStyleOptionHeader::SortDown) {
-                arrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor);
+                qt_fusion_draw_arrow(Qt::UpArrow, painter, option, r.translated(offset), arrowColor);
             }
 #endif
-
-            if (!arrow.isNull()) {
-                r.setSize(QSize(arrow.width()/2, arrow.height()/2));
-                r.moveCenter(header->rect.center());
-                painter->drawPixmap(r.translated(offset), arrow);
-            }
         }
         break;
     case PE_IndicatorButtonDropDown:
@@ -745,7 +725,6 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
 
         // Draw Outline
         painter->setPen( QPen(hasFocus ? highlightedOutline : outline));
-        painter->setBrush(option->palette.base());
         painter->drawRoundedRect(r.adjusted(0, 0, -1, -1), 2, 2);
 
         if (hasFocus) {
@@ -1452,14 +1431,14 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
                 painter->drawRoundedRect(progressBar.adjusted(1, 1, -1, -1), 1, 1);
 
                 if (!indeterminate) {
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
                     (const_cast<QFusionStylePrivate*>(d))->stopAnimation(option->styleObject);
 #endif
                 } else {
                     highlightedGradientStartColor.setAlpha(120);
                     painter->setPen(QPen(highlightedGradientStartColor, 9.0));
                     painter->setClipRect(progressBar.adjusted(1, 1, -1, -1));
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
                 if (QProgressStyleAnimation *animation = qobject_cast<QProgressStyleAnimation*>(d->animation(option->styleObject)))
                     step = animation->animationStep() % 22;
                 else
@@ -1556,17 +1535,18 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             QColor highlight = option->palette.highlight().color();
             if (menuItem->menuItemType == QStyleOptionMenuItem::Separator) {
                 int w = 0;
+                const int margin = QStyleHelper::dpiScaled(5);
                 if (!menuItem->text.isEmpty()) {
                     painter->setFont(menuItem->font);
-                    proxy()->drawItemText(painter, menuItem->rect.adjusted(5, 0, -5, 0), Qt::AlignLeft | Qt::AlignVCenter,
+                    proxy()->drawItemText(painter, menuItem->rect.adjusted(margin, 0, -margin, 0), Qt::AlignLeft | Qt::AlignVCenter,
                                           menuItem->palette, menuItem->state & State_Enabled, menuItem->text,
                                           QPalette::Text);
-                    w = menuItem->fontMetrics.width(menuItem->text) + 5;
+                    w = menuItem->fontMetrics.horizontalAdvance(menuItem->text) + margin;
                 }
                 painter->setPen(shadow.lighter(106));
                 bool reverse = menuItem->direction == Qt::RightToLeft;
-                painter->drawLine(menuItem->rect.left() + 5 + (reverse ? 0 : w), menuItem->rect.center().y(),
-                                  menuItem->rect.right() - 5 - (reverse ? w : 0), menuItem->rect.center().y());
+                painter->drawLine(menuItem->rect.left() + margin + (reverse ? 0 : w), menuItem->rect.center().y(),
+                                  menuItem->rect.right() - margin - (reverse ? w : 0), menuItem->rect.center().y());
                 painter->restore();
                 break;
             }
@@ -2060,7 +2040,7 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                 QRect r = rect.adjusted(0, 1, 0, -1);
                 QPainter cachePainter(&cache);
                 QColor arrowColor = spinBox->palette.foreground().color();
-                arrowColor.setAlpha(220);
+                arrowColor.setAlpha(160);
 
                 bool isEnabled = (spinBox->state & State_Enabled);
                 bool hover = isEnabled && (spinBox->state & State_MouseOver);
@@ -2171,23 +2151,10 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
 
                 } else if (spinBox->buttonSymbols == QAbstractSpinBox::UpDownArrows){
                     // arrows
-                    painter->setRenderHint(QPainter::SmoothPixmapTransform);
-
-                    QPixmap upArrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"),
-                                                     (spinBox->stepEnabled & QAbstractSpinBox::StepUpEnabled) ? arrowColor : disabledColor);
-
-                    QRectF upArrowRect = QRectF(upRect.center().x() - upArrow.width() / 4.0 + 1.0,
-                                                upRect.center().y() - upArrow.height() / 4.0 + 1.0,
-                                                upArrow.width() / 2.0, upArrow.height() / 2.0);
-
-                    cachePainter.drawPixmap(upArrowRect, upArrow, QRectF(QPointF(0.0, 0.0), upArrow.size()));
-
-                    QPixmap downArrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"),
-                                                       (spinBox->stepEnabled & QAbstractSpinBox::StepDownEnabled) ? arrowColor : disabledColor, 180);
-                    QRectF downArrowRect = QRectF(downRect.center().x() - downArrow.width() / 4.0 + 1.0,
-                                                  downRect.center().y() - downArrow.height() / 4.0 + 1.0,
-                                                  downArrow.width() / 2.0, downArrow.height() / 2.0);
-                    cachePainter.drawPixmap(downArrowRect, downArrow, QRectF(QPointF(0.0, 0.0), downArrow.size()));
+                    qt_fusion_draw_arrow(Qt::UpArrow, &cachePainter, option, upRect.adjusted(0, 0, 0, 1),
+                                         (spinBox->stepEnabled & QAbstractSpinBox::StepUpEnabled) ? arrowColor : disabledColor);
+                    qt_fusion_draw_arrow(Qt::DownArrow, &cachePainter, option, downRect,
+                                         (spinBox->stepEnabled & QAbstractSpinBox::StepDownEnabled) ? arrowColor : disabledColor);
                 }
 
                 cachePainter.end();
@@ -2424,8 +2391,7 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                     bool hover = (titleBar->activeSubControls & SC_TitleBarShadeButton) && (titleBar->state & State_MouseOver);
                     bool sunken = (titleBar->activeSubControls & SC_TitleBarShadeButton) && (titleBar->state & State_Sunken);
                     qt_fusion_draw_mdibutton(painter, titleBar, shadeButtonRect, hover, sunken);
-                    QPixmap arrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), textColor);
-                    painter->drawPixmap(shadeButtonRect.adjusted(5, 7, -5, -7), arrow);
+                    qt_fusion_draw_arrow(Qt::UpArrow, painter, option, shadeButtonRect.adjusted(5, 7, -5, -7), textColor);
                 }
             }
 
@@ -2436,8 +2402,7 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                     bool hover = (titleBar->activeSubControls & SC_TitleBarUnshadeButton) && (titleBar->state & State_MouseOver);
                     bool sunken = (titleBar->activeSubControls & SC_TitleBarUnshadeButton) && (titleBar->state & State_Sunken);
                     qt_fusion_draw_mdibutton(painter, titleBar, unshadeButtonRect, hover, sunken);
-                    QPixmap arrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), textColor, 180);
-                    painter->drawPixmap(unshadeButtonRect.adjusted(5, 7, -5, -7), arrow);
+                    qt_fusion_draw_arrow(Qt::DownArrow, painter, option, unshadeButtonRect.adjusted(5, 7, -5, -7), textColor);
                 }
             }
 
@@ -2500,7 +2465,7 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                     styleObject->setProperty("_q_stylestate", static_cast<QStyle::State::Int>(scrollBar->state));
                     styleObject->setProperty("_q_stylecontrols", static_cast<uint>(scrollBar->activeSubControls));
 
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
                     // if the scrollbar is transient or its attributes, geometry or
                     // state has changed, the opacity is reset back to 100% opaque
                     opacity = 1.0;
@@ -2518,10 +2483,10 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                     } else if (anim && anim->mode() == QScrollbarStyleAnimation::Deactivating) {
                         d->stopAnimation(styleObject);
                     }
-#endif // !QT_NO_ANIMATION
+#endif // animation
                 }
 
-#ifndef QT_NO_ANIMATION
+#if QT_CONFIG(animation)
                 QScrollbarStyleAnimation *anim = qobject_cast<QScrollbarStyleAnimation *>(d->animation(styleObject));
                 if (anim && anim->mode() == QScrollbarStyleAnimation::Deactivating) {
                     // once a scrollbar was active (hovered/pressed), it retains
@@ -2550,7 +2515,7 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                     }
                 }
                 painter->setOpacity(opacity);
-#endif // !QT_NO_ANIMATION
+#endif // animation
             }
 
             bool transient = proxy()->styleHint(SH_ScrollBar_Transient, option, widget);
@@ -2567,7 +2532,7 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
             alphaOutline.setAlpha(180);
 
             QColor arrowColor = option->palette.foreground().color();
-            arrowColor.setAlpha(220);
+            arrowColor.setAlpha(160);
 
             const QColor bgColor = QStyleHelper::backgroundColor(option->palette, widget);
             const bool isDarkBg = bgColor.red() < 128 && bgColor.green() < 128 && bgColor.blue() < 128;
@@ -2711,20 +2676,16 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                     painter->drawLine(pixmapRect.bottomLeft(), pixmapRect.bottomRight());
                 }
 
+                QRect upRect = scrollBarSubLine.adjusted(horizontal ? 0 : 1, horizontal ? 1 : 0, horizontal ? -2 : -1, horizontal ? -1 : -2);
                 painter->setBrush(Qt::NoBrush);
                 painter->setPen(d->innerContrastLine());
-                painter->drawRect(scrollBarSubLine.adjusted(horizontal ? 0 : 1, horizontal ? 1 : 0 ,  horizontal ? -2 : -1, horizontal ? -1 : -2));
+                painter->drawRect(upRect);
 
                 // Arrows
-                int rotation = 0;
+                Qt::ArrowType arrowType = Qt::UpArrow;
                 if (option->state & State_Horizontal)
-                    rotation = option->direction == Qt::LeftToRight ? -90 : 90;
-                QRect upRect = scrollBarSubLine.translated(horizontal ? -2 : -1, 0);
-                QPixmap arrowPixmap = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor, rotation);
-                painter->drawPixmap(QRectF(upRect.center().x() - arrowPixmap.width() / 4.0  + 2.0,
-                                          upRect.center().y() - arrowPixmap.height() / 4.0 + 1.0,
-                                          arrowPixmap.width() / 2.0, arrowPixmap.height() / 2.0),
-                                          arrowPixmap, QRectF(QPoint(0.0, 0.0), arrowPixmap.size()));
+                    arrowType = option->direction == Qt::LeftToRight ? Qt::LeftArrow : Qt::RightArrow;
+                qt_fusion_draw_arrow(arrowType, painter, option, upRect, arrowColor);
             }
 
             // The AddLine (down/right) button
@@ -2752,19 +2713,15 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                     painter->drawLine(pixmapRect.topLeft(), pixmapRect.topRight());
                 }
 
+                QRect downRect = scrollBarAddLine.adjusted(1, 1, -1, -1);
                 painter->setPen(d->innerContrastLine());
                 painter->setBrush(Qt::NoBrush);
-                painter->drawRect(scrollBarAddLine.adjusted(1, 1, -1, -1));
+                painter->drawRect(downRect);
 
-                int rotation = 180;
+                Qt::ArrowType arrowType = Qt::DownArrow;
                 if (option->state & State_Horizontal)
-                    rotation = option->direction == Qt::LeftToRight ? 90 : -90;
-                QRect downRect = scrollBarAddLine.translated(-1, 1);
-                QPixmap arrowPixmap = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor, rotation);
-                painter->drawPixmap(QRectF(downRect.center().x() - arrowPixmap.width() / 4.0 + 2.0,
-                                           downRect.center().y() - arrowPixmap.height() / 4.0,
-                                           arrowPixmap.width() / 2.0, arrowPixmap.height() / 2.0),
-                                           arrowPixmap, QRectF(QPoint(0.0, 0.0), arrowPixmap.size()));
+                    arrowType = option->direction == Qt::LeftToRight ? Qt::RightArrow : Qt::LeftArrow;
+                qt_fusion_draw_arrow(arrowType, painter, option, downRect, arrowColor);
             }
 
         }
@@ -2785,6 +2742,8 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                 pixmapName += QLatin1String("-editable");
             if (isEnabled)
                 pixmapName += QLatin1String("-enabled");
+            if (!comboBox->frame)
+                pixmapName += QLatin1String("-frameless");
 
             if (!QPixmapCache::find(pixmapName, cache)) {
                 cache = styleCachePixmap(comboBox->rect.size());
@@ -2810,7 +2769,16 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                         buttonOption.state &= ~State_MouseOver;
                     }
 
-                    proxy()->drawPrimitive(PE_FrameLineEdit, &buttonOption, &cachePainter, widget);
+                    if (comboBox->frame) {
+                        cachePainter.save();
+                        cachePainter.setRenderHint(QPainter::Antialiasing, true);
+                        cachePainter.translate(0.5, 0.5);
+                        cachePainter.setPen(Qt::NoPen);
+                        cachePainter.setBrush(buttonOption.palette.base());
+                        cachePainter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 2, 2);
+                        cachePainter.restore();
+                        proxy()->drawPrimitive(PE_FrameLineEdit, &buttonOption, &cachePainter, widget);
+                    }
 
                     // Draw button clipped
                     cachePainter.save();
@@ -2854,12 +2822,8 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
                 if (comboBox->subControls & SC_ComboBoxArrow) {
                     // Draw the up/down arrow
                     QColor arrowColor = option->palette.buttonText().color();
-                    arrowColor.setAlpha(220);
-                    QPixmap downArrow = colorizedImage(QLatin1String(":/qt-project.org/styles/commonstyle/images/fusion_arrow.png"), arrowColor, 180);
-                    cachePainter.drawPixmap(QRectF(downArrowRect.center().x() - downArrow.width() / 4.0 + 1.0,
-                                                   downArrowRect.center().y() - downArrow.height() / 4.0 + 1.0,
-                                                   downArrow.width() / 2.0, downArrow.height() / 2.0),
-                                                   downArrow, QRectF(QPointF(0.0, 0.0), downArrow.size()));
+                    arrowColor.setAlpha(160);
+                    qt_fusion_draw_arrow(Qt::DownArrow, &cachePainter, option, downArrowRect, arrowColor);
                 }
                 cachePainter.end();
                 QPixmapCache::insert(pixmapName, cache);
@@ -3263,17 +3227,17 @@ QSize QFusionStyle::sizeFromContents(ContentsType type, const QStyleOption *opti
             if (menuItem->text.contains(QLatin1Char('\t')))
                 w += tabSpacing;
             else if (menuItem->menuItemType == QStyleOptionMenuItem::SubMenu)
-                w += 2 * QFusionStylePrivate::menuArrowHMargin;
+                w += 2 * QStyleHelper::dpiScaled(QFusionStylePrivate::menuArrowHMargin);
             else if (menuItem->menuItemType == QStyleOptionMenuItem::DefaultItem) {
                 QFontMetrics fm(menuItem->font);
                 QFont fontBold = menuItem->font;
                 fontBold.setBold(true);
                 QFontMetrics fmBold(fontBold);
-                w += fmBold.width(menuItem->text) - fm.width(menuItem->text);
+                w += fmBold.width(menuItem->text) - fm.horizontalAdvance(menuItem->text);
             }
-            int checkcol = qMax<int>(maxpmw, QFusionStylePrivate::menuCheckMarkWidth); // Windows always shows a check column
+            const int checkcol = qMax<int>(maxpmw, QStyleHelper::dpiScaled(QFusionStylePrivate::menuCheckMarkWidth)); // Windows always shows a check column
             w += checkcol;
-            w += int(QFusionStylePrivate::menuRightBorder) + 10;
+            w += QStyleHelper::dpiScaled(int(QFusionStylePrivate::menuRightBorder) + 10);
             newSize.setWidth(w);
             if (menuItem->menuItemType == QStyleOptionMenuItem::Separator) {
                 if (!menuItem->text.isEmpty()) {
@@ -3287,8 +3251,8 @@ QSize QFusionStyle::sizeFromContents(ContentsType type, const QStyleOption *opti
                 }
 #endif
             }
-            newSize.setWidth(newSize.width() + 12);
-            newSize.setWidth(qMax(newSize.width(), 120));
+            newSize.setWidth(newSize.width() + QStyleHelper::dpiScaled(12));
+            newSize.setWidth(qMax<int>(newSize.width(), QStyleHelper::dpiScaled(120)));
         }
         break;
     case CT_SizeGrip:
@@ -3551,15 +3515,15 @@ QRect QFusionStyle::subControlRect(ComplexControl control, const QStyleOptionCom
         switch (subControl) {
         case SC_ComboBoxArrow:
             rect = visualRect(option->direction, option->rect, rect);
-            rect.setRect(rect.right() - 18, rect.top() - 2,
-                         19, rect.height() + 4);
+            rect.setRect(rect.right() - QStyleHelper::dpiScaled(18), rect.top() - 2,
+                         QStyleHelper::dpiScaled(19), rect.height() + 4);
             rect = visualRect(option->direction, option->rect, rect);
             break;
         case SC_ComboBoxEditField: {
             int frameWidth = 2;
             rect = visualRect(option->direction, option->rect, rect);
             rect.setRect(option->rect.left() + frameWidth, option->rect.top() + frameWidth,
-                         option->rect.width() - 19 - 2 * frameWidth,
+                         option->rect.width() - int(QStyleHelper::dpiScaled(19)) - 2 * frameWidth,
                          option->rect.height() - 2 * frameWidth);
             if (const QStyleOptionComboBox *box = qstyleoption_cast<const QStyleOptionComboBox *>(option)) {
                 if (!box->editable) {
@@ -3821,6 +3785,19 @@ QRect QFusionStyle::subElementRect(SubElement sr, const QStyleOption *opt, const
 QIcon QFusionStyle::standardIcon(StandardPixmap standardIcon, const QStyleOption *option,
                                  const QWidget *widget) const
 {
+#if QT_CONFIG(imageformat_xpm)
+    switch (standardIcon) {
+    case SP_TitleBarNormalButton:
+        return QIcon(QPixmap(dock_widget_restore_xpm));
+    case SP_TitleBarMinButton:
+        return QIcon(QPixmap(workspace_minimize));
+    case SP_TitleBarCloseButton:
+    case SP_DockWidgetCloseButton:
+        return QIcon(QPixmap(dock_widget_close_xpm));
+    default:
+        break;
+    }
+#endif // imageformat_xpm
     return QCommonStyle::standardIcon(standardIcon, option, widget);
 }
 

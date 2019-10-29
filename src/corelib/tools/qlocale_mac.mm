@@ -150,7 +150,7 @@ static QString macTimeToString(const QTime &time, bool short_format)
 // See also qtbase/util/local_database/dateconverter.py
 // Makes the assumption that input formats are always well formed and consecutive letters
 // never exceed the maximum for the format code.
-static QString macToQtFormat(const QString &sys_fmt)
+static QString macToQtFormat(QStringView sys_fmt)
 {
     QString result;
     int i = 0;
@@ -166,7 +166,7 @@ static QString macToQtFormat(const QString &sys_fmt)
         }
 
         QChar c = sys_fmt.at(i);
-        int repeat = qt_repeatCount(sys_fmt, i);
+        int repeat = qt_repeatCount(sys_fmt.mid(i));
 
         switch (c.unicode()) {
             // Qt does not support the following options
@@ -332,6 +332,17 @@ static QString macCurrencySymbol(QLocale::CurrencySymbolFormat format)
     return QString();
 }
 
+static QString macZeroDigit()
+{
+    QCFType<CFLocaleRef> locale = CFLocaleCopyCurrent();
+    QCFType<CFNumberFormatterRef> numberFormatter =
+            CFNumberFormatterCreate(nullptr, locale, kCFNumberFormatterNoStyle);
+    static const int zeroDigit = 0;
+    QCFType<CFStringRef> value = CFNumberFormatterCreateStringWithValue(nullptr, numberFormatter,
+                                                                        kCFNumberIntType, &zeroDigit);
+    return QString::fromCFString(value);
+}
+
 #ifndef QT_NO_SYSTEMLOCALE
 static QString macFormatCurrency(const QSystemLocale::CurrencyToStringArgument &arg)
 {
@@ -437,8 +448,9 @@ QVariant QSystemLocale::query(QueryType type, QVariant in = QVariant()) const
 
     case NegativeSign:
     case PositiveSign:
-    case ZeroDigit:
         break;
+    case ZeroDigit:
+        return QVariant(macZeroDigit());
 
     case MeasurementSystem:
         return QVariant(static_cast<int>(macMeasurementSystem()));

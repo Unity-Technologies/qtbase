@@ -254,6 +254,8 @@ void tst_QFtp::init()
     } else {
         networkSessionExplicit.clear();
     }
+#else
+    Q_UNUSED(setSession);
 #endif
 
     delete ftp;
@@ -282,8 +284,7 @@ void tst_QFtp::init()
 
     inFileDirExistsFunction = false;
 
-    srand(time(0));
-    uniqueExtension = QString::number((quintptr)this) + QString::number(rand())
+    uniqueExtension = QString::number((quintptr)this) + QString::number(QRandomGenerator::global()->generate())
         + QString::number((qulonglong)time(0));
 }
 
@@ -2077,8 +2078,6 @@ void tst_QFtp::doneSignal()
     if (QTestEventLoop::instance().timeout())
         QFAIL("Network operation timed out");
 
-    QTest::qWait(200);
-
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.first().first().toBool(), false);
 }
@@ -2343,7 +2342,7 @@ void tst_QFtp::loginURL()
 
     ftp = newFtp();
     addCommand(QFtp::ConnectToHost,
-               ftp->connectToHost(QHostInfo::localHostName(), port));
+               ftp->connectToHost("127.0.0.1", port));
     addCommand(QFtp::Login, ftp->login(user, password));
 
     QTestEventLoop::instance().enterLoop(5);
@@ -2351,7 +2350,7 @@ void tst_QFtp::loginURL()
     ftp = nullptr;
     server.stopServer();
     if (QTestEventLoop::instance().timeout())
-        QFAIL(msgTimedOut(QHostInfo::localHostName(), port));
+        QFAIL(msgTimedOut("127.0.0.1", port));
 
     QCOMPARE(server.getRawUser(), rawUser);
     QCOMPARE(server.getRawPassword(), rawPass);

@@ -45,6 +45,7 @@
 #include "qapplication.h"
 #include "qevent.h"
 #include "qlist.h"
+#include "qstylehints.h"
 #include <private/qshortcutmap_p.h>
 #include <private/qapplication_p.h>
 #if QT_CONFIG(menu)
@@ -65,7 +66,7 @@ QT_BEGIN_NAMESPACE
  */
 static QString qt_strippedText(QString s)
 {
-    s.remove(QStringLiteral("..."));
+    s.remove(QLatin1String("..."));
     for (int i = 0; i < s.size(); ++i) {
         if (s.at(i) == QLatin1Char('&'))
             s.remove(i, 1);
@@ -77,6 +78,7 @@ static QString qt_strippedText(QString s)
 QActionPrivate::QActionPrivate() : group(0), enabled(1), forceDisabled(0),
                                    visible(1), forceInvisible(0), checkable(0), checked(0), separator(0), fontSet(false),
                                    iconVisibleInMenu(-1),
+                                   shortcutVisibleInContextMenu(-1),
                                    menuRole(QAction::TextHeuristicRole),
                                    priority(QAction::NormalPriority)
 {
@@ -230,10 +232,6 @@ void QActionPrivate::setShortcutEnabled(bool enable, QShortcutMap &map)
     the action. For example:
 
     \snippet mainwindows/application/mainwindow.cpp 19
-    \codeline
-    \code
-    fileMenu->addAction(openAct);
-    \endcode
 
     We recommend that actions are created as children of the window
     they are used in. In most cases actions will be children of
@@ -966,7 +964,10 @@ void QAction::toggle()
     Only checkable actions can be checked.  By default, this is false
     (the action is unchecked).
 
-    \sa checkable
+    \note The notifier signal for this property is toggled(). As toggling
+    a QAction changes its state, it will also emit a changed() signal.
+
+    \sa checkable, toggled()
 */
 void QAction::setChecked(bool b)
 {
@@ -1086,7 +1087,7 @@ QAction::event(QEvent *e)
                    "QAction::event",
                    "Received shortcut event from incorrect shortcut");
         if (se->isAmbiguous())
-            qWarning("QAction::eventFilter: Ambiguous shortcut overload: %s", se->key().toString(QKeySequence::NativeText).toLatin1().constData());
+            qWarning("QAction::event: Ambiguous shortcut overload: %s", se->key().toString(QKeySequence::NativeText).toLatin1().constData());
         else
             activate(Trigger);
         return true;
@@ -1188,7 +1189,8 @@ void QAction::activate(ActionEvent event)
 
     This signal is emitted whenever a checkable action changes its
     isChecked() status. This can be the result of a user interaction,
-    or because setChecked() was called.
+    or because setChecked() was called. As setChecked() changes the
+    QAction, it emits changed() in addition to toggled().
 
     \a checked is true if the action is checked, or false if the
     action is unchecked.
@@ -1282,8 +1284,7 @@ void QAction::setIconVisibleInMenu(bool visible)
         d->iconVisibleInMenu = visible;
         // Only send data changed if we really need to.
         if (oldValue != -1
-            || (oldValue == -1
-                && visible == !QApplication::instance()->testAttribute(Qt::AA_DontShowIconsInMenus))) {
+            || visible == !QApplication::instance()->testAttribute(Qt::AA_DontShowIconsInMenus)) {
             d->sendDataChanged();
         }
     }
@@ -1296,6 +1297,45 @@ bool QAction::isIconVisibleInMenu() const
         return !QApplication::instance()->testAttribute(Qt::AA_DontShowIconsInMenus);
     }
     return d->iconVisibleInMenu;
+}
+
+/*!
+    \property QAction::shortcutVisibleInContextMenu
+    \brief Whether or not an action should show a shortcut in a context menu
+    \since 5.10
+
+    In some applications, it may make sense to have actions with shortcuts in
+    context menus. If true, the shortcut (if valid) is shown when the action is
+    shown via a context menu, when it is false, it is not shown.
+
+    The default is to follow whether the Qt::AA_DontShowShortcutsInContextMenus attribute
+    is set for the application, falling back to the widget style hint.
+    Explicitly setting this property overrides the presence (or abscence) of the attribute.
+
+    \sa QAction::shortcut, QCoreApplication::setAttribute()
+*/
+void QAction::setShortcutVisibleInContextMenu(bool visible)
+{
+    Q_D(QAction);
+    if (d->shortcutVisibleInContextMenu == -1 || visible != bool(d->shortcutVisibleInContextMenu)) {
+        int oldValue = d->shortcutVisibleInContextMenu;
+        d->shortcutVisibleInContextMenu = visible;
+        // Only send data changed if we really need to.
+        if (oldValue != -1
+            || visible == !QApplication::instance()->testAttribute(Qt::AA_DontShowShortcutsInContextMenus)) {
+            d->sendDataChanged();
+        }
+    }
+}
+
+bool QAction::isShortcutVisibleInContextMenu() const
+{
+    Q_D(const QAction);
+    if (d->shortcutVisibleInContextMenu == -1) {
+        return !QCoreApplication::testAttribute(Qt::AA_DontShowShortcutsInContextMenus)
+            && QGuiApplication::styleHints()->showShortcutsInContextMenus();
+    }
+    return d->shortcutVisibleInContextMenu;
 }
 
 #ifndef QT_NO_DEBUG_STREAM

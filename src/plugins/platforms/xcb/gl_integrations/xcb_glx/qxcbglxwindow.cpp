@@ -41,6 +41,7 @@
 
 #include "qxcbscreen.h"
 #include <QtGlxSupport/private/qglxconvenience_p.h>
+#include <QDebug>
 
 QT_BEGIN_NAMESPACE
 
@@ -57,14 +58,29 @@ const xcb_visualtype_t *QXcbGlxWindow::createVisual()
 {
     QXcbScreen *scr = xcbScreen();
     if (!scr)
-        return Q_NULLPTR;
-    XVisualInfo *visualInfo = qglx_findVisualInfo(DISPLAY_FROM_XCB(scr), scr->screenNumber(), &m_format);
+        return nullptr;
+
+    qCDebug(lcQpaGl) << "Requested format before FBConfig/Visual selection:" << m_format;
+
+    Display *dpy = static_cast<Display *>(scr->connection()->xlib_display());
+    const char *glxExts = glXQueryExtensionsString(dpy, scr->screenNumber());
+    int flags = 0;
+    if (glxExts) {
+        qCDebug(lcQpaGl, "Available GLX extensions: %s", glxExts);
+        if (strstr(glxExts, "GLX_EXT_framebuffer_sRGB") || strstr(glxExts, "GLX_ARB_framebuffer_sRGB"))
+            flags |= QGLX_SUPPORTS_SRGB;
+    }
+
+    XVisualInfo *visualInfo = qglx_findVisualInfo(dpy, scr->screenNumber(), &m_format, GLX_WINDOW_BIT, flags);
     if (!visualInfo) {
         qWarning() << "No XVisualInfo for format" << m_format;
-        return Q_NULLPTR;
+        return nullptr;
     }
     const xcb_visualtype_t *xcb_visualtype = scr->visualForId(visualInfo->visualid);
     XFree(visualInfo);
+
+    qCDebug(lcQpaGl) << "Got format:" << m_format;
+
     return xcb_visualtype;
 }
 

@@ -64,6 +64,7 @@ class Q_GUI_EXPORT QStyleHints : public QObject
     Q_PROPERTY(bool setFocusOnTouchRelease READ setFocusOnTouchRelease STORED false CONSTANT FINAL)
     Q_PROPERTY(bool showIsFullScreen READ showIsFullScreen STORED false CONSTANT FINAL)
     Q_PROPERTY(bool showIsMaximized READ showIsMaximized STORED false CONSTANT FINAL)
+    Q_PROPERTY(bool showShortcutsInContextMenus READ showShortcutsInContextMenus STORED false CONSTANT FINAL)
     Q_PROPERTY(int startDragDistance READ startDragDistance NOTIFY startDragDistanceChanged FINAL)
     Q_PROPERTY(int startDragTime READ startDragTime NOTIFY startDragTimeChanged FINAL)
     Q_PROPERTY(int startDragVelocity READ startDragVelocity STORED false CONSTANT FINAL)
@@ -72,6 +73,7 @@ class Q_GUI_EXPORT QStyleHints : public QObject
     Q_PROPERTY(bool singleClickActivation READ singleClickActivation STORED false CONSTANT FINAL)
     Q_PROPERTY(bool useHoverEffects READ useHoverEffects WRITE setUseHoverEffects NOTIFY useHoverEffectsChanged FINAL)
     Q_PROPERTY(int wheelScrollLines READ wheelScrollLines NOTIFY wheelScrollLinesChanged FINAL)
+    Q_PROPERTY(int mouseQuickSelectionThreshold READ mouseQuickSelectionThreshold WRITE setMouseQuickSelectionThreshold NOTIFY mouseQuickSelectionThresholdChanged FINAL)
 
 public:
     void setMouseDoubleClickInterval(int mouseDoubleClickInterval);
@@ -90,6 +92,7 @@ public:
     int cursorFlashTime() const;
     bool showIsFullScreen() const;
     bool showIsMaximized() const;
+    bool showShortcutsInContextMenus() const;
     int passwordMaskDelay() const;
     QChar passwordMaskCharacter() const;
     qreal fontSmoothingGamma() const;
@@ -102,6 +105,8 @@ public:
     void setUseHoverEffects(bool useHoverEffects);
     int wheelScrollLines() const;
     void setWheelScrollLines(int scrollLines);
+    void setMouseQuickSelectionThreshold(int threshold);
+    int mouseQuickSelectionThreshold() const;
 
 Q_SIGNALS:
     void cursorFlashTimeChanged(int cursorFlashTime);
@@ -113,6 +118,7 @@ Q_SIGNALS:
     void tabFocusBehaviorChanged(Qt::TabFocusBehavior tabFocusBehavior);
     void useHoverEffectsChanged(bool useHoverEffects);
     void wheelScrollLinesChanged(int scrollLines);
+    void mouseQuickSelectionThresholdChanged(int threshold);
 
 private:
     friend class QGuiApplication;

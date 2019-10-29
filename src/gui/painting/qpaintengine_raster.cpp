@@ -50,6 +50,7 @@
 #include <qdebug.h>
 #include <qbitmap.h>
 #include <qmath.h>
+#include <qrandom.h>
 
 //   #include <private/qdatabuffer_p.h>
 //   #include <private/qpainter_p.h>
@@ -640,6 +641,7 @@ QRasterPaintEngineState::QRasterPaintEngineState()
     txscale = 1.;
 
     flags.fast_pen = true;
+    flags.non_complex_pen = false;
     flags.antialiased = false;
     flags.bilinear = false;
     flags.legacy_rounding = false;
@@ -696,6 +698,11 @@ void QRasterPaintEngine::setState(QPainterState *s)
 {
     Q_D(QRasterPaintEngine);
     QPaintEngineEx::setState(s);
+    QRasterPaintEngineState *t = state();
+    if (t->clip && t->clip->enabled != t->clipEnabled) {
+        // Since we do not "detach" clipdata when changing only enabled state, we need to resync state here
+        t->clip->enabled = t->clipEnabled;
+    }
     d->rasterBuffer->compositionMode = s->composition_mode;
 }
 
@@ -789,7 +796,7 @@ void QRasterPaintEngine::updatePen(const QPen &pen)
     s->flags.fast_pen = pen_style > Qt::NoPen
             && s->penData.blend
             && ((cosmetic && penWidth <= 1)
-                || (!cosmetic && s->flags.tx_noshear && penWidth * s->txscale <= 1));
+                || (!cosmetic && (s->flags.tx_noshear || !s->flags.antialiased) && penWidth * s->txscale <= 1));
 
     s->flags.non_complex_pen = qpen_capStyle(s->lastPen) <= Qt::SquareCap && s->flags.tx_noshear;
 
@@ -990,10 +997,14 @@ void QRasterPaintEnginePrivate::drawImage(const QPointF &pt,
 {
     if (alpha == 0 || !clip.isValid())
         return;
+    if (pt.x() > qreal(clip.right()) || pt.y() > qreal(clip.bottom()))
+        return;
+    if ((pt.x() + img.width()) < qreal(clip.left()) || (pt.y() + img.height()) < qreal(clip.top()))
+        return;
 
     Q_ASSERT(img.depth() >= 8);
 
-    int srcBPL = img.bytesPerLine();
+    qsizetype srcBPL = img.bytesPerLine();
     const uchar *srcBits = img.bits();
     int srcSize = img.depth() >> 3; // This is the part that is incompatible with lower than 8-bit..
     int iw = img.width();
@@ -1042,11 +1053,86 @@ void QRasterPaintEnginePrivate::drawImage(const QPointF &pt,
 
     // call the blend function...
     int dstSize = rasterBuffer->bytesPerPixel();
-    int dstBPL = rasterBuffer->bytesPerLine();
+    qsizetype dstBPL = rasterBuffer->bytesPerLine();
     func(rasterBuffer->buffer() + x * dstSize + y * dstBPL, dstBPL,
          srcBits, srcBPL,
          iw, ih,
          alpha);
+}
+
+void QRasterPaintEnginePrivate::blitImage(const QPointF &pt,
+                                          const QImage &img,
+                                          const QRect &clip,
+                                          const QRect &sr)
+{
+    if (!clip.isValid())
+        return;
+    if (pt.x() > qreal(clip.right()) || pt.y() > qreal(clip.bottom()))
+        return;
+    if ((pt.x() + img.width()) < qreal(clip.left()) || (pt.y() + img.height()) < qreal(clip.top()))
+        return;
+
+    Q_ASSERT(img.depth() >= 8);
+
+    qsizetype srcBPL = img.bytesPerLine();
+    const uchar *srcBits = img.bits();
+    int srcSize = img.depth() >> 3; // This is the part that is incompatible with lower than 8-bit..
+    int iw = img.width();
+    int ih = img.height();
+
+    if (!sr.isEmpty()) {
+        iw = sr.width();
+        ih = sr.height();
+        // Adjust the image according to the source offset...
+        srcBits += ((sr.y() * srcBPL) + sr.x() * srcSize);
+    }
+
+    // adapt the x parameters
+    int x = qRound(pt.x());
+    int cx1 = clip.x();
+    int cx2 = clip.x() + clip.width();
+    if (x < cx1) {
+        int d = cx1 - x;
+        srcBits += srcSize * d;
+        iw -= d;
+        x = cx1;
+    }
+    if (x + iw > cx2) {
+        int d = x + iw - cx2;
+        iw -= d;
+    }
+    if (iw <= 0)
+        return;
+
+    // adapt the y paremeters...
+    int cy1 = clip.y();
+    int cy2 = clip.y() + clip.height();
+    int y = qRound(pt.y());
+    if (y < cy1) {
+        int d = cy1 - y;
+        srcBits += srcBPL * d;
+        ih -= d;
+        y = cy1;
+    }
+    if (y + ih > cy2) {
+        int d = y + ih - cy2;
+        ih -= d;
+    }
+    if (ih <= 0)
+        return;
+
+    // blit..
+    int dstSize = rasterBuffer->bytesPerPixel();
+    qsizetype dstBPL = rasterBuffer->bytesPerLine();
+    const uint *src = (const uint *) srcBits;
+    uint *dst = reinterpret_cast<uint *>(rasterBuffer->buffer() + x * dstSize + y * dstBPL);
+
+    const int len = iw * (qt_depthForFormat(rasterBuffer->format) >> 3);
+    for (int y = 0; y < ih; ++y) {
+        memcpy(dst, src, len);
+        dst = (quint32 *)(((uchar *) dst) + dstBPL);
+        src = (const quint32 *)(((const uchar *) src) + srcBPL);
+    }
 }
 
 
@@ -2153,7 +2239,15 @@ void QRasterPaintEngine::drawImage(const QPointF &p, const QImage &img)
         const QClipData *clip = d->clip();
         QPointF pt(p.x() + s->matrix.dx(), p.y() + s->matrix.dy());
 
-        if (d->canUseFastImageBlending(d->rasterBuffer->compositionMode, img)) {
+        if (d->canUseImageBlitting(d->rasterBuffer->compositionMode, img)) {
+            if (!clip) {
+                d->blitImage(pt, img, d->deviceRect);
+                return;
+            } else if (clip->hasRectClip) {
+                d->blitImage(pt, img, clip->clipRect);
+                return;
+            }
+        } else if (d->canUseFastImageBlending(d->rasterBuffer->compositionMode, img)) {
             SrcOverBlendFunc func = qBlendFunctions[d->rasterBuffer->format][img.format()];
             if (func) {
                 if (!clip) {
@@ -2317,8 +2411,8 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
 
                 clippedSourceRect = clippedSourceRect.intersected(img.rect());
 
-                uint dbpl = d->rasterBuffer->bytesPerLine();
-                uint sbpl = img.bytesPerLine();
+                const qsizetype dbpl = d->rasterBuffer->bytesPerLine();
+                const qsizetype sbpl = img.bytesPerLine();
 
                 uchar *dst = d->rasterBuffer->buffer();
                 uint bpp = img.depth() >> 3;
@@ -2339,8 +2433,12 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
     if (s->matrix.type() > QTransform::TxTranslate || stretch_sr) {
 
         QRectF targetBounds = s->matrix.mapRect(r);
-        bool exceedsPrecision = targetBounds.width() > 0x7fff
-                             || targetBounds.height() > 0x7fff;
+        bool exceedsPrecision = r.width() > 0x7fff
+                             || r.height() > 0x7fff
+                             || targetBounds.width() > 0x7fff
+                             || targetBounds.height() > 0x7fff
+                             || s->matrix.m11() >= 512
+                             || s->matrix.m22() >= 512;
 
         if (!exceedsPrecision && d->canUseFastImageBlending(d->rasterBuffer->compositionMode, img)) {
             if (s->matrix.type() > QTransform::TxScale) {
@@ -2434,7 +2532,16 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
         fillPath(path, &d->image_filler_xform);
         s->matrix = m;
     } else {
-        if (d->canUseFastImageBlending(d->rasterBuffer->compositionMode, img)) {
+        if (d->canUseImageBlitting(d->rasterBuffer->compositionMode, img)) {
+            QPointF pt(r.x() + s->matrix.dx(), r.y() + s->matrix.dy());
+            if (!clip) {
+                d->blitImage(pt, img, d->deviceRect, sr.toRect());
+                return;
+            } else if (clip->hasRectClip) {
+                d->blitImage(pt, img, clip->clipRect, sr.toRect());
+                return;
+            }
+        } else if (d->canUseFastImageBlending(d->rasterBuffer->compositionMode, img)) {
             SrcOverBlendFunc func = qBlendFunctions[d->rasterBuffer->format][img.format()];
             if (func) {
                 QPointF pt(r.x() + s->matrix.dx(), r.y() + s->matrix.dy());
@@ -2491,10 +2598,13 @@ void QRasterPaintEngine::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap,
     if (image.depth() == 1)
         image = d->rasterBuffer->colorizeBitmap(image, s->pen.color());
 
-    if (s->matrix.type() > QTransform::TxTranslate) {
+    const qreal pixmapDevicePixelRatio = pixmap.devicePixelRatio();
+    if (s->matrix.type() > QTransform::TxTranslate || pixmapDevicePixelRatio > qreal(1.0)) {
         QTransform copy = s->matrix;
         copy.translate(r.x(), r.y());
         copy.translate(-sr.x(), -sr.y());
+        const qreal inverseDpr = qreal(1.0) / pixmapDevicePixelRatio;
+        copy.scale(inverseDpr, inverseDpr);
         d->image_filler_xform.clip = d->clip();
         d->image_filler_xform.initTexture(&image, s->intOpacity, QTextureData::Tiled);
         if (!d->image_filler_xform.blend)
@@ -2798,28 +2908,43 @@ bool QRasterPaintEngine::drawCachedGlyphs(int numGlyphs, const glyph_t *glyphs,
         for (int i = 0; i < numGlyphs; i++) {
             QFixed spp = fontEngine->subPixelPositionForX(positions[i].x);
 
-            QPoint offset;
-            const QImage *alphaMap = fontEngine->lockedAlphaMapForGlyph(glyphs[i], spp, neededFormat, s->matrix,
-                                                                        &offset);
-            if (alphaMap == 0 || alphaMap->isNull())
+            const QFontEngine::Glyph *alphaMap = fontEngine->glyphData(glyphs[i], spp, neededFormat, s->matrix);
+            if (!alphaMap)
                 continue;
 
-            alphaPenBlt(alphaMap->constBits(), alphaMap->bytesPerLine(), alphaMap->depth(),
-                        qFloor(positions[i].x) + offset.x(),
-                        qRound(positions[i].y) + offset.y(),
-                        alphaMap->width(), alphaMap->height(),
-                        fontEngine->expectsGammaCorrectedBlending());
+            int depth;
+            int bytesPerLine;
+            switch (alphaMap->format) {
+            case QFontEngine::Format_Mono:
+                depth = 1;
+                bytesPerLine = ((alphaMap->width + 31) & ~31) >> 3;
+                break;
+            case QFontEngine::Format_A8:
+                depth = 8;
+                bytesPerLine = (alphaMap->width + 3) & ~3;
+                break;
+            case QFontEngine::Format_A32:
+                depth = 32;
+                bytesPerLine = alphaMap->width * 4;
+                break;
+            default:
+                Q_UNREACHABLE();
+            };
 
-            fontEngine->unlockAlphaMapForGlyph();
+            alphaPenBlt(alphaMap->data, bytesPerLine, depth,
+                        qFloor(positions[i].x) + alphaMap->x,
+                        qRound(positions[i].y) - alphaMap->y,
+                        alphaMap->width, alphaMap->height,
+                        fontEngine->expectsGammaCorrectedBlending());
         }
 
     } else {
         QFontEngine::GlyphFormat glyphFormat = fontEngine->glyphFormat != QFontEngine::Format_None ? fontEngine->glyphFormat : d->glyphCacheFormat;
 
         QImageTextureGlyphCache *cache =
-            static_cast<QImageTextureGlyphCache *>(fontEngine->glyphCache(0, glyphFormat, s->matrix));
+            static_cast<QImageTextureGlyphCache *>(fontEngine->glyphCache(0, glyphFormat, s->matrix, QColor(s->penData.solid.color)));
         if (!cache) {
-            cache = new QImageTextureGlyphCache(glyphFormat, s->matrix);
+            cache = new QImageTextureGlyphCache(glyphFormat, s->matrix, QColor(s->penData.solid.color));
             fontEngine->setGlyphCache(0, cache);
         }
 
@@ -2827,7 +2952,7 @@ bool QRasterPaintEngine::drawCachedGlyphs(int numGlyphs, const glyph_t *glyphs,
         cache->fillInPendingGlyphs();
 
         const QImage &image = cache->image();
-        int bpl = image.bytesPerLine();
+        qsizetype bpl = image.bytesPerLine();
 
         int depth = image.depth();
         int rightShift = 0;
@@ -3654,6 +3779,33 @@ bool QRasterPaintEnginePrivate::canUseFastImageBlending(QPainter::CompositionMod
                    && !image.hasAlphaChannel()));
 }
 
+bool QRasterPaintEnginePrivate::canUseImageBlitting(QPainter::CompositionMode mode, const QImage &image) const
+{
+    Q_Q(const QRasterPaintEngine);
+    const QRasterPaintEngineState *s = q->state();
+
+    if (!s->flags.fast_images || s->intOpacity != 256 || qt_depthForFormat(rasterBuffer->format) < 8)
+        return false;
+
+    QImage::Format dFormat = rasterBuffer->format;
+    QImage::Format sFormat = image.format();
+    // Formats must match or source format must be a subset of destination format
+    if (dFormat != sFormat && image.pixelFormat().alphaUsage() == QPixelFormat::IgnoresAlpha) {
+        if ((sFormat == QImage::Format_RGB32 && dFormat == QImage::Format_ARGB32)
+            || (sFormat == QImage::Format_RGBX8888 && dFormat == QImage::Format_RGBA8888))
+            sFormat = dFormat;
+        else
+            sFormat = qt_maybeAlphaVersionWithSameDepth(sFormat); // this returns premul formats
+    }
+    if (dFormat != sFormat)
+        return false;
+
+    return s->matrix.type() <= QTransform::TxTranslate
+           && (mode == QPainter::CompositionMode_Source
+               || (mode == QPainter::CompositionMode_SourceOver
+                   && !image.hasAlphaChannel()));
+}
+
 QImage QRasterBuffer::colorizeBitmap(const QImage &image, const QColor &color)
 {
     Q_ASSERT(image.depth() == 1);
@@ -3781,8 +3933,8 @@ void QClipData::initialize()
                 }
             } else if (hasRegionClip) {
 
-                const QVector<QRect> rects = clipRegion.rects();
-                const int numRects = rects.size();
+                const auto rects = clipRegion.begin();
+                const int numRects = clipRegion.rectCount();
 
                 { // resize
                     const int maxSpans = (ymax - ymin) * numRects;
@@ -3796,8 +3948,8 @@ void QClipData::initialize()
                 int firstInBand = 0;
                 count = 0;
                 while (firstInBand < numRects) {
-                    const int currMinY = rects.at(firstInBand).y();
-                    const int currMaxY = currMinY + rects.at(firstInBand).height();
+                    const int currMinY = rects[firstInBand].y();
+                    const int currMaxY = currMinY + rects[firstInBand].height();
 
                     while (y < currMinY) {
                         m_clipLines[y].spans = 0;
@@ -3806,7 +3958,7 @@ void QClipData::initialize()
                     }
 
                     int lastInBand = firstInBand;
-                    while (lastInBand + 1 < numRects && rects.at(lastInBand+1).top() == y)
+                    while (lastInBand + 1 < numRects && rects[lastInBand+1].top() == y)
                         ++lastInBand;
 
                     while (y < currMaxY) {
@@ -3815,7 +3967,7 @@ void QClipData::initialize()
                         m_clipLines[y].count = lastInBand - firstInBand + 1;
 
                         for (int r = firstInBand; r <= lastInBand; ++r) {
-                            const QRect &currRect = rects.at(r);
+                            const QRect &currRect = rects[r];
                             QSpan *span = m_spans + count;
                             span->x = currRect.x();
                             span->len = currRect.width();
@@ -4049,7 +4201,7 @@ static void qt_span_fill_clipped(int spanCount, const QSpan *spans, void *userDa
     Clip spans to \a{clip}-rectangle.
     Returns number of unclipped spans
 */
-static int qt_intersect_spans(QT_FT_Span *spans, int numSpans,
+static int qt_intersect_spans(QT_FT_Span *&spans, int numSpans,
                               const QRect &clip)
 {
     const short minx = clip.left();
@@ -4057,29 +4209,32 @@ static int qt_intersect_spans(QT_FT_Span *spans, int numSpans,
     const short maxx = clip.right();
     const short maxy = clip.bottom();
 
-    int n = 0;
-    for (int i = 0; i < numSpans; ++i) {
-        if (spans[i].y > maxy)
+    QT_FT_Span *end = spans + numSpans;
+    while (spans < end) {
+        if (spans->y >= miny)
             break;
-        if (spans[i].y < miny
-            || spans[i].x > maxx
-            || spans[i].x + spans[i].len <= minx) {
-            continue;
-        }
-        if (spans[i].x < minx) {
-            spans[n].len = qMin(spans[i].len - (minx - spans[i].x), maxx - minx + 1);
-            spans[n].x = minx;
-        } else {
-            spans[n].x = spans[i].x;
-            spans[n].len = qMin(spans[i].len, ushort(maxx - spans[n].x + 1));
-        }
-        if (spans[n].len == 0)
-            continue;
-        spans[n].y = spans[i].y;
-        spans[n].coverage = spans[i].coverage;
-        ++n;
+        ++spans;
     }
-    return n;
+
+    QT_FT_Span *s = spans;
+    while (s < end) {
+        if (s->y > maxy)
+            break;
+        if (s->x > maxx || s->x + s->len <= minx) {
+            s->len = 0;
+            ++s;
+            continue;
+        }
+        if (s->x < minx) {
+            s->len = qMin(s->len - (minx - s->x), maxx - minx + 1);
+            s->x = minx;
+        } else {
+            s->len = qMin(s->len, ushort(maxx - s->x + 1));
+        }
+        ++s;
+    }
+
+    return s - spans;
 }
 
 
@@ -4092,11 +4247,12 @@ static void qt_span_fill_clipRect(int count, const QSpan *spans,
     Q_ASSERT(fillData->clip);
     Q_ASSERT(!fillData->clip->clipRect.isEmpty());
 
+    QSpan *s = const_cast<QSpan *>(spans);
     // hw: check if this const_cast<> is safe!!!
-    count = qt_intersect_spans(const_cast<QSpan*>(spans), count,
+    count = qt_intersect_spans(s, count,
                                fillData->clip->clipRect);
     if (count > 0)
-        fillData->unclipped_blend(count, spans, fillData);
+        fillData->unclipped_blend(count, s, fillData);
 }
 
 static void qt_span_clip(int count, const QSpan *spans, void *userData)
@@ -4229,7 +4385,7 @@ protected:
     QSharedPointer<const CacheInfo> addCacheElement(quint64 hash_val, const QGradient &gradient, int opacity) {
         if (cache.size() == maxCacheSize()) {
             // may remove more than 1, but OK
-            cache.erase(cache.begin() + (qrand() % maxCacheSize()));
+            cache.erase(cache.begin() + QRandomGenerator::global()->bounded(maxCacheSize()));
         }
         auto cache_entry = QSharedPointer<CacheInfo>::create(gradient.stops(), opacity, gradient.interpolationMode());
         generateGradientColorTable(gradient, cache_entry->buffer64, paletteSize(), opacity);
@@ -4637,9 +4793,13 @@ void QSpanData::setupMatrix(const QTransform &matrix, int bilin)
     bilinear = bilin;
 
     const bool affine = inv.isAffine();
+    const qreal f1 = m11 * m11 + m21 * m21;
+    const qreal f2 = m12 * m12 + m22 * m22;
     fast_matrix = affine
-        && m11 * m11 + m21 * m21 < 1e4
-        && m12 * m12 + m22 * m22 < 1e4
+        && f1 < 1e4
+        && f2 < 1e4
+        && f1 > (1.0 / 65536)
+        && f2 > (1.0 / 65536)
         && qAbs(dx) < 1e4
         && qAbs(dy) < 1e4;
 
@@ -4703,7 +4863,8 @@ static inline void drawEllipsePoints(int x, int y, int length,
     if (length == 0)
         return;
 
-    QT_FT_Span outline[4];
+    QT_FT_Span _outline[4];
+    QT_FT_Span *outline = _outline;
     const int midx = rect.x() + (rect.width() + 1) / 2;
     const int midy = rect.y() + (rect.height() + 1) / 2;
 
@@ -4735,7 +4896,8 @@ static inline void drawEllipsePoints(int x, int y, int length,
     outline[3].coverage = 255;
 
     if (brush_func && outline[0].x + outline[0].len < outline[1].x) {
-        QT_FT_Span fill[2];
+        QT_FT_Span _fill[2];
+        QT_FT_Span *fill = _fill;
 
         // top fill
         fill[0].x = outline[0].x + outline[0].len - 1;

@@ -47,13 +47,18 @@ private slots:
     void elidedText();
     void veryNarrowElidedText();
     void averageCharWidth();
+
+#if QT_DEPRECATED_SINCE(5, 11) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     void bypassShaping();
+#endif
+
     void elidedMultiLength();
     void elidedMultiLengthF();
     void inFontUcs4();
     void lineWidth();
     void mnemonicTextWidth();
     void leadingBelowLine();
+    void elidedMetrics();
 };
 
 void tst_QFontMetrics::same()
@@ -163,7 +168,7 @@ void tst_QFontMetrics::elidedText()
     QFETCH(QFont, font);
     QFETCH(QString, text);
     QFontMetrics fm(font);
-    int w = fm.width(text);
+    int w = fm.horizontalAdvance(text);
     QString newtext = fm.elidedText(text,Qt::ElideRight,w+1, 0);
     QCOMPARE(text,newtext); // should not elide
     newtext = fm.elidedText(text,Qt::ElideRight,w-1, 0);
@@ -187,6 +192,7 @@ void tst_QFontMetrics::averageCharWidth()
     QVERIFY(fmf.averageCharWidth() != 0);
 }
 
+#if QT_DEPRECATED_SINCE(5, 11) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 void tst_QFontMetrics::bypassShaping()
 {
     QFont f;
@@ -197,10 +203,11 @@ void tst_QFontMetrics::bypassShaping()
     QVERIFY(textWidth != 0);
     int charsWidth = 0;
     for (int i = 0; i < text.size(); ++i)
-        charsWidth += fm.width(text[i]);
+        charsWidth += fm.horizontalAdvance(text[i]);
     // This assertion is needed in Qt WebKit's WebCore::Font::offsetForPositionForSimpleText
     QCOMPARE(textWidth, charsWidth);
 }
+#endif
 
 template<class FontMetrics, typename PrimitiveType> void elidedMultiLength_helper()
 {
@@ -220,7 +227,7 @@ template<class FontMetrics, typename PrimitiveType> void elidedMultiLength_helpe
     // Not even wide enough for "small" - should use ellipsis
     QChar ellipsisChar(0x2026);
     QString text1_el = QString::fromLatin1("s") + ellipsisChar;
-    PrimitiveType width_small = fm.width(text1_el);
+    PrimitiveType width_small = fm.horizontalAdvance(text1_el);
     QCOMPARE(fm.elidedText(text1,Qt::ElideRight, width_small + 1), text1_el);
 }
 
@@ -323,6 +330,32 @@ void tst_QFontMetrics::leadingBelowLine()
     line.ascent = 5;
     QCOMPARE(line.height(), line.ascent + line.descent + line.leading);
     QCOMPARE(line.base(), line.ascent);
+}
+
+void tst_QFontMetrics::elidedMetrics()
+{
+    QString testFont = QFINDTESTDATA("fonts/testfont.ttf");
+    QVERIFY(!testFont.isEmpty());
+
+    int id = QFontDatabase::addApplicationFont(testFont);
+    QVERIFY(id >= 0);
+
+    QFont font(QFontDatabase::applicationFontFamilies(id).at(0));
+    font.setPixelSize(12.0);
+
+    QFontMetricsF metrics(font);
+    QString s = QStringLiteral("VeryLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongLongText");
+
+    QRectF boundingRect = metrics.boundingRect(s);
+
+    QString elided = metrics.elidedText(s, Qt::ElideRight, boundingRect.width() / 2.0);
+
+    QRectF elidedBoundingRect = metrics.boundingRect(elided);
+
+    QCOMPARE(boundingRect.height(), elidedBoundingRect.height());
+    QCOMPARE(boundingRect.y(), elidedBoundingRect.y());
+
+    QFontDatabase::removeApplicationFont(id);
 }
 
 QTEST_MAIN(tst_QFontMetrics)

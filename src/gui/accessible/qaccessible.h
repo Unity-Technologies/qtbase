@@ -299,6 +299,7 @@ public:
         Paragraph      = 0x00000083,
         WebDocument    = 0x00000084,
         Section        = 0x00000085,
+        Notification   = 0x00000086,
 
         // IAccessible2 roles
         // IA2_ROLE_CANVAS = 0x401, ### Qt 6 use this one instead of Canvas above
@@ -511,7 +512,7 @@ public:
     virtual void virtual_hook(int id, void *data);
 
     virtual void *interface_cast(QAccessible::InterfaceType)
-    { return Q_NULLPTR; }
+    { return nullptr; }
 
 protected:
     friend class QAccessibleCache;
@@ -682,7 +683,7 @@ public:
     }
 
     inline QAccessibleEvent(QAccessibleInterface *iface, QAccessible::Event typ)
-        : m_type(typ), m_object(Q_NULLPTR)
+        : m_type(typ), m_object(nullptr)
     {
         Q_ASSERT(iface);
         Q_ASSERT(m_type != QAccessible::ValueChanged);

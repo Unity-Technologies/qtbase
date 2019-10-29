@@ -284,6 +284,7 @@ static const int QGRAPHICSVIEW_PREALLOC_STYLE_OPTIONS = 503; // largest prime < 
 #include <QtCore/qscopedvaluerollback.h>
 #include <QtWidgets/qapplication.h>
 #include <QtWidgets/qdesktopwidget.h>
+#include <private/qdesktopwidget_p.h>
 #include <QtGui/qevent.h>
 #include <QtWidgets/qlayout.h>
 #include <QtGui/qtransform.h>
@@ -312,13 +313,15 @@ void QGraphicsViewPrivate::translateTouchEvent(QGraphicsViewPrivate *d, QTouchEv
     QList<QTouchEvent::TouchPoint> touchPoints = touchEvent->touchPoints();
     for (int i = 0; i < touchPoints.count(); ++i) {
         QTouchEvent::TouchPoint &touchPoint = touchPoints[i];
+        const QSizeF ellipseDiameters = touchPoint.ellipseDiameters();
         // the scene will set the item local pos, startPos, lastPos, and rect before delivering to
         // an item, but for now those functions are returning the view's local coordinates
-        touchPoint.setSceneRect(d->mapToScene(touchPoint.rect()));
+        touchPoint.setScenePos(d->mapToScene(touchPoint.pos()));
         touchPoint.setStartScenePos(d->mapToScene(touchPoint.startPos()));
         touchPoint.setLastScenePos(d->mapToScene(touchPoint.lastPos()));
+        touchPoint.setEllipseDiameters(ellipseDiameters);
 
-        // screenPos, startScreenPos, lastScreenPos, and screenRect are already set
+        // screenPos, startScreenPos, and lastScreenPos are already set
     }
 
     touchEvent->setTouchPoints(touchPoints);
@@ -688,7 +691,7 @@ void QGraphicsViewPrivate::mouseMoveEventHandler(QMouseEvent *event)
     }
     // Find the topmost item under the mouse with a cursor.
     foreach (QGraphicsItem *item, scene->d_func()->cachedItemsUnderMouse) {
-        if (item->hasCursor()) {
+        if (item->isEnabled() && item->hasCursor()) {
             _q_setViewportCursor(item->cursor());
             return;
         }
@@ -805,7 +808,7 @@ void QGraphicsViewPrivate::_q_unsetViewportCursor()
     Q_Q(QGraphicsView);
     const auto items = q->items(lastMouseEvent.pos());
     for (QGraphicsItem *item : items) {
-        if (item->hasCursor()) {
+        if (item->isEnabled() && item->hasCursor()) {
             _q_setViewportCursor(item->cursor());
             return;
         }
@@ -847,7 +850,7 @@ void QGraphicsViewPrivate::storeDragDropEvent(const QGraphicsSceneDragDropEvent 
 void QGraphicsViewPrivate::populateSceneDragDropEvent(QGraphicsSceneDragDropEvent *dest,
                                                       QDropEvent *source)
 {
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     Q_Q(QGraphicsView);
     dest->setScenePos(q->mapToScene(source->pos()));
     dest->setScreenPos(q->mapToGlobal(source->pos()));
@@ -1248,7 +1251,7 @@ QSize QGraphicsView::sizeHint() const
     if (d->scene) {
         QSizeF baseSize = d->matrix.mapRect(sceneRect()).size();
         baseSize += QSizeF(d->frameWidth * 2, d->frameWidth * 2);
-        return baseSize.boundedTo((3 * QApplication::desktop()->size()) / 4).toSize();
+        return baseSize.boundedTo((3 * QDesktopWidgetPrivate::size()) / 4).toSize();
     }
     return QAbstractScrollArea::sizeHint();
 }
@@ -2700,7 +2703,7 @@ void QGraphicsView::updateScene(const QList<QRectF> &rects)
         dirtyViewportRects << xrect;
     }
 
-    foreach (const QRect &rect, dirtyViewportRects) {
+    for (const QRect &rect : qAsConst(dirtyViewportRects)) {
         // Add the exposed rect to the update region. In rect update
         // mode, we only count the bounding rect of items.
         if (!boundingRectUpdate) {
@@ -3480,7 +3483,9 @@ void QGraphicsView::paintEvent(QPaintEvent *event)
         // Recreate the background pixmap, and flag the whole background as
         // exposed.
         if (d->mustResizeBackgroundPixmap) {
-            d->backgroundPixmap = QPixmap(viewport()->size());
+            const qreal dpr = d->viewport->devicePixelRatioF();
+            d->backgroundPixmap = QPixmap(viewport()->size() * dpr);
+            d->backgroundPixmap.setDevicePixelRatio(dpr);
             QBrush bgBrush = viewport()->palette().brush(viewport()->backgroundRole());
             if (!bgBrush.isOpaque())
                 d->backgroundPixmap.fill(Qt::transparent);
@@ -3676,14 +3681,20 @@ void QGraphicsView::scrollContentsBy(int dx, int dy)
         && X11->use_xrender
 #endif
         ) {
+        // Below, QPixmap::scroll() works in device pixels, while the delta values
+        // and backgroundPixmapExposed are in device independent pixels.
+        const qreal dpr = d->backgroundPixmap.devicePixelRatio();
+        const qreal inverseDpr = qreal(1) / dpr;
+
         // Scroll the background pixmap
         QRegion exposed;
         if (!d->backgroundPixmap.isNull())
-            d->backgroundPixmap.scroll(dx, dy, d->backgroundPixmap.rect(), &exposed);
+            d->backgroundPixmap.scroll(dx * dpr, dy * dpr, d->backgroundPixmap.rect(), &exposed);
 
         // Invalidate the background pixmap
         d->backgroundPixmapExposed.translate(dx, dy);
-        d->backgroundPixmapExposed += exposed;
+        const QRegion exposedScaled = QTransform::fromScale(inverseDpr, inverseDpr).map(exposed);
+        d->backgroundPixmapExposed += exposedScaled;
     }
 
     // Always replay on scroll.

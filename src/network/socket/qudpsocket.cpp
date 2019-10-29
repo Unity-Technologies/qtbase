@@ -185,6 +185,10 @@ QUdpSocket::~QUdpSocket()
     This function returns \c true if successful; otherwise it returns \c false
     and sets the socket error accordingly.
 
+    \note Joining IPv6 multicast groups without an interface selection is not
+    supported in all operating systems. Consider using the overload where the
+    interface is specified.
+
     \sa leaveMulticastGroup()
 */
 bool QUdpSocket::joinMulticastGroup(const QHostAddress &groupAddress)
@@ -219,6 +223,9 @@ bool QUdpSocket::joinMulticastGroup(const QHostAddress &groupAddress,
    This function returns \c true if successful; otherwise it returns \c false and
    sets the socket error accordingly.
 
+   \note This function should be called with the same arguments as were passed
+   to joinMulticastGroup().
+
    \sa joinMulticastGroup()
 */
 bool QUdpSocket::leaveMulticastGroup(const QHostAddress &groupAddress)
@@ -232,6 +239,9 @@ bool QUdpSocket::leaveMulticastGroup(const QHostAddress &groupAddress)
 
     Leaves the multicast group specified by \a groupAddress on the interface \a
     iface.
+
+    \note This function should be called with the same arguments as were passed
+    to joinMulticastGroup().
 
     \sa joinMulticastGroup()
 */
@@ -371,6 +381,7 @@ qint64 QUdpSocket::writeDatagram(const char *data, qint64 size, const QHostAddre
 */
 
 /*!
+    \since 5.8
     \overload
 
     Sends the datagram \a datagram to the host address and port numbers
@@ -421,6 +432,8 @@ qint64 QUdpSocket::writeDatagram(const QNetworkDatagram &datagram)
 }
 
 /*!
+    \since 5.8
+
     Receives a datagram no larger than \a maxSize bytes and returns it in the
     QNetworkDatagram object, along with the sender's host address and port. If
     possible, this function will also try to determine the datagram's

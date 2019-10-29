@@ -316,6 +316,21 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
 */
 
 /*!
+    \fn const QBrush & QPalette::placeholderText() const
+    \since 5.12
+
+    Returns the placeholder text brush of the current color group.
+
+    \note Before Qt 5.12, the placeholder text color was hard-coded in the code as
+    QPalette::text().color() where an alpha of 128 was applied.
+    We continue to support this behavior by default, unless you set your own brush.
+    One can get back the original placeholder color setting the special QBrush default
+    constructor as placeholder brush.
+
+    \sa ColorRole, brush()
+*/
+
+/*!
     \fn ColorGroup QPalette::currentColorGroup() const
 
     Returns the palette's current color group.
@@ -388,7 +403,7 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
 
     \warning Some styles do not use the palette for all drawing, for
     instance, if they make use of native theme engines. This is the
-    case for both the Windows XP, Windows Vista, and the \macos
+    case for both the Windows Vista and the \macos
     styles.
 
     \sa QApplication::setPalette(), QWidget::setPalette(), QColor
@@ -443,6 +458,9 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
                           QWhatsThis. Tool tips use the Inactive color group
                           of QPalette, because tool tips are not active
                           windows.
+
+    \value PlaceholderText Used as the placeholder color for various text input widgets.
+           This enum value has been introduced in Qt 5.12
 
     \value Text  The foreground color used with \c Base. This is usually
                  the same as the \c WindowText, in which case it must provide
@@ -765,11 +783,32 @@ void QPalette::setBrush(ColorGroup cg, ColorRole cr, const QBrush &b)
         cg = Active;
     }
 
+    // For placeholder we want to continue to respect the original behavior, which is
+    // derivating the text color, but only if user has not yet set his own brush.
+    // We then use Qt::NoBrush as an inernal way to know if the brush is customized or not.
+
+    // ### Qt 6 - remove this special case
+    // Part 1 - Restore initial color to the given color group
+    if (cr == PlaceholderText && b == QBrush()) {
+        QColor col = brush(Text).color();
+        col.setAlpha(128);
+        setBrush(cg, PlaceholderText, QBrush(col, Qt::NoBrush));
+        return;
+    }
+
     if (d->br[cg][cr] != b) {
         detach();
         d->br[cg][cr] = b;
     }
     data.resolve_mask |= (1<<cr);
+
+    // ### Qt 6 - remove this special case
+    // Part 2 - Update initial color to the given color group
+    if (cr == Text && d->br[cg][PlaceholderText].style() == Qt::NoBrush) {
+        QColor col = brush(Text).color();
+        col.setAlpha(128);
+        setBrush(cg, PlaceholderText, QBrush(col, Qt::NoBrush));
+    }
 }
 
 /*!
@@ -962,11 +1001,13 @@ QDataStream &operator<<(QDataStream &s, const QPalette &p)
             for (int i = 0; i < NumOldRoles; ++i)
                 s << p.d->br[grp][oldRoles[i]].color();
         } else {
-            int max = QPalette::ToolTipText + 1;
+            int max = (int)QPalette::NColorRoles;
             if (s.version() <= QDataStream::Qt_2_1)
                 max = QPalette::HighlightedText + 1;
             else if (s.version() <= QDataStream::Qt_4_3)
                 max = QPalette::AlternateBase + 1;
+            else if (s.version() <= QDataStream::Qt_5_11)
+                max = QPalette::ToolTipText + 1;
             for (int r = 0; r < max; r++)
                 s << p.d->br[grp][r];
         }
@@ -1007,6 +1048,9 @@ QDataStream &operator>>(QDataStream &s, QPalette &p)
         } else if (s.version() <= QDataStream::Qt_4_3) {
             p = QPalette();
             max = QPalette::AlternateBase + 1;
+        } else if (s.version() <= QDataStream::Qt_5_11) {
+            p = QPalette();
+            max = QPalette::ToolTipText + 1;
         }
 
         QBrush tmp;
@@ -1117,14 +1161,14 @@ void QPalette::setColorGroup(ColorGroup cg, const QBrush &foreground, const QBru
 
 Q_GUI_EXPORT QPalette qt_fusionPalette()
 {
-    QColor backGround(239, 235, 231);
+    QColor backGround(239, 239, 239);
     QColor light = backGround.lighter(150);
     QColor mid(backGround.darker(130));
     QColor midLight = mid.lighter(110);
     QColor base = Qt::white;
     QColor disabledBase(backGround);
     QColor dark = backGround.darker(150);
-    QColor darkDisabled = QColor(209, 200, 191).darker(110);
+    QColor darkDisabled = QColor(209, 209, 209).darker(110);
     QColor text = Qt::black;
     QColor hightlightedText = Qt::white;
     QColor disabledText = QColor(190, 190, 190);
@@ -1147,7 +1191,7 @@ Q_GUI_EXPORT QPalette qt_fusionPalette()
 
     fusionPalette.setBrush(QPalette::Active, QPalette::Highlight, QColor(48, 140, 198));
     fusionPalette.setBrush(QPalette::Inactive, QPalette::Highlight, QColor(48, 140, 198));
-    fusionPalette.setBrush(QPalette::Disabled, QPalette::Highlight, QColor(145, 141, 126));
+    fusionPalette.setBrush(QPalette::Disabled, QPalette::Highlight, QColor(145, 145, 145));
     return fusionPalette;
 }
 
@@ -1159,7 +1203,7 @@ QDebug operator<<(QDebug dbg, const QPalette &p)
         {"WindowText", "Button", "Light", "Midlight", "Dark", "Mid", "Text",
          "BrightText", "ButtonText", "Base", "Window", "Shadow", "Highlight",
          "HighlightedText", "Link", "LinkVisited", "AlternateBase", "NoRole",
-         "ToolTipBase","ToolTipText" };
+         "ToolTipBase","ToolTipText", "PlaceholderText" };
     QDebugStateSaver saver(dbg);
     QDebug nospace = dbg.nospace();
     const uint mask = p.resolve();

@@ -47,6 +47,7 @@
 #include <QtCore/QMutex>
 
 #include <QtKmsSupport/private/qkmsdevice_p.h>
+#include <QtEdidSupport/private/qedidparser_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -55,7 +56,7 @@ class QEglFSKmsInterruptHandler;
 class Q_EGLFS_EXPORT QEglFSKmsScreen : public QEglFSScreen
 {
 public:
-    QEglFSKmsScreen(QKmsDevice *device, const QKmsOutput &output);
+    QEglFSKmsScreen(QKmsDevice *device, const QKmsOutput &output, bool headless = false);
     ~QEglFSKmsScreen();
 
     void setVirtualPosition(const QPoint &pos);
@@ -72,18 +73,23 @@ public:
 
     QString name() const override;
 
+    QString manufacturer() const override;
+    QString model() const override;
+    QString serialNumber() const override;
+
     qreal refreshRate() const override;
 
     QList<QPlatformScreen *> virtualSiblings() const override { return m_siblings; }
     void setVirtualSiblings(QList<QPlatformScreen *> sl) { m_siblings = sl; }
 
+    QVector<QPlatformScreen::Mode> modes() const override;
+
+    int currentMode() const override;
+    int preferredMode() const override;
+
     QKmsDevice *device() const { return m_device; }
 
-    void destroySurface();
-
     virtual void waitForFlip();
-    virtual void flip();
-    virtual void flipFinished();
 
     QKmsOutput &output() { return m_output; }
     void restoreMode();
@@ -97,6 +103,7 @@ protected:
     QKmsDevice *m_device;
 
     QKmsOutput m_output;
+    QEdidParser m_edid;
     QPoint m_pos;
 
     QList<QPlatformScreen *> m_siblings;
@@ -104,6 +111,8 @@ protected:
     PowerState m_powerState;
 
     QEglFSKmsInterruptHandler *m_interruptHandler;
+
+    bool m_headless;
 };
 
 QT_END_NAMESPACE

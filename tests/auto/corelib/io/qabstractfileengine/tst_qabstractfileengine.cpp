@@ -341,8 +341,10 @@ public:
         if (file) {
             QMutexLocker lock(&file->mutex);
             switch (time) {
-                case CreationTime:
-                    return file->creation;
+                case BirthTime:
+                    return file->birth;
+                case MetadataChangeTime:
+                    return file->change;
                 case ModificationTime:
                     return file->modification;
                 case AccessTime:
@@ -351,6 +353,13 @@ public:
         }
 
         return QDateTime();
+    }
+
+    bool setFileTime(const QDateTime &newDate, FileTime time)
+    {
+        Q_UNUSED(newDate);
+        Q_UNUSED(time);
+        return false;
     }
 
     void setFileName(const QString &file)
@@ -449,7 +458,7 @@ protected:
 
         uint userId, groupId;
         QAbstractFileEngine::FileFlags fileFlags;
-        QDateTime creation, modification, access;
+        QDateTime birth, change, modification, access;
 
         QByteArray content;
     };

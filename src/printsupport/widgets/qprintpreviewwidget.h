@@ -69,9 +69,9 @@ public:
         FitInView
     };
 
-    explicit QPrintPreviewWidget(QPrinter *printer, QWidget *parent = Q_NULLPTR,
+    explicit QPrintPreviewWidget(QPrinter *printer, QWidget *parent = nullptr,
                                  Qt::WindowFlags flags = Qt::WindowFlags());
-    explicit QPrintPreviewWidget(QWidget *parent = Q_NULLPTR, Qt::WindowFlags flags = Qt::WindowFlags());
+    explicit QPrintPreviewWidget(QWidget *parent = nullptr, Qt::WindowFlags flags = Qt::WindowFlags());
     ~QPrintPreviewWidget();
 
     qreal zoomFactor() const;
@@ -80,7 +80,7 @@ public:
     ZoomMode zoomMode() const;
     int currentPage() const;
     int pageCount() const;
-    void setVisible(bool visible) Q_DECL_OVERRIDE;
+    void setVisible(bool visible) override;
 
 public Q_SLOTS:
     void print();

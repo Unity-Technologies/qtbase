@@ -547,8 +547,8 @@ void qt_fill_tile(QPixmap *tile, const QPixmap &pixmap)
     }
 }
 
-void qt_draw_tile(QPaintEngine *gc, qreal x, qreal y, qreal w, qreal h,
-                  const QPixmap &pixmap, qreal xOffset, qreal yOffset)
+Q_GUI_EXPORT void qt_draw_tile(QPaintEngine *gc, qreal x, qreal y, qreal w, qreal h,
+                               const QPixmap &pixmap, qreal xOffset, qreal yOffset)
 {
     qreal yPos, xPos, drawH, drawW, yOff, xOff;
     yPos = y;
@@ -751,11 +751,29 @@ void QPaintEngine::drawPath(const QPainterPath &)
 void QPaintEngine::drawTextItem(const QPointF &p, const QTextItem &textItem)
 {
     const QTextItemInt &ti = static_cast<const QTextItemInt &>(textItem);
+    if (ti.glyphs.numGlyphs == 0)
+        return;
+
+    if (ti.fontEngine->glyphFormat == QFontEngine::Format_ARGB) {
+        QVarLengthArray<QFixedPoint> positions;
+        QVarLengthArray<glyph_t> glyphs;
+        QTransform matrix = QTransform::fromTranslate(p.x(), p.y() - ti.fontEngine->ascent().toReal());
+        ti.fontEngine->getGlyphPositions(ti.glyphs, matrix, ti.flags, glyphs, positions);
+        painter()->save();
+        painter()->setRenderHint(QPainter::SmoothPixmapTransform,
+                                 bool((painter()->renderHints() & QPainter::TextAntialiasing)
+                                      && !(painter()->font().styleStrategy() & QFont::NoAntialias)));
+        for (int i = 0; i < ti.glyphs.numGlyphs; ++i) {
+            QImage glyph = ti.fontEngine->bitmapForGlyph(glyphs[i], QFixed(), QTransform());
+            painter()->drawImage(positions[i].x.toReal(), positions[i].y.toReal(), glyph);
+        }
+        painter()->restore();
+        return;
+    }
 
     QPainterPath path;
     path.setFillRule(Qt::WindingFill);
-    if (ti.glyphs.numGlyphs)
-        ti.fontEngine->addOutlineToPath(0, 0, ti.glyphs, &path, ti.flags);
+    ti.fontEngine->addOutlineToPath(0, 0, ti.glyphs, &path, ti.flags);
     if (!path.isEmpty()) {
         painter()->save();
         painter()->setRenderHint(QPainter::Antialiasing,
@@ -895,7 +913,7 @@ void QPaintEngine::setPaintDevice(QPaintDevice *device)
 
 /*!
     Returns the device that this engine is painting on, if painting is
-    active; otherwise returns 0.
+    active; otherwise returns \nullptr.
 */
 QPaintDevice *QPaintEngine::paintDevice() const
 {
@@ -929,11 +947,11 @@ QPoint QPaintEngine::coordinateOffset() const
 void QPaintEngine::setSystemClip(const QRegion &region)
 {
     Q_D(QPaintEngine);
-    d->systemClip = region;
+    d->baseSystemClip = region;
     // Be backward compatible and only call d->systemStateChanged()
     // if we currently have a system transform/viewport set.
+    d->updateSystemClip();
     if (d->hasSystemTransform || d->hasSystemViewport) {
-        d->transformSystemClip();
         d->systemStateChanged();
     }
 }

@@ -2,6 +2,7 @@ TEMPLATE = subdirs
 QT_FOR_CONFIG += gui-private
 
 SUBDIRS = \
+    edid \
     eventdispatchers \
     devicediscovery \
     fbconvenience \
@@ -15,7 +16,7 @@ qtConfig(evdev)|qtConfig(tslib)|qtConfig(libinput)|qtConfig(integrityhid) {
     input.depends += devicediscovery
 }
 
-unix:!darwin: \
+if(unix:!uikit)|qtConfig(xcb): \
     SUBDIRS += services
 
 qtConfig(opengl): \
@@ -33,12 +34,14 @@ qtConfig(accessibility) {
         SUBDIRS += linuxaccessibility
         linuxaccessibility.depends += accessibility
     }
+    win32:!winrt: SUBDIRS += windowsuiautomation
 }
 
 darwin {
     SUBDIRS += \
         clipboard \
         graphics
-    macos: \
-        SUBDIRS += cglconvenience
 }
+
+qtConfig(vulkan): \
+    SUBDIRS += vkconvenience

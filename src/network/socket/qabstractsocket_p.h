@@ -71,6 +71,9 @@ public:
     QAbstractSocketPrivate();
     virtual ~QAbstractSocketPrivate();
 
+    // from QIODevicePrivate
+    qint64 skip(qint64 maxSize) override;
+
     // from QAbstractSocketEngineReceiver
     inline void readNotification() override { canReadNotification(); }
     inline void writeNotification() override { canWriteNotification(); }
@@ -153,6 +156,7 @@ public:
     QAbstractSocket::SocketType socketType;
     QAbstractSocket::SocketState state;
 
+    // Must be kept in sync with QIODevicePrivate::errorString.
     QAbstractSocket::SocketError socketError;
 
     QAbstractSocket::NetworkLayerProtocol preferredNetworkLayerProtocol;

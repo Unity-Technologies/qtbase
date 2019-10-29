@@ -46,19 +46,6 @@
 #include "qwindowsstyle_p.h"
 #if QT_CONFIG(style_fusion)
 #include "qfusionstyle_p.h"
-#if QT_CONFIG(style_android)
-#include "qandroidstyle_p.h"
-#endif
-#endif
-#if QT_CONFIG(style_windowsxp)
-#include "qwindowsxpstyle_p.h"
-#endif
-#if QT_CONFIG(style_windowsvista)
-#include "qwindowsvistastyle_p.h"
-#endif
-
-#if QT_CONFIG(style_mac)
-#  include "qmacstyle_mac_p.h"
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -81,7 +68,7 @@ Q_GLOBAL_STATIC_WITH_ARGS(QFactoryLoader, loader,
 
     The valid keys can be retrieved using the keys()
     function. Typically they include "windows" and "fusion".
-    Depending on the platform, "windowsxp", "windowsvista"
+    Depending on the platform, "windowsvista"
     and "macintosh" may be available.
     Note that keys are case insensitive.
 
@@ -90,7 +77,7 @@ Q_GLOBAL_STATIC_WITH_ARGS(QFactoryLoader, loader,
 
 /*!
     Creates and returns a QStyle object that matches the given \a key, or
-    returns 0 if no matching style is found.
+    returns \nullptr if no matching style is found.
 
     Both built-in styles and styles from style plugins are queried for a
     matching style.
@@ -108,34 +95,10 @@ QStyle *QStyleFactory::create(const QString& key)
         ret = new QWindowsStyle;
     else
 #endif
-#if QT_CONFIG(style_windowsxp)
-    if (style == QLatin1String("windowsxp"))
-        ret = new QWindowsXPStyle;
-    else
-#endif
-#if QT_CONFIG(style_windowsvista)
-    if (style == QLatin1String("windowsvista"))
-        ret = new QWindowsVistaStyle;
-    else
-#endif
 #if QT_CONFIG(style_fusion)
     if (style == QLatin1String("fusion"))
         ret = new QFusionStyle;
     else
-#endif
-#if QT_CONFIG(style_android)
-    if (style == QLatin1String("android"))
-        ret = new QAndroidStyle;
-    else
-#endif
-#if QT_CONFIG(style_mac)
-    if (style.startsWith(QLatin1String("macintosh"))) {
-        ret = new QMacStyle;
-#  if 0 // Used to be included in Qt4 for Q_WS_MAC
-        if (style == QLatin1String("macintosh"))
-            style += QLatin1String(" (aqua)");
-#  endif
-    } else
 #endif
     { } // Keep these here - they make the #ifdefery above work
     if (!ret)
@@ -164,31 +127,9 @@ QStringList QStyleFactory::keys()
     if (!list.contains(QLatin1String("Windows")))
         list << QLatin1String("Windows");
 #endif
-#if QT_CONFIG(style_windowsxp)
-    if (!list.contains(QLatin1String("WindowsXP")) &&
-        (QSysInfo::WindowsVersion >= QSysInfo::WV_XP && (QSysInfo::WindowsVersion & QSysInfo::WV_NT_based)))
-        list << QLatin1String("WindowsXP");
-#endif
-#if QT_CONFIG(style_windowsvista)
-    if (!list.contains(QLatin1String("WindowsVista")) &&
-        (QSysInfo::WindowsVersion >= QSysInfo::WV_VISTA && (QSysInfo::WindowsVersion & QSysInfo::WV_NT_based)))
-        list << QLatin1String("WindowsVista");
-#endif
-#if QT_CONFIG(style_android)
-    if (!list.contains(QLatin1String("Android")))
-        list << QLatin1String("Android");
-#endif
 #if QT_CONFIG(style_fusion)
     if (!list.contains(QLatin1String("Fusion")))
         list << QLatin1String("Fusion");
-#endif
-#if QT_CONFIG(style_mac)
-    QString mstyle = QLatin1String("Macintosh");
-# if 0 // Used to be included in Qt4 for Q_WS_MAC
-    mstyle += QLatin1String(" (aqua)");
-# endif
-    if (!list.contains(mstyle))
-        list << mstyle;
 #endif
     return list;
 }

@@ -30,6 +30,7 @@
 #include <QtTest/QtTest>
 #include <QtNetwork/QtNetwork>
 #include <qnetworkdiskcache.h>
+#include <qrandom.h>
 
 #include <algorithm>
 
@@ -281,6 +282,7 @@ void tst_QNetworkDiskCache::clear()
     // don't delete files that it didn't create
     QTemporaryFile file(cacheDirectory + "/XXXXXX");
     if (file.open()) {
+        file.fileName();    // make sure it exists with a name
         QCOMPARE(countFiles(cacheDirectory).count(), NUM_SUBDIRECTORIES + 3);
         cache.clear();
         QCOMPARE(countFiles(cacheDirectory).count(), NUM_SUBDIRECTORIES + 3);
@@ -692,25 +694,25 @@ public:
 
             if (write) {
                 QNetworkCacheMetaData m;
-                if (qrand() % 2 == 0)
+                if (QRandomGenerator::global()->bounded(2) == 0)
                     m = metaData;
                 else
                     m = metaData2;
 
-                if (qrand() % 20 == 1) {
+                if (QRandomGenerator::global()->bounded(20) == 1) {
                     //qDebug() << "write update";
                     cache.updateMetaData(m);
                     continue;
                 }
 
                 QIODevice *device = cache.prepare(m);
-                if (qrand() % 20 == 1) {
+                if (QRandomGenerator::global()->bounded(20) == 1) {
                     //qDebug() << "write remove";
                     cache.remove(url);
                     continue;
                 }
                 QVERIFY(device);
-                if (qrand() % 2 == 0)
+                if (QRandomGenerator::global()->bounded(2) == 0)
                     device->write(longString);
                 else
                     device->write(longString2);
@@ -739,9 +741,9 @@ public:
                     delete d;
                 }
             }
-            if (qrand() % 5 == 1)
+            if (QRandomGenerator::global()->bounded(5) == 1)
                 cache.remove(url);
-            if (qrand() % 5 == 1)
+            if (QRandomGenerator::global()->bounded(5) == 1)
                 cache.clear();
             sleep(0);
         }
@@ -790,7 +792,6 @@ void tst_QNetworkDiskCache::sync()
     return;
 
     QTime midnight(0, 0, 0);
-    qsrand(midnight.secsTo(QTime::currentTime()));
     Runner reader(tempDir.path());
     reader.dt = QDateTime::currentDateTime();
     reader.write = false;

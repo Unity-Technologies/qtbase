@@ -40,6 +40,7 @@
 #include "qapplication.h"
 #include "qbitmap.h"
 #include "qdesktopwidget.h"
+#include <private/qdesktopwidget_p.h>
 #if QT_CONFIG(dialog)
 #include <private/qdialog_p.h>
 #endif
@@ -52,15 +53,13 @@
 #include "qpushbutton.h"
 #include "qstyle.h"
 #include "qstyleoption.h"
+#if QT_CONFIG(toolbar)
 #include "qtoolbar.h"
+#endif
 #include "qdebug.h"
 #include "qlayoutitem.h"
 #if QT_CONFIG(dialogbuttonbox)
 #include "qdialogbuttonbox.h"
-#endif
-#if 0 // Used to be included in Qt4 for Q_WS_MAC
-#include "private/qmacstyle_mac_p.h"
-#include "private/qmacstyle_mac_p_p.h"
 #endif
 
 #ifndef QT_NO_ACCESSIBILITY
@@ -83,7 +82,7 @@ QT_BEGIN_NAMESPACE
     \ingroup basicwidgets
     \inmodule QtWidgets
 
-    \image windows-pushbutton.jpg
+    \image windows-pushbutton.png
 
     The push button, or command button, is perhaps the most commonly
     used widget in any graphical user interface. Push (click) a button
@@ -464,7 +463,7 @@ void QPushButton::keyPressEvent(QKeyEvent *e)
             click();
             break;
         }
-        // fall through
+        Q_FALLTHROUGH();
     default:
         QAbstractButton::keyPressEvent(e);
     }
@@ -599,7 +598,7 @@ QPoint QPushButtonPrivate::adjustedMenuPosition()
     Q_Q(QPushButton);
 
     bool horizontal = true;
-#if !defined(QT_NO_TOOLBAR)
+#if QT_CONFIG(toolbar)
     QToolBar *tb = qobject_cast<QToolBar*>(parent);
     if (tb && tb->orientation() == Qt::Vertical)
         horizontal = false;
@@ -613,7 +612,7 @@ QPoint QPushButtonPrivate::adjustedMenuPosition()
     QPoint globalPos = q->mapToGlobal(rect.topLeft());
     int x = globalPos.x();
     int y = globalPos.y();
-    const QRect availableGeometry = QApplication::desktop()->availableGeometry(q);
+    const QRect availableGeometry = QDesktopWidgetPrivate::availableGeometry(q);
     if (horizontal) {
         if (globalPos.y() + rect.height() + menuSize.height() <= availableGeometry.bottom()) {
             y += rect.height();

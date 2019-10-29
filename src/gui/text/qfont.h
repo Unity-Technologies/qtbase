@@ -68,6 +68,7 @@ public:
         Monospace,
         Fantasy
     };
+    Q_ENUM(StyleHint)
 
     enum StyleStrategy {
         PreferDefault       = 0x0001,
@@ -82,6 +83,7 @@ public:
         OpenGLCompatible    = 0x0200,
         ForceIntegerMetrics = 0x0400,
         NoSubpixelAntialias = 0x0800,
+        PreferNoShaping     = 0x1000,
         NoFontMerging       = 0x8000
     };
     Q_ENUM(StyleStrategy)
@@ -92,6 +94,7 @@ public:
         PreferVerticalHinting       = 2,
         PreferFullHinting           = 3
     };
+    Q_ENUM(HintingPreference)
 
     // Mapping OpenType weight value.
     enum Weight {
@@ -105,12 +108,14 @@ public:
         ExtraBold = 81,  // 800
         Black    = 87    // 900
     };
+    Q_ENUM(Weight)
 
     enum Style {
         StyleNormal,
         StyleItalic,
         StyleOblique
     };
+    Q_ENUM(Style)
 
     enum Stretch {
         AnyStretch     =   0,
@@ -124,6 +129,7 @@ public:
         ExtraExpanded  = 150,
         UltraExpanded  = 200
     };
+    Q_ENUM(Stretch)
 
     enum Capitalization {
         MixedCase,
@@ -132,11 +138,13 @@ public:
         SmallCaps,
         Capitalize
     };
+    Q_ENUM(Capitalization)
 
     enum SpacingType {
         PercentageSpacing,
         AbsoluteSpacing
     };
+    Q_ENUM(SpacingType)
 
     enum ResolveProperties {
         FamilyResolved              = 0x0001,

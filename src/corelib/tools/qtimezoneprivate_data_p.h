@@ -114,12 +114,13 @@ struct QUtcData {
 // GENERATED PART STARTS HERE
 
 /*
-    This part of the file was generated on 2016-03-19 from the
+    This part of the file was generated on 2017-05-23 from the
     Common Locale Data Repository v29 supplemental/windowsZones.xml file $Revision: 12348 $
 
     http://www.unicode.org/cldr/
 
-    Do not change this data, only generate it using cldr2qtimezone.py.
+    Do not edit this code: run cldr2qtimezone.py on updated (or
+    edited) CLDR data; see qtbase/util/local_database/.
 */
 
 // Windows ID Key, Country Enum, IANA ID Index

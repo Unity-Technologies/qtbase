@@ -42,6 +42,7 @@
 #ifndef QT_NO_IMAGEFORMAT_XPM
 
 #include <private/qcolor_p.h>
+#include <qbytearraymatcher.h>
 #include <qimage.h>
 #include <qmap.h>
 #include <qtextstream.h>
@@ -740,10 +741,6 @@ static const struct XPMRGBData {
   { QRGB(139,139,  0),  "yellow4" },
   { QRGB(154,205, 50),  "yellowgreen" } };
 
-#if defined(Q_CC_MSVC) && _MSC_VER < 1600
-inline bool operator<(const XPMRGBData &data1, const XPMRGBData &data2)
-{ return qstrcmp(data1.name, data2.name) < 0; }
-#endif
 
 inline bool operator<(const char *name, const XPMRGBData &data)
 { return qstrcmp(name, data.name) < 0; }
@@ -1041,7 +1038,9 @@ bool qt_read_xpm_image_or_array(QIODevice *device, const char * const * source, 
         if ((readBytes = device->readLine(buf.data(), buf.size())) < 0)
             return false;
 
-        if (buf.indexOf("/* XPM") != 0) {
+        static Q_RELAXED_CONSTEXPR auto matcher = qMakeStaticByteArrayMatcher("/* XPM");
+
+        if (matcher.indexIn(buf) != 0) {
             while (readBytes > 0) {
                 device->ungetChar(buf.at(readBytes - 1));
                 --readBytes;

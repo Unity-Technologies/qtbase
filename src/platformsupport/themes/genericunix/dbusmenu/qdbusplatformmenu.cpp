@@ -50,9 +50,8 @@ Q_LOGGING_CATEGORY(qLcMenu, "qt.qpa.menu")
 static int nextDBusID = 1;
 QHash<int, QDBusPlatformMenuItem *> menuItemsByID;
 
-QDBusPlatformMenuItem::QDBusPlatformMenuItem(quintptr tag)
-    : m_tag(tag ? tag : reinterpret_cast<quintptr>(this)) // QMenu will overwrite this later
-    , m_subMenu(Q_NULLPTR)
+QDBusPlatformMenuItem::QDBusPlatformMenuItem()
+    : m_subMenu(nullptr)
     , m_role(NoRole)
     , m_isEnabled(true)
     , m_isVisible(true)
@@ -69,12 +68,7 @@ QDBusPlatformMenuItem::~QDBusPlatformMenuItem()
 {
     menuItemsByID.remove(m_dbusID);
     if (m_subMenu)
-        static_cast<QDBusPlatformMenu *>(m_subMenu)->setContainingMenuItem(Q_NULLPTR);
-}
-
-void QDBusPlatformMenuItem::setTag(quintptr tag)
-{
-    m_tag = tag;
+        static_cast<QDBusPlatformMenu *>(m_subMenu)->setContainingMenuItem(nullptr);
 }
 
 void QDBusPlatformMenuItem::setText(const QString &text)
@@ -94,7 +88,7 @@ void QDBusPlatformMenuItem::setIcon(const QIcon &icon)
 void QDBusPlatformMenuItem::setMenu(QPlatformMenu *menu)
 {
     if (m_subMenu)
-        static_cast<QDBusPlatformMenu *>(m_subMenu)->setContainingMenuItem(Q_NULLPTR);
+        static_cast<QDBusPlatformMenu *>(m_subMenu)->setContainingMenuItem(nullptr);
     m_subMenu = menu;
     if (menu)
         static_cast<QDBusPlatformMenu *>(menu)->setContainingMenuItem(this);
@@ -153,7 +147,7 @@ QDBusPlatformMenuItem *QDBusPlatformMenuItem::byId(int id)
     // a default-constructed nullptr value into menuItemsByID
     if (menuItemsByID.contains(id))
         return menuItemsByID[id];
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QList<const QDBusPlatformMenuItem *> QDBusPlatformMenuItem::byIds(const QList<int> &ids)
@@ -167,19 +161,18 @@ QList<const QDBusPlatformMenuItem *> QDBusPlatformMenuItem::byIds(const QList<in
 }
 
 
-QDBusPlatformMenu::QDBusPlatformMenu(quintptr tag)
-    : m_tag(tag ? tag : reinterpret_cast<quintptr>(this))
-    , m_isEnabled(true)
+QDBusPlatformMenu::QDBusPlatformMenu()
+    : m_isEnabled(true)
     , m_isVisible(true)
     , m_revision(1)
-    , m_containingMenuItem(Q_NULLPTR)
+    , m_containingMenuItem(nullptr)
 {
 }
 
 QDBusPlatformMenu::~QDBusPlatformMenu()
 {
     if (m_containingMenuItem)
-        m_containingMenuItem->setMenu(Q_NULLPTR);
+        m_containingMenuItem->setMenu(nullptr);
 }
 
 void QDBusPlatformMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMenuItem *before)
@@ -250,11 +243,6 @@ void QDBusPlatformMenu::emitUpdated()
         emit updated(++m_revision, m_containingMenuItem->dbusID());
     else
         emit updated(++m_revision, 0);
-}
-
-void QDBusPlatformMenu::setTag(quintptr tag)
-{
-    m_tag = tag;
 }
 
 void QDBusPlatformMenu::setText(const QString &text)

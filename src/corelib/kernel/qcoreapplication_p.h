@@ -53,9 +53,15 @@
 
 #include "QtCore/qcoreapplication.h"
 #include "QtCore/qtranslator.h"
+#if QT_CONFIG(settings)
 #include "QtCore/qsettings.h"
+#endif
 #ifndef QT_NO_QOBJECT
 #include "private/qobject_p.h"
+#endif
+
+#ifdef Q_OS_MACOS
+#include "private/qcore_mac_p.h"
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -134,7 +140,7 @@ public:
 
 #ifndef QT_NO_TRANSLATION
     QTranslatorList translators;
-
+    QReadWriteLock translateMutex;
     static bool isTranslatorInstalled(QTranslator *translator);
 #endif
 

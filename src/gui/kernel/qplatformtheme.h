@@ -115,7 +115,10 @@ public:
         MousePressAndHoldInterval,
         MouseDoubleClickDistance,
         WheelScrollLines,
-        TouchDoubleTapDistance
+        TouchDoubleTapDistance,
+        ShowShortcutsInContextMenus,
+        IconFallbackSearchPaths,
+        MouseQuickSelectionThreshold
     };
 
     enum DialogType {

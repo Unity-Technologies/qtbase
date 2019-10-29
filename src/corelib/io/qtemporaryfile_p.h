@@ -53,25 +53,48 @@
 
 #include <QtCore/qglobal.h>
 
-#ifndef QT_NO_TEMPORARYFILE
-
 #include "private/qfsfileengine_p.h"
 #include "private/qfilesystemengine_p.h"
 #include "private/qfile_p.h"
+#include "qtemporaryfile.h"
+
+#if defined(Q_OS_LINUX) && QT_CONFIG(linkat)
+#  include <fcntl.h>
+#  ifdef O_TMPFILE
+// some early libc support had the wrong values for O_TMPFILE
+// (see https://bugzilla.gnome.org/show_bug.cgi?id=769453#c18)
+#    if (O_TMPFILE & O_DIRECTORY) == O_DIRECTORY
+#      define LINUX_UNNAMED_TMPFILE
+#    endif
+#  endif
+#endif
 
 QT_BEGIN_NAMESPACE
+
+struct QTemporaryFileName
+{
+    QFileSystemEntry::NativePath path;
+    qsizetype pos;
+    qsizetype length;
+
+    QTemporaryFileName(const QString &templateName);
+    QFileSystemEntry::NativePath generateNext();
+};
+
+#ifndef QT_NO_TEMPORARYFILE
 
 class QTemporaryFilePrivate : public QFilePrivate
 {
     Q_DECLARE_PUBLIC(QTemporaryFile)
 
-protected:
+public:
     QTemporaryFilePrivate();
     explicit QTemporaryFilePrivate(const QString &templateNameIn);
     ~QTemporaryFilePrivate();
 
     QAbstractFileEngine *engine() const override;
     void resetFileEngine() const;
+    void materializeUnnamedFile();
 
     bool autoRemove = true;
     QString templateName = defaultTemplateName();
@@ -87,7 +110,9 @@ class QTemporaryFileEngine : public QFSFileEngine
 public:
     enum Flags { Win32NonShared = 0x1 };
 
-    explicit QTemporaryFileEngine(int _flags = 0) : flags(_flags) {}
+    explicit QTemporaryFileEngine(const QString *_templateName, int _flags = 0)
+        : templateName(*_templateName), flags(_flags)
+    {}
 
     void initialize(const QString &file, quint32 mode, bool nameIsTemplate = true)
     {
@@ -95,32 +120,41 @@ public:
         Q_ASSERT(!isReallyOpen());
         fileMode = mode;
         filePathIsTemplate = filePathWasTemplate = nameIsTemplate;
-        d->fileEntry = QFileSystemEntry(file);
 
-        if (!filePathIsTemplate)
+        if (filePathIsTemplate) {
+            d->fileEntry.clear();
+        } else {
+            d->fileEntry = QFileSystemEntry(file);
             QFSFileEngine::setFileName(file);
+        }
     }
     ~QTemporaryFileEngine();
 
     bool isReallyOpen() const;
     void setFileName(const QString &file) override;
-    void setFileTemplate(const QString &fileTemplate);
 
     bool open(QIODevice::OpenMode flags) override;
     bool remove() override;
     bool rename(const QString &newName) override;
     bool renameOverwrite(const QString &newName) override;
     bool close() override;
+    QString fileName(FileName file) const override;
 
+    enum MaterializationMode { Overwrite, DontOverwrite, NameIsTemplate };
+    bool materializeUnnamedFile(const QString &newName, MaterializationMode mode);
+    bool isUnnamedFile() const override final;
+
+    const QString &templateName;
     quint32 fileMode;
-    int flags;
+    int flags = 0;
     bool filePathIsTemplate;
     bool filePathWasTemplate;
+    bool unnamedFile = false;
 };
 
-QT_END_NAMESPACE
-
 #endif // QT_NO_TEMPORARYFILE
+
+QT_END_NAMESPACE
 
 #endif /* QTEMPORARYFILE_P_H */
 

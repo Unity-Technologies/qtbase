@@ -477,9 +477,9 @@ QVariant QSqlTableModel::data(const QModelIndex &index, int role) const
     if (!index.isValid() || (role != Qt::DisplayRole && role != Qt::EditRole))
         return QVariant();
 
-    const QSqlTableModelPrivate::ModifiedRow mrow = d->cache.value(index.row());
-    if (mrow.op() != QSqlTableModelPrivate::None)
-        return mrow.rec().value(index.column());
+    const auto it = d->cache.constFind(index.row());
+    if (it != d->cache.constEnd() && it->op() != QSqlTableModelPrivate::None)
+        return it->rec().value(index.column());
 
     return QSqlQueryModel::data(index, role);
 }
@@ -532,7 +532,10 @@ bool QSqlTableModel::isDirty(const QModelIndex &index) const
     if (!index.isValid())
         return false;
 
-    const QSqlTableModelPrivate::ModifiedRow row = d->cache.value(index.row());
+    const auto it = d->cache.constFind(index.row());
+    if (it == d->cache.constEnd())
+        return false;
+    const QSqlTableModelPrivate::ModifiedRow &row = *it;
     if (row.submitted())
         return false;
 
@@ -561,6 +564,10 @@ bool QSqlTableModel::isDirty(const QModelIndex &index) const
 
     Returns \c true if the value could be set or false on error, for
     example if \a index is out of bounds.
+
+    Returns \c false if the role is not Qt::EditRole. To set data
+    for roles other than EditRole, either use a custom proxy model
+    or subclass QSqlTableModel.
 
     \sa editStrategy(), data(), submit(), submitAll(), revertRow()
 */
@@ -1231,7 +1238,8 @@ int QSqlTableModel::rowCount(const QModelIndex &parent) const
 QModelIndex QSqlTableModel::indexInQuery(const QModelIndex &item) const
 {
     Q_D(const QSqlTableModel);
-    if (d->cache.value(item.row()).insert())
+    const auto it = d->cache.constFind(item.row());
+    if (it != d->cache.constEnd() && it->insert())
         return QModelIndex();
 
     const int rowOffset = d->insertCount(item.row());
@@ -1364,12 +1372,12 @@ QSqlRecord QSqlTableModel::record(int row) const
     target fields are mapped by field name, not by position in
     the record.
 
-    Note that the generated flags in \a values are preserved
-    and determine whether the corresponding fields are used when
-    changes are submitted to the database. The caller should
-    remember to set the generated flag to FALSE for fields
-    where the database is meant to supply the value, such as an
-    automatically incremented ID.
+    Note that the generated flags in \a values are preserved to
+    determine whether the corresponding fields are used when changes
+    are submitted to the database. By default, it is set to \c true
+    for all fields in a QSqlRecord. You must set the flag to \c false
+    using \l{QSqlRecord::}{setGenerated}(false) for any value in
+    \a values, to save changes back to the database.
 
     For edit strategies OnFieldChange and OnRowChange, a row may
     receive a change only if no other row has a cached change.

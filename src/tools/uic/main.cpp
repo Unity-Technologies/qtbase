@@ -75,6 +75,10 @@ int runUic(int argc, char *argv[])
     noImplicitIncludesOption.setDescription(QStringLiteral("Disable generation of #include-directives."));
     parser.addOption(noImplicitIncludesOption);
 
+    QCommandLineOption noStringLiteralOption(QStringList() << QStringLiteral("s") << QStringLiteral("no-stringliteral"));
+    noStringLiteralOption.setDescription(QStringLiteral("Deprecated. The use of this option won't take any effect."));
+    parser.addOption(noStringLiteralOption);
+
     QCommandLineOption postfixOption(QStringLiteral("postfix"));
     postfixOption.setDescription(QStringLiteral("Postfix to add to all generated classnames."));
     postfixOption.setValueName(QStringLiteral("postfix"));
@@ -111,7 +115,9 @@ int runUic(int argc, char *argv[])
     driver.option().postfix = parser.value(postfixOption);
     driver.option().translateFunction = parser.value(translateOption);
     driver.option().includeFile = parser.value(includeOption);
-    driver.option().generator = (parser.value(generatorOption).toLower() == QLatin1String("java")) ? Option::JavaGenerator : Option::CppGenerator;
+
+    if (parser.isSet(noStringLiteralOption))
+        fprintf(stderr, "The -s, --no-stringliteral option is deprecated and it won't take any effect.\n");
 
     QString inputFile;
     if (!parser.positionalArguments().isEmpty())
@@ -132,7 +138,7 @@ int runUic(int argc, char *argv[])
             return 1;
         }
         out = new QTextStream(&f);
-#ifndef QT_NO_TEXTCODEC
+#if QT_CONFIG(textcodec)
         out->setCodec(QTextCodec::codecForName("UTF-8"));
 #endif
     }

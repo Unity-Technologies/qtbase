@@ -75,7 +75,7 @@
     QSortFilterProxyModel's default implementations of functions are
     written so that they call the equivalent functions in the relevant
     source model. This simple proxying mechanism may need to be
-    overridden for source models with more complex behavior; in this
+    overridden for source models with more complex behavior. In this
     example we derive from the QSortFilterProxyModel class to ensure
     that our filter can recognize a valid range of dates, and to
     control the sorting behavior.
@@ -121,14 +121,14 @@
 
     \snippet itemviews/customsortfiltermodel/mysortfilterproxymodel.cpp 6
 
-    We use QRegExp to define a pattern for the addresses we are looking
-    for. The QRegExp::indexIn() function attempts to find a match in
-    the given string and returns the position of the first match, or
-    -1 if there was no match. If the given string contains the
-    pattern, we use QRegExp's \l {QRegExp::cap()}{cap()} function to
-    retrieve the actual address. The \l {QRegExp::cap()}{cap()}
-    function returns the text captured by the \e nth
-    subexpression. The entire match has index 0 and the parenthesized
+    We use QRegularExpression to define a pattern for the addresses we
+    are looking for. The \l {QRegularExpression::match()}{match()} function
+    returns a QRegularExpressionMatch object which contains the result of
+    the matching. If there is a match,
+    \l {QRegularExpressionMatch::hasMatch()}{hasMatch()} returns true. The
+    result of the match can be retrieved with QRegularExpressionMatch's
+    \l {QRegularExpressionMatch::captured()}{captured()} function.
+    The entire match has index 0 and the parenthesized
     subexpressions have indexes starting from 1 (excluding
     non-capturing parentheses).
 
@@ -170,7 +170,7 @@
 
     We implement two private slots, \c textFilterChanged() and \c
     dateFilterChanged(), to respond to the user changing the filter
-    pattern, case sensitivity or any of the dates. In addition, we
+    pattern, case sensitivity, or any of the dates. In addition, we
     implement a public \c setSourceModel() convenience function to set
     up the model/ view relation.
 
@@ -197,7 +197,7 @@
     \snippet itemviews/customsortfiltermodel/window.cpp 1
 
     The QTreeView class provides a default model/view implementation
-    of a tree view; our view implements a tree representation of items
+    of a tree view. Our view implements a tree representation of items
     in the application's source model.
 
     \snippet itemviews/customsortfiltermodel/window.cpp 2

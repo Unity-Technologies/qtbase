@@ -323,7 +323,8 @@ public:
             return false;
 
         q->setLastError(QSqlError(QCoreApplication::translate("QIBaseDriver", msg),
-                        imsg, typ, int(sqlcode)));
+                                  imsg, typ,
+                                  sqlcode != -1 ? QString::number(sqlcode) : QString()));
         return true;
     }
 
@@ -356,16 +357,16 @@ class QIBaseResult : public QSqlCachedResult
 public:
     explicit QIBaseResult(const QIBaseDriver* db);
 
-    bool prepare(const QString &query) Q_DECL_OVERRIDE;
-    bool exec() Q_DECL_OVERRIDE;
-    QVariant handle() const Q_DECL_OVERRIDE;
+    bool prepare(const QString &query) override;
+    bool exec() override;
+    QVariant handle() const override;
 
 protected:
-    bool gotoNext(QSqlCachedResult::ValueCache& row, int rowIdx) Q_DECL_OVERRIDE;
-    bool reset (const QString &query) Q_DECL_OVERRIDE;
-    int size() Q_DECL_OVERRIDE;
-    int numRowsAffected() Q_DECL_OVERRIDE;
-    QSqlRecord record() const Q_DECL_OVERRIDE;
+    bool gotoNext(QSqlCachedResult::ValueCache& row, int rowIdx) override;
+    bool reset (const QString &query) override;
+    int size() override;
+    int numRowsAffected() override;
+    QSqlRecord record() const override;
 };
 
 class QIBaseResultPrivate: public QSqlCachedResultPrivate
@@ -388,7 +389,8 @@ public:
             return false;
 
         q->setLastError(QSqlError(QCoreApplication::translate("QIBaseResult", msg),
-                        imsg, typ, int(sqlcode)));
+                        imsg, typ,
+                        sqlcode != -1 ? QString::number(sqlcode) : QString()));
         return true;
     }
 
@@ -1383,7 +1385,8 @@ QSqlRecord QIBaseResult::record() const
     for (int i = 0; i < d->sqlda->sqld; ++i) {
         v = d->sqlda->sqlvar[i];
         QSqlField f(QString::fromLatin1(v.aliasname, v.aliasname_length).simplified(),
-                    qIBaseTypeName2(v.sqltype, v.sqlscale < 0));
+                    qIBaseTypeName2(v.sqltype, v.sqlscale < 0),
+                                    QString::fromLatin1(v.relname, v.relname_length));
         f.setLength(v.sqllen);
         f.setPrecision(qAbs(v.sqlscale));
         f.setRequiredStatus((v.sqltype & 1) == 0 ? QSqlField::Required : QSqlField::Optional);
@@ -1686,7 +1689,7 @@ QSqlRecord QIBaseDriver::record(const QString& tablename) const
     while (q.next()) {
         int type = q.value(1).toInt();
         bool hasScale = q.value(3).toInt() < 0;
-        QSqlField f(q.value(0).toString().simplified(), qIBaseTypeName(type, hasScale));
+        QSqlField f(q.value(0).toString().simplified(), qIBaseTypeName(type, hasScale), tablename);
         if(hasScale) {
             f.setLength(q.value(4).toInt());
             f.setPrecision(qAbs(q.value(3).toInt()));
@@ -1727,7 +1730,9 @@ QSqlIndex QIBaseDriver::primaryIndex(const QString &table) const
            "ORDER BY b.RDB$FIELD_POSITION"));
 
     while (q.next()) {
-        QSqlField field(q.value(1).toString().simplified(), qIBaseTypeName(q.value(2).toInt(), q.value(3).toInt() < 0));
+        QSqlField field(q.value(1).toString().simplified(),
+                        qIBaseTypeName(q.value(2).toInt(), q.value(3).toInt() < 0),
+                        tablename);
         index.append(field); //TODO: asc? desc?
         index.setName(q.value(0).toString());
     }
@@ -1840,9 +1845,11 @@ bool QIBaseDriver::subscribeToNotification(const QString &name)
                    eBuffer->bufferLength,
                    eBuffer->eventBuffer,
 #if defined (FB_API_VER) && FB_API_VER >= 20
-                   (ISC_EVENT_CALLBACK)qEventCallback,
+                   reinterpret_cast<ISC_EVENT_CALLBACK>(reinterpret_cast<void *>
+                                                                     (&qEventCallback)),
 #else
-                   (isc_callback)qEventCallback,
+                   reinterpret_cast<isc_callback>(reinterpret_cast<void *>
+                                                        (&qEventCallback)),
 #endif
                    eBuffer->resultBuffer);
 
@@ -1920,9 +1927,11 @@ void QIBaseDriver::qHandleEventNotification(void *updatedResultBuffer)
                            eBuffer->bufferLength,
                            eBuffer->eventBuffer,
 #if defined (FB_API_VER) && FB_API_VER >= 20
-                                    (ISC_EVENT_CALLBACK)qEventCallback,
+                           reinterpret_cast<ISC_EVENT_CALLBACK>(reinterpret_cast<void *>
+                                                                (&qEventCallback)),
 #else
-                                    (isc_callback)qEventCallback,
+                           reinterpret_cast<isc_callback>(reinterpret_cast<void *>
+                                                          (&qEventCallback)),
 #endif
                                    eBuffer->resultBuffer);
             if (Q_UNLIKELY(status[0] == 1 && status[1])) {

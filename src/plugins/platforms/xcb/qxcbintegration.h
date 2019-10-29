@@ -53,7 +53,6 @@ QT_BEGIN_NAMESPACE
 class QXcbConnection;
 class QAbstractEventDispatcher;
 class QXcbNativeInterface;
-class QXcbScreen;
 
 class Q_XCB_EXPORT QXcbIntegration : public QPlatformIntegration
 {
@@ -61,6 +60,7 @@ public:
     QXcbIntegration(const QStringList &parameters, int &argc, char **argv);
     ~QXcbIntegration();
 
+    QPlatformPixmap *createPlatformPixmap(QPlatformPixmap::PixelType type) const override;
     QPlatformWindow *createPlatformWindow(QWindow *window) const override;
     QPlatformWindow *createForeignWindow(QWindow *window, WId nativeHandle) const override;
 #ifndef QT_NO_OPENGL
@@ -83,7 +83,7 @@ public:
 #ifndef QT_NO_CLIPBOARD
     QPlatformClipboard *clipboard() const override;
 #endif
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     QPlatformDrag *drag() const override;
 #endif
 
@@ -102,6 +102,7 @@ public:
     QPlatformTheme *createPlatformTheme(const QString &name) const override;
     QVariant styleHint(StyleHint hint) const override;
 
+    bool hasDefaultConnection() const { return !m_connections.isEmpty(); }
     QXcbConnection *defaultConnection() const { return m_connections.first(); }
 
     QByteArray wmClass() const;
@@ -113,6 +114,12 @@ public:
     void sync() override;
 
     void beep() const override;
+
+    bool nativePaintingEnabled() const;
+
+#if QT_CONFIG(vulkan)
+    QPlatformVulkanInstance *createPlatformVulkanInstance(QVulkanInstance *instance) const override;
+#endif
 
     static QXcbIntegration *instance() { return m_instance; }
 
@@ -129,8 +136,6 @@ private:
 #endif
 
     QScopedPointer<QPlatformServices> m_services;
-
-    friend class QXcbConnection; // access QPlatformIntegration::screenAdded()
 
     mutable QByteArray m_wmClass;
     const char *m_instanceName;

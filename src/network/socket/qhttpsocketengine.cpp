@@ -572,18 +572,13 @@ void QHttpSocketEngine::slotSocketReadNotification()
     }
 
     if (d->state == ReadResponseContent) {
-        char dummybuffer[4096];
-        while (d->pendingResponseData) {
-            int read = d->socket->read(dummybuffer, qMin(sizeof(dummybuffer), (size_t)d->pendingResponseData));
-            if (read == 0)
-                return;
-            if (read == -1) {
-                d->socket->disconnectFromHost();
-                emitWriteNotification();
-                return;
-            }
-            d->pendingResponseData -= read;
+        qint64 skipped = d->socket->skip(d->pendingResponseData);
+        if (skipped == -1) {
+            d->socket->disconnectFromHost();
+            emitWriteNotification();
+            return;
         }
+        d->pendingResponseData -= uint(skipped);
         if (d->pendingResponseData > 0)
             return;
         if (d->reply->d_func()->statusCode == 407)
@@ -632,10 +627,9 @@ void QHttpSocketEngine::slotSocketReadNotification()
         // from http spec is also allowed.
         if (proxyConnectionHeader.isEmpty())
             proxyConnectionHeader = d->reply->headerField("Connection");
-        proxyConnectionHeader = proxyConnectionHeader.toLower();
-        if (proxyConnectionHeader == "close") {
+        if (proxyConnectionHeader.compare("close", Qt::CaseInsensitive) == 0) {
             willClose = true;
-        } else if (proxyConnectionHeader == "keep-alive") {
+        } else if (proxyConnectionHeader.compare("keep-alive", Qt::CaseInsensitive) == 0) {
             willClose = false;
         } else {
             // no Proxy-Connection header, so use the default

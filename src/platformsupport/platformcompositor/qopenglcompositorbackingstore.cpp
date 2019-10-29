@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2017 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -101,7 +101,7 @@ QOpenGLCompositorBackingStore::~QOpenGLCompositorBackingStore()
             ctx->makeCurrent(tempSurface.data());
         }
 
-        if (ctx && m_bsTextureContext && ctx->shareGroup() == m_bsTextureContext->shareGroup())
+        if (m_bsTextureContext && ctx->shareGroup() == m_bsTextureContext->shareGroup())
             glDeleteTextures(1, &m_bsTexture);
         else
             qWarning("QOpenGLCompositorBackingStore: Texture is not valid in the current context");
@@ -196,20 +196,19 @@ void QOpenGLCompositorBackingStore::flush(QWindow *window, const QRegion &region
     dstCtx->makeCurrent(dstWin);
     updateTexture();
     m_textures->clear();
-    m_textures->appendTexture(Q_NULLPTR, m_bsTexture, window->geometry());
+    m_textures->appendTexture(nullptr, m_bsTexture, window->geometry());
 
     compositor->update();
 }
 
 void QOpenGLCompositorBackingStore::composeAndFlush(QWindow *window, const QRegion &region, const QPoint &offset,
-                                               QPlatformTextureList *textures, QOpenGLContext *context,
+                                               QPlatformTextureList *textures,
                                                bool translucentBackground)
 {
     // QOpenGLWidget/QQuickWidget content provided as textures. The raster content goes on top.
 
     Q_UNUSED(region);
     Q_UNUSED(offset);
-    Q_UNUSED(context);
     Q_UNUSED(translucentBackground);
 
     QOpenGLCompositor *compositor = QOpenGLCompositor::instance();
@@ -218,7 +217,7 @@ void QOpenGLCompositorBackingStore::composeAndFlush(QWindow *window, const QRegi
 
     // The compositor's context and the context to which QOpenGLWidget/QQuickWidget
     // textures belong are not the same. They share resources, though.
-    Q_ASSERT(context->shareGroup() == dstCtx->shareGroup());
+    Q_ASSERT(qt_window_private(window)->shareContext()->shareGroup() == dstCtx->shareGroup());
 
     QWindow *dstWin = compositor->targetWindow();
     if (!dstWin)
@@ -234,7 +233,7 @@ void QOpenGLCompositorBackingStore::composeAndFlush(QWindow *window, const QRegi
                                   textures->clipRect(i), textures->flags(i));
 
     updateTexture();
-    m_textures->appendTexture(Q_NULLPTR, m_bsTexture, window->geometry());
+    m_textures->appendTexture(nullptr, m_bsTexture, window->geometry());
 
     textures->lock(true);
     m_lockedWidgetTextures = textures;
@@ -281,7 +280,7 @@ void QOpenGLCompositorBackingStore::resize(const QSize &size, const QRegion &sta
     if (m_bsTexture) {
         glDeleteTextures(1, &m_bsTexture);
         m_bsTexture = 0;
-        m_bsTextureContext = Q_NULLPTR;
+        m_bsTextureContext = nullptr;
     }
 }
 

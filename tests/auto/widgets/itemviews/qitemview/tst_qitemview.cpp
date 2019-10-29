@@ -30,16 +30,6 @@
 #include <QtTest/QtTest>
 #include <QtCore/QtCore>
 #include "viewstotest.cpp"
-#include <stdlib.h>
-
-#if defined(Q_OS_UNIX) || defined(Q_OS_WIN)
-#include <time.h>
-#endif
-
-#if defined(Q_OS_WIN)
-#  define random rand
-#  define srandom srand
-#endif
 
 /*!
     See viewstotest.cpp for instructions on how to have your view tested with these tests.
@@ -337,7 +327,7 @@ void tst_QItemView::nonDestructiveBasicTest()
     QCOMPARE(view->tabKeyNavigation(), false);
     view->setTabKeyNavigation(true);
     QCOMPARE(view->tabKeyNavigation(), true);
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     // setDropIndicatorShown
     view->setDropIndicatorShown(false);
     QCOMPARE(view->showDropIndicator(), false);
@@ -410,13 +400,15 @@ void touch(QWidget *widget, Qt::KeyboardModifier modifier, Qt::Key keyPress){
     int width = widget->width();
     int height = widget->height();
     for (int i = 0; i < 5; ++i) {
-        QTest::mouseClick(widget, Qt::LeftButton, modifier, QPoint(random() % width, random() % height));
-        QTest::mouseDClick(widget, Qt::LeftButton, modifier, QPoint(random() % width, random() % height));
-        QPoint press(random() % width, random() % height);
-        QPoint releasePoint(random() % width, random() % height);
+        QTest::mouseClick(widget, Qt::LeftButton, modifier,
+                          QPoint(QRandomGenerator::global()->bounded(width), QRandomGenerator::global()->bounded(height)));
+        QTest::mouseDClick(widget, Qt::LeftButton, modifier,
+                           QPoint(QRandomGenerator::global()->bounded(width), QRandomGenerator::global()->bounded(height)));
+        QPoint press(QRandomGenerator::global()->bounded(width), QRandomGenerator::global()->bounded(height));
+        QPoint releasePoint(QRandomGenerator::global()->bounded(width), QRandomGenerator::global()->bounded(height));
         QTest::mousePress(widget, Qt::LeftButton, modifier, press);
         QTest::mouseMove(widget, releasePoint);
-        if (random() % 1 == 0)
+        if (QRandomGenerator::global()->bounded(1) == 0)
             QTest::mouseRelease(widget, Qt::LeftButton, 0, releasePoint);
         else
             QTest::mouseRelease(widget, Qt::LeftButton, modifier, releasePoint);
@@ -443,7 +435,6 @@ void tst_QItemView::spider()
     view->setModel(treeModel);
     view->show();
     QVERIFY(QTest::qWaitForWindowActive(view));
-    srandom(time(0));
     touch(view->viewport(), Qt::NoModifier, Qt::Key_Left);
     touch(view->viewport(), Qt::ShiftModifier, Qt::Key_Enter);
     touch(view->viewport(), Qt::ControlModifier, Qt::Key_Backspace);
@@ -555,23 +546,26 @@ void tst_QItemView::walkScreen(QAbstractItemView *view)
     }
 }
 
-void walkIndex(QModelIndex index, QAbstractItemView *view)
+void walkIndex(const QModelIndex &index, const QAbstractItemView *view)
 {
-    QRect visualRect = view->visualRect(index);
-    //if (index.column() == 0)
-    //qDebug() << index << visualRect;
-    int width = visualRect.width();
-    int height = visualRect.height();
+    const QRect visualRect = view->visualRect(index);
+    const int width = visualRect.width();
+    const int height = visualRect.height();
 
-    for (int w = 0; w < width; ++w)
+    if (width == 0 || height == 0)
+        return;
+
+    const auto widths = (width < 2) ? QVector<int>({ 0, 1 }) : QVector<int>({ 0, 1, width / 2, width - 2, width - 1 });
+    const auto heights = (height < 2) ? QVector<int>({ 0, 1 }) : QVector<int>({ 0, 1, height / 2, height - 2, height - 1 });
+    for (int w : widths)
     {
-        for (int h = 0; h < height; ++h)
+        for (int h : heights)
         {
-            QPoint point(visualRect.x()+w, visualRect.y()+h);
-            if (view->indexAt(point) != index) {
+            const QPoint point(visualRect.x() + w, visualRect.y() + h);
+            const auto idxAt = view->indexAt(point);
+            if (idxAt != index)
                 qDebug() << "index" << index << "visualRect" << visualRect << point << view->indexAt(point);
-            }
-            QCOMPARE(view->indexAt(point), index);
+            QCOMPARE(idxAt, index);
         }
     }
 
@@ -588,7 +582,7 @@ void walkIndex(QModelIndex index, QAbstractItemView *view)
     a bug it will point it out, but the above tests should have already found the basic bugs
     because it is easier to figure out the problem in those tests then this one.
  */
-void checkChildren(QAbstractItemView *currentView, const QModelIndex &parent = QModelIndex(), int currentDepth=0)
+void checkChildren(const QAbstractItemView *currentView, const QModelIndex &parent = QModelIndex(), int currentDepth = 0)
 {
     QAbstractItemModel *currentModel = currentView->model();
 
@@ -632,7 +626,6 @@ void tst_QItemView::indexAt()
     view->setHorizontalScrollMode((QAbstractItemView::ScrollMode)hscroll);
     view->show();
     view->setModel(treeModel);
-#if 0
     checkChildren(view);
 
     QModelIndex index = view->model()->index(0, 0);
@@ -645,7 +638,6 @@ void tst_QItemView::indexAt()
     QPoint p(1, view->height()/2);
     QModelIndex idx = view->indexAt(p);
     QCOMPARE(idx, QModelIndex());
-#endif
 }
 
 void tst_QItemView::scrollTo_data()

@@ -1,6 +1,10 @@
 
-CMAKE_VERSION = $$system(cmake --version 2>$$QMAKE_SYSTEM_NULL_DEVICE, lines)
-CMAKE_VERSION = $$member(CMAKE_VERSION, 0, 0)
+cmake_version_output = $$system(cmake --version 2>$$QMAKE_SYSTEM_NULL_DEVICE, lines)
+# First line
+cmake_version_output = $$first(cmake_version_output)
+# Format is "cmake version X.Y.Z"
+cmake_version_output = $$split(cmake_version_output)
+CMAKE_VERSION = $$last(cmake_version_output)
 
 check.commands =
 QMAKE_EXTRA_TARGETS *= check
@@ -16,9 +20,7 @@ isEmpty(CTEST_VERSION) {
     return()
 }
 
-CMAKE_VERSION = $$last(CMAKE_VERSION)
-
-!versionAtLeast(CMAKE_VERSION, 2.8.3) {
+!versionAtLeast(CMAKE_VERSION, 3.1.0) {
     message("cmake $$CMAKE_VERSION is too old for this test.")
     return()
 }
@@ -46,8 +48,8 @@ for (dep, dependentmodules): \
 dependentmodules = $$join(mod_deps, ";")
 
 QT_FOR_CONFIG += gui-private
-qtConfig(angle): CMAKE_GL_DEFINES = -DQT_WITH_ANGLE=True
-!qtConfig(egl): CMAKE_GL_DEFINES += -DNO_EGL=True
+qtHaveModule(gui):qtConfig(angle): CMAKE_GL_DEFINES = -DQT_WITH_ANGLE=True
+qtHaveModule(gui):!qtConfig(egl): CMAKE_GL_DEFINES += -DNO_EGL=True
 
 CMAKE_MODULE_VERSIONS =
 CMAKE_MODULES_UNDER_TEST =
@@ -63,7 +65,8 @@ for (MODULE_UNDER_TEST, CMAKE_QT_MODULES_UNDER_TEST) {
 CMAKE_MODULES_UNDER_TEST = $$join(CMAKE_MODULES_UNDER_TEST, ;)
 
 check.commands = \
-    $(MKDIR) $$BUILD_DIR && $$QMAKE_CD $$BUILD_DIR && \
+    $$sprintf($$QMAKE_MKDIR_CMD, $$BUILD_DIR) $$escape_expand(\\n\\t) \
+    $$QMAKE_CD $$BUILD_DIR && \
     cmake $$CMAKE_TEST_LOCATION $$CMAKE_GENERATOR \
         -DCMAKE_C_COMPILER=$$QMAKE_CC \
         -DCMAKE_CXX_COMPILER=$$QMAKE_CXX \

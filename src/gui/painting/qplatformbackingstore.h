@@ -50,6 +50,7 @@
 //
 
 #include <QtGui/qtguiglobal.h>
+#include <QtCore/qloggingcategory.h>
 #include <QtCore/qrect.h>
 #include <QtCore/qobject.h>
 
@@ -59,6 +60,7 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_GUI_EXPORT Q_DECLARE_LOGGING_CATEGORY(lcQpaBackingStore)
 
 class QRegion;
 class QRect;
@@ -78,7 +80,8 @@ class Q_GUI_EXPORT QPlatformTextureList : public QObject
     Q_DECLARE_PRIVATE(QPlatformTextureList)
 public:
     enum Flag {
-        StacksOnTop = 0x01
+        StacksOnTop = 0x01,
+        TextureIsSrgb = 0x02
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 
@@ -116,12 +119,10 @@ public:
 
     virtual QPaintDevice *paintDevice() = 0;
 
-    // 'window' can be a child window, in which case 'region' is in child window coordinates and
-    // offset is the (child) window's offset in relation to the window surface.
     virtual void flush(QWindow *window, const QRegion &region, const QPoint &offset) = 0;
 #ifndef QT_NO_OPENGL
     virtual void composeAndFlush(QWindow *window, const QRegion &region, const QPoint &offset,
-                                 QPlatformTextureList *textures, QOpenGLContext *context,
+                                 QPlatformTextureList *textures,
                                  bool translucentBackground);
 #endif
     virtual QImage toImage() const;

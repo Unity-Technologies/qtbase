@@ -42,15 +42,16 @@
 
 #include <qcoreapplication.h>
 #include <qdatetime.h>
-#include <qthreadstorage.h>
+#include <qrandom.h>
 #include <qurl.h>
 
 #include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
+#if QT_CONFIG(thread)
 Q_GLOBAL_STATIC(QDnsLookupThreadPool, theDnsLookupThreadPool);
-Q_GLOBAL_STATIC(QThreadStorage<bool *>, theDnsLookupSeedStorage);
+#endif
 
 static bool qt_qdnsmailexchangerecord_less_than(const QDnsMailExchangeRecord &r1, const QDnsMailExchangeRecord &r2)
 {
@@ -85,7 +86,7 @@ static void qt_qdnsmailexchangerecord_sort(QList<QDnsMailExchangeRecord> &record
 
         // Randomize the slice of records.
         while (!slice.isEmpty()) {
-            const unsigned int pos = qrand() % slice.size();
+            const unsigned int pos = QRandomGenerator::global()->bounded(slice.size());
             records[i++] = slice.takeAt(pos);
         }
     }
@@ -134,7 +135,7 @@ static void qt_qdnsservicerecord_sort(QList<QDnsServiceRecord> &records)
 
         // Order the slice of records.
         while (!slice.isEmpty()) {
-            const unsigned int weightThreshold = qrand() % (sliceWeight + 1);
+            const unsigned int weightThreshold = QRandomGenerator::global()->bounded(sliceWeight + 1);
             unsigned int summedWeight = 0;
             for (int j = 0; j < slice.size(); ++j) {
                 summedWeight += slice.at(j).weight();
@@ -504,7 +505,9 @@ void QDnsLookup::lookup()
     connect(d->runnable, SIGNAL(finished(QDnsLookupReply)),
             this, SLOT(_q_lookupFinished(QDnsLookupReply)),
             Qt::BlockingQueuedConnection);
+#if QT_CONFIG(thread)
     theDnsLookupThreadPool()->start(d->runnable);
+#endif
 }
 
 /*!
@@ -1011,16 +1014,13 @@ void QDnsLookupRunnable::run()
     query(requestType, requestName, nameserver, &reply);
 
     // Sort results.
-    if (!theDnsLookupSeedStorage()->hasLocalData()) {
-        qsrand(QTime(0,0,0).msecsTo(QTime::currentTime()) ^ reinterpret_cast<quintptr>(this));
-        theDnsLookupSeedStorage()->setLocalData(new bool(true));
-    }
     qt_qdnsmailexchangerecord_sort(reply.mailExchangeRecords);
     qt_qdnsservicerecord_sort(reply.serviceRecords);
 
     emit finished(reply);
 }
 
+#if QT_CONFIG(thread)
 QDnsLookupThreadPool::QDnsLookupThreadPool()
     : signalsConnected(false)
 {
@@ -1056,7 +1056,7 @@ void QDnsLookupThreadPool::_q_applicationDestroyed()
     waitForDone();
     signalsConnected = false;
 }
-
+#endif // QT_CONFIG(thread)
 QT_END_NAMESPACE
 
 #include "moc_qdnslookup.cpp"

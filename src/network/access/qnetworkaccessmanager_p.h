@@ -65,6 +65,10 @@
 #include "QtNetwork/qnetworkconfigmanager.h"
 #endif
 
+#if QT_CONFIG(settings)
+#include "qhstsstore_p.h"
+#endif // QT_CONFIG(settings)
+
 QT_BEGIN_NAMESPACE
 
 class QAuthenticator;
@@ -76,10 +80,11 @@ class QNetworkAccessManagerPrivate: public QObjectPrivate
 {
 public:
     QNetworkAccessManagerPrivate()
-        : networkCache(0), cookieJar(0),
-          thread(0),
+        : networkCache(nullptr),
+          cookieJar(nullptr),
+          thread(nullptr),
 #ifndef QT_NO_NETWORKPROXY
-          proxyFactory(0),
+          proxyFactory(nullptr),
 #endif
 #ifndef QT_NO_BEARERMANAGEMENT
           lastSessionState(QNetworkSession::Invalid),
@@ -129,7 +134,7 @@ public:
                                 bool allowAuthenticationReuse = true);
     void cacheCredentials(const QUrl &url, const QAuthenticator *auth);
     QNetworkAuthenticationCredential *fetchCachedCredentials(const QUrl &url,
-                                                             const QAuthenticator *auth = 0);
+                                                             const QAuthenticator *auth = nullptr);
 
 #ifndef QT_NO_NETWORKPROXY
     void proxyAuthenticationRequired(const QUrl &url,
@@ -139,7 +144,7 @@ public:
                                 QNetworkProxy *lastProxyAuthentication);
     void cacheProxyCredentials(const QNetworkProxy &proxy, const QAuthenticator *auth);
     QNetworkAuthenticationCredential *fetchCachedProxyCredentials(const QNetworkProxy &proxy,
-                                                             const QAuthenticator *auth = 0);
+                                                             const QAuthenticator *auth = nullptr);
     QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery &query);
 #endif
 
@@ -213,6 +218,9 @@ public:
     Q_AUTOTEST_EXPORT static void clearConnectionCache(QNetworkAccessManager *manager);
 
     QHstsCache stsCache;
+#if QT_CONFIG(settings)
+    QScopedPointer<QHstsStore> stsStore;
+#endif // QT_CONFIG(settings)
     bool stsEnabled = false;
 
 #ifndef QT_NO_BEARERMANAGEMENT

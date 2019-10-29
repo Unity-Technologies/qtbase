@@ -53,6 +53,8 @@
 
 #include <QObject>
 #include <QString>
+#include <QPoint>
+#include <QEvent>
 
 QT_BEGIN_NAMESPACE
 
@@ -65,12 +67,12 @@ public:
     static QEvdevMouseHandler *create(const QString &device, const QString &specification);
     ~QEvdevMouseHandler();
 
-signals:
-    void handleMouseEvent(int x, int y, bool abs, Qt::MouseButtons buttons);
-    void handleWheelEvent(int delta, Qt::Orientation orientation);
-
-private slots:
     void readMouseData();
+
+signals:
+    void handleMouseEvent(int x, int y, bool abs, Qt::MouseButtons buttons,
+                          Qt::MouseButton button, QEvent::Type type);
+    void handleWheelEvent(QPoint delta);
 
 private:
     QEvdevMouseHandler(const QString &device, int fd, bool abs, bool compression, int jitterLimit);
@@ -86,6 +88,8 @@ private:
     bool m_abs;
     bool m_compression;
     Qt::MouseButtons m_buttons;
+    Qt::MouseButton m_button;
+    QEvent::Type m_eventType;
     int m_jitterLimitSquared;
     bool m_prevInvalid;
     int m_hardwareWidth;

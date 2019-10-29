@@ -45,9 +45,9 @@
 #include "qdatetime.h"
 #include "qimage.h"
 
-QT_BEGIN_NAMESPACE
+QT_REQUIRE_CONFIG(animation);
 
-#ifndef QT_NO_ANIMATION
+QT_BEGIN_NAMESPACE
 
 //
 //  W A R N I N G
@@ -60,7 +60,7 @@ QT_BEGIN_NAMESPACE
 // We mean it.
 //
 
-class QStyleAnimation : public QAbstractAnimation
+class Q_WIDGETS_EXPORT QStyleAnimation : public QAbstractAnimation
 {
     Q_OBJECT
 
@@ -70,7 +70,7 @@ public:
 
     QObject *target() const;
 
-    int duration() const Q_DECL_OVERRIDE;
+    int duration() const override;
     void setDuration(int duration);
 
     int delay() const;
@@ -83,7 +83,8 @@ public:
         DefaultFps,
         SixtyFps,
         ThirtyFps,
-        TwentyFps
+        TwentyFps,
+        FifteenFps
     };
 
     FrameRate frameRate() const;
@@ -96,7 +97,7 @@ public Q_SLOTS:
 
 protected:
     virtual bool isUpdateNeeded() const;
-    virtual void updateCurrentTime(int time) Q_DECL_OVERRIDE;
+    virtual void updateCurrentTime(int time) override;
 
 private:
     int _delay;
@@ -106,7 +107,7 @@ private:
     int _skip;
 };
 
-class QProgressStyleAnimation : public QStyleAnimation
+class Q_WIDGETS_EXPORT QProgressStyleAnimation : public QStyleAnimation
 {
     Q_OBJECT
 
@@ -120,14 +121,14 @@ public:
     void setSpeed(int speed);
 
 protected:
-    bool isUpdateNeeded() const Q_DECL_OVERRIDE;
+    bool isUpdateNeeded() const override;
 
 private:
     int _speed;
     mutable int _step;
 };
 
-class QNumberStyleAnimation : public QStyleAnimation
+class Q_WIDGETS_EXPORT QNumberStyleAnimation : public QStyleAnimation
 {
     Q_OBJECT
 
@@ -143,7 +144,7 @@ public:
     qreal currentValue() const;
 
 protected:
-    bool isUpdateNeeded() const Q_DECL_OVERRIDE;
+    bool isUpdateNeeded() const override;
 
 private:
     qreal _start;
@@ -151,7 +152,7 @@ private:
     mutable qreal _prev;
 };
 
-class QBlendStyleAnimation : public QStyleAnimation
+class Q_WIDGETS_EXPORT QBlendStyleAnimation : public QStyleAnimation
 {
     Q_OBJECT
 
@@ -169,7 +170,7 @@ public:
     QImage currentImage() const;
 
 protected:
-    virtual void updateCurrentTime(int time) Q_DECL_OVERRIDE;
+    virtual void updateCurrentTime(int time) override;
 
 private:
     Type _type;
@@ -178,7 +179,7 @@ private:
     QImage _current;
 };
 
-class QScrollbarStyleAnimation : public QNumberStyleAnimation
+class Q_WIDGETS_EXPORT QScrollbarStyleAnimation : public QNumberStyleAnimation
 {
     Q_OBJECT
 
@@ -193,14 +194,12 @@ public:
     void setActive(bool active);
 
 private slots:
-    void updateCurrentTime(int time) Q_DECL_OVERRIDE;
+    void updateCurrentTime(int time) override;
 
 private:
     Mode _mode;
     bool _active;
 };
-
-#endif // QT_NO_ANIMATION
 
 QT_END_NAMESPACE
 

@@ -97,10 +97,10 @@ bool QLibraryPrivate::load_sys()
 
     for (const QString &attempt : qAsConst(attempts)) {
 #ifndef Q_OS_WINRT
-        pHnd = LoadLibrary((wchar_t*)QDir::toNativeSeparators(attempt).utf16());
+        pHnd = LoadLibrary(reinterpret_cast<const wchar_t*>(QDir::toNativeSeparators(attempt).utf16()));
 #else // Q_OS_WINRT
         QString path = QDir::toNativeSeparators(QDir::current().relativeFilePath(attempt));
-        pHnd = LoadPackagedLibrary((LPCWSTR)path.utf16(), 0);
+        pHnd = LoadPackagedLibrary(reinterpret_cast<LPCWSTR>(path.utf16()), 0);
         if (pHnd)
             qualifiedFileName = attempt;
 #endif // !Q_OS_WINRT
@@ -116,7 +116,7 @@ bool QLibraryPrivate::load_sys()
 #endif
     if (!pHnd) {
         errorString = QLibrary::tr("Cannot load library %1: %2").arg(
-                    QDir::toNativeSeparators(fileName)).arg(qt_error_string());
+                    QDir::toNativeSeparators(fileName), qt_error_string());
     } else {
         // Query the actual name of the library that was loaded
         errorString.clear();
@@ -152,7 +152,7 @@ bool QLibraryPrivate::unload_sys()
 {
     if (!FreeLibrary(pHnd)) {
         errorString = QLibrary::tr("Cannot unload library %1: %2").arg(
-                    QDir::toNativeSeparators(fileName)).arg(qt_error_string());
+                    QDir::toNativeSeparators(fileName),  qt_error_string());
         return false;
     }
     errorString.clear();
@@ -164,8 +164,7 @@ QFunctionPointer QLibraryPrivate::resolve_sys(const char* symbol)
     FARPROC address = GetProcAddress(pHnd, symbol);
     if (!address) {
         errorString = QLibrary::tr("Cannot resolve symbol \"%1\" in %2: %3").arg(
-            QString::fromLatin1(symbol)).arg(
-                    QDir::toNativeSeparators(fileName)).arg(qt_error_string());
+            QString::fromLatin1(symbol), QDir::toNativeSeparators(fileName), qt_error_string());
     } else {
         errorString.clear();
     }

@@ -43,6 +43,10 @@
 #include "QtCore/qvector.h"
 #include "QtCore/qlist.h"
 
+#if QT_CONFIG(settings)
+#include "qhstsstore_p.h"
+#endif // QT_CONFIG(settings)
+
 QT_BEGIN_NAMESPACE
 
 static bool is_valid_domain_name(const QString &host)
@@ -80,14 +84,28 @@ void QHstsCache::updateFromHeaders(const QList<QPair<QByteArray, QByteArray>> &h
         return;
 
     QHstsHeaderParser parser;
-    if (parser.parse(headers))
+    if (parser.parse(headers)) {
         updateKnownHost(url.host(), parser.expirationDate(), parser.includeSubDomains());
+#if QT_CONFIG(settings)
+        if (hstsStore)
+            hstsStore->synchronize();
+#endif // QT_CONFIG(settings)
+    }
 }
 
 void QHstsCache::updateFromPolicies(const QVector<QHstsPolicy> &policies)
 {
     for (const auto &policy : policies)
         updateKnownHost(policy.host(), policy.expiry(), policy.includesSubDomains());
+
+#if QT_CONFIG(settings)
+    if (hstsStore && policies.size()) {
+        // These policies are coming either from store or from QNAM's setter
+        // function. As a result we can notice expired or new policies, time
+        // to sync ...
+        hstsStore->synchronize();
+    }
+#endif // QT_CONFIG(settings)
 }
 
 void QHstsCache::updateKnownHost(const QUrl &url, const QDateTime &expires,
@@ -97,6 +115,10 @@ void QHstsCache::updateKnownHost(const QUrl &url, const QDateTime &expires,
         return;
 
     updateKnownHost(url.host(), expires, includeSubDomains);
+#if QT_CONFIG(settings)
+    if (hstsStore)
+        hstsStore->synchronize();
+#endif // QT_CONFIG(settings)
 }
 
 void QHstsCache::updateKnownHost(const QString &host, const QDateTime &expires,
@@ -123,14 +145,25 @@ void QHstsCache::updateKnownHost(const QString &host, const QDateTime &expires,
             return;
         }
 
-        knownHosts.insert(pos, hostName, newPolicy);
+        knownHosts.insert(pos, {hostName, newPolicy});
+#if QT_CONFIG(settings)
+        if (hstsStore)
+            hstsStore->addToObserved(newPolicy);
+#endif // QT_CONFIG(settings)
         return;
     }
 
     if (newPolicy.isExpired())
         knownHosts.erase(pos);
+    else  if (pos->second != newPolicy)
+        pos->second = std::move(newPolicy);
     else
-        *pos = std::move(newPolicy);
+        return;
+
+#if QT_CONFIG(settings)
+    if (hstsStore)
+        hstsStore->addToObserved(newPolicy);
+#endif // QT_CONFIG(settings)
 }
 
 bool QHstsCache::isKnownHost(const QUrl &url) const
@@ -165,10 +198,17 @@ bool QHstsCache::isKnownHost(const QUrl &url) const
     while (nameToTest.fragment.size()) {
         auto const pos = knownHosts.find(nameToTest);
         if (pos != knownHosts.end()) {
-            if (pos.value().isExpired())
+            if (pos->second.isExpired()) {
                 knownHosts.erase(pos);
-            else if (!superDomainMatch || pos.value().includesSubDomains())
+#if QT_CONFIG(settings)
+                if (hstsStore) {
+                    // Inform our store that this policy has expired.
+                    hstsStore->addToObserved(pos->second);
+                }
+#endif // QT_CONFIG(settings)
+            } else if (!superDomainMatch || pos->second.includesSubDomains()) {
                 return true;
+            }
         }
 
         const int dot = nameToTest.fragment.indexOf(QLatin1Char('.'));
@@ -190,11 +230,41 @@ void QHstsCache::clear()
 QVector<QHstsPolicy> QHstsCache::policies() const
 {
     QVector<QHstsPolicy> values;
-    values.reserve(knownHosts.size());
+    values.reserve(int(knownHosts.size()));
     for (const auto &host : knownHosts)
-        values << host;
+        values << host.second;
     return values;
 }
+
+#if QT_CONFIG(settings)
+void QHstsCache::setStore(QHstsStore *store)
+{
+    // Caller retains ownership of store, which must outlive this cache.
+    if (store != hstsStore) {
+        hstsStore = store;
+
+        if (!hstsStore)
+            return;
+
+        // First we augment our store with the policies we already know about
+        // (and thus the cached policy takes priority over whatever policy we
+        // had in the store for the same host, if any).
+        if (knownHosts.size()) {
+            const QVector<QHstsPolicy> observed(policies());
+            for (const auto &policy : observed)
+                hstsStore->addToObserved(policy);
+            hstsStore->synchronize();
+        }
+
+        // Now we update the cache with anything we have not observed yet, but
+        // the store knows about (well, it can happen we synchronize again as a
+        // result if some policies managed to expire or if we add a new one
+        // from the store to cache):
+        const QVector<QHstsPolicy> restored(store->readPolicies());
+        updateFromPolicies(restored);
+    }
+}
+#endif // QT_CONFIG(settings)
 
 // The parser is quite simple: 'nextToken' knowns exactly what kind of tokens
 // are valid and it will return false if something else was found; then
@@ -400,8 +470,7 @@ bool QHstsHeaderParser::processDirective(const QByteArray &name, const QByteArra
 {
     Q_ASSERT(name.size());
     // RFC6797 6.1/3 Directive names are case-insensitive
-    const auto lcName = name.toLower();
-    if (lcName == "max-age") {
+    if (name.compare("max-age", Qt::CaseInsensitive) == 0) {
         // RFC 6797, 6.1.1
         // The syntax of the max-age directive's REQUIRED value (after
         // quoted-string unescaping, if necessary) is defined as:
@@ -424,7 +493,7 @@ bool QHstsHeaderParser::processDirective(const QByteArray &name, const QByteArra
 
         maxAge = age;
         maxAgeFound = true;
-    } else if (lcName == "includesubdomains") {
+    } else if (name.compare("includesubdomains", Qt::CaseInsensitive) == 0) {
         // RFC 6797, 6.1.2.  The includeSubDomains Directive.
         // The OPTIONAL "includeSubDomains" directive is a valueless directive.
 

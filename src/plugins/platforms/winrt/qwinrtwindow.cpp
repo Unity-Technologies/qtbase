@@ -91,7 +91,7 @@ public:
 
     QSurfaceFormat surfaceFormat;
     QString windowTitle;
-    Qt::WindowState state;
+    Qt::WindowStates state;
     EGLDisplay display;
     EGLSurface surface;
 
@@ -112,6 +112,8 @@ QWinRTWindow::QWinRTWindow(QWindow *window)
     d->screen = static_cast<QWinRTScreen *>(screen());
     handleContentOrientationChange(window->contentOrientation());
 
+    d->surfaceFormat.setMajorVersion(3);
+    d->surfaceFormat.setMinorVersion(0);
     d->surfaceFormat.setAlphaBufferSize(0);
     d->surfaceFormat.setRedBufferSize(8);
     d->surfaceFormat.setGreenBufferSize(8);
@@ -126,7 +128,7 @@ QWinRTWindow::QWinRTWindow(QWindow *window)
     hr = RoGetActivationFactory(HString::MakeReference(RuntimeClass_Windows_UI_Xaml_Controls_Canvas).Get(),
                                 IID_PPV_ARGS(&d->canvas));
     Q_ASSERT_SUCCEEDED(hr);
-    hr = QEventDispatcherWinRT::runOnXamlThread([this, d]() {
+    hr = QEventDispatcherWinRT::runOnXamlThread([d]() {
         // Create a new swapchain and place it inside the canvas
         HRESULT hr;
         hr = RoActivateInstance(HString::MakeReference(RuntimeClass_Windows_UI_Xaml_Controls_SwapChainPanel).Get(),
@@ -158,7 +160,7 @@ QWinRTWindow::QWinRTWindow(QWindow *window)
     Q_ASSERT_SUCCEEDED(hr);
 
     setWindowFlags(window->flags());
-    setWindowState(window->windowState());
+    setWindowState(window->windowStates());
     setWindowTitle(window->title());
 
     setGeometry(window->geometry());
@@ -223,7 +225,8 @@ bool QWinRTWindow::isActive() const
 
 bool QWinRTWindow::isExposed() const
 {
-    const bool exposed = isActive();
+    Q_D(const QWinRTWindow);
+    const bool exposed = isActive() && !d->screen->resizePending();
     return exposed;
 }
 
@@ -323,7 +326,7 @@ qreal QWinRTWindow::devicePixelRatio() const
     return screen()->devicePixelRatio();
 }
 
-void QWinRTWindow::setWindowState(Qt::WindowState state)
+void QWinRTWindow::setWindowState(Qt::WindowStates state)
 {
     Q_D(QWinRTWindow);
     qCDebug(lcQpaWindows) << __FUNCTION__ << this << state;
@@ -331,7 +334,13 @@ void QWinRTWindow::setWindowState(Qt::WindowState state)
     if (d->state == state)
         return;
 
-    if (state == Qt::WindowFullScreen) {
+    if (state & Qt::WindowMinimized) {
+        setUIElementVisibility(d->uiElement.Get(), false);
+        d->state = state;
+        return;
+    }
+
+    if (state & Qt::WindowFullScreen) {
         HRESULT hr;
         boolean success;
         hr = QEventDispatcherWinRT::runOnXamlThread([&hr, &success]() {
@@ -352,11 +361,12 @@ void QWinRTWindow::setWindowState(Qt::WindowState state)
             qCDebug(lcQpaWindows) << "Failed to enter full screen mode.";
             return;
         }
+        d->screen->setResizePending();
         d->state = state;
         return;
     }
 
-    if (d->state == Qt::WindowFullScreen) {
+    if (d->state & Qt::WindowFullScreen) {
         HRESULT hr;
         hr = QEventDispatcherWinRT::runOnXamlThread([&hr]() {
             ComPtr<IApplicationViewStatics2> applicationViewStatics;
@@ -376,12 +386,10 @@ void QWinRTWindow::setWindowState(Qt::WindowState state)
             qCDebug(lcQpaWindows) << "Failed to exit full screen mode.";
             return;
         }
+        d->screen->setResizePending();
     }
 
-    if (state == Qt::WindowMinimized)
-        setUIElementVisibility(d->uiElement.Get(), false);
-
-    if (d->state == Qt::WindowMinimized || state == Qt::WindowNoState || state == Qt::WindowActive)
+    if (d->state & Qt::WindowMinimized || state == Qt::WindowNoState || state == Qt::WindowActive)
         setUIElementVisibility(d->uiElement.Get(), true);
 
     d->state = state;

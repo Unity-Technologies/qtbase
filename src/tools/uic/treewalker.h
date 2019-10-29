@@ -77,7 +77,7 @@ class DomButtonGroup;
 
 struct TreeWalker
 {
-    inline virtual ~TreeWalker() {}
+    inline virtual ~TreeWalker() = default;
 
     virtual void acceptUI(DomUI *ui);
     virtual void acceptLayoutDefault(DomLayoutDefault *layoutDefault);
@@ -101,11 +101,8 @@ struct TreeWalker
     virtual void acceptTime(DomTime *time);
     virtual void acceptDateTime(DomDateTime *dateTime);
     virtual void acceptProperty(DomProperty *property);
-    typedef QList<DomScript *> DomScripts;
-    typedef QList<DomWidget *> DomWidgets;
-    virtual void acceptWidgetScripts(const DomScripts &, DomWidget *node, const  DomWidgets &childWidgets);
-    virtual void acceptImages(DomImages *images);
-    virtual void acceptImage(DomImage *image);
+    typedef QVector<DomScript *> DomScripts;
+    typedef QVector<DomWidget *> DomWidgets;
     virtual void acceptIncludes(DomIncludes *includes);
     virtual void acceptInclude(DomInclude *incl);
     virtual void acceptAction(DomAction *action);

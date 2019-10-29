@@ -38,9 +38,6 @@ void TreeWalker::acceptUI(DomUI *ui)
         acceptButtonGroups(domButtonGroups);
 
     acceptTabStops(ui->elementTabStops());
-
-    if (ui->elementImages())
-        acceptImages(ui->elementImages());
 }
 
 void TreeWalker::acceptLayoutDefault(DomLayoutDefault *layoutDefault)
@@ -112,9 +109,6 @@ void TreeWalker::acceptWidget(DomWidget *widget)
 
     if (!widget->elementLayout().isEmpty())
         acceptLayout(widget->elementLayout().at(0));
-
-    const DomScripts scripts(widget->elementScript());
-    acceptWidgetScripts(scripts, widget, childWidgets);
 }
 
 void TreeWalker::acceptSpacer(DomSpacer *spacer)
@@ -251,17 +245,6 @@ void TreeWalker::acceptActionRef(DomActionRef *actionRef)
     Q_UNUSED(actionRef);
 }
 
-void TreeWalker::acceptImages(DomImages *images)
-{
-    for (int i=0; i<images->elementImage().size(); ++i)
-        acceptImage(images->elementImage().at(i));
-}
-
-void TreeWalker::acceptImage(DomImage *image)
-{
-    Q_UNUSED(image);
-}
-
 void TreeWalker::acceptIncludes(DomIncludes *includes)
 {
     for (int i=0; i<includes->elementInclude().size(); ++i)
@@ -295,17 +278,11 @@ void TreeWalker::acceptConnectionHint(DomConnectionHint *connectionHint)
     Q_UNUSED(connectionHint);
 }
 
-void TreeWalker::acceptWidgetScripts(const DomScripts &, DomWidget *, const  DomWidgets &)
-{
-}
-
 void TreeWalker::acceptButtonGroups(const DomButtonGroups *domButtonGroups)
 {
-    typedef QList<DomButtonGroup*> DomButtonGroupList;
-    const DomButtonGroupList domGroups = domButtonGroups->elementButtonGroup();
-    const DomButtonGroupList::const_iterator cend = domGroups.constEnd();
-    for (DomButtonGroupList::const_iterator it = domGroups.constBegin(); it != cend; ++it)
-        acceptButtonGroup(*it);
+    const auto &domGroups = domButtonGroups->elementButtonGroup();
+    for (const DomButtonGroup *g : domGroups)
+        acceptButtonGroup(g);
 }
 
 void TreeWalker::acceptButtonGroup(const DomButtonGroup *)

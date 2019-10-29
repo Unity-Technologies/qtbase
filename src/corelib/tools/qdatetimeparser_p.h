@@ -69,7 +69,7 @@ QT_REQUIRE_CONFIG(datetimeparser);
 #define QDATETIMEEDIT_TIME_MAX QTime(23, 59, 59, 999)
 #define QDATETIMEEDIT_DATE_MIN QDate(100, 1, 1)
 #define QDATETIMEEDIT_COMPAT_DATE_MIN QDate(1752, 9, 14)
-#define QDATETIMEEDIT_DATE_MAX QDate(7999, 12, 31)
+#define QDATETIMEEDIT_DATE_MAX QDate(9999, 12, 31)
 #define QDATETIMEEDIT_DATETIME_MIN QDateTime(QDATETIMEEDIT_DATE_MIN, QDATETIMEEDIT_TIME_MIN)
 #define QDATETIMEEDIT_COMPAT_DATETIME_MIN QDateTime(QDATETIMEEDIT_COMPAT_DATE_MIN, QDATETIMEEDIT_TIME_MIN)
 #define QDATETIMEEDIT_DATETIME_MAX QDateTime(QDATETIMEEDIT_DATE_MAX, QDATETIMEEDIT_TIME_MAX)
@@ -113,9 +113,10 @@ public:
         MinuteSection = 0x00008,
         Hour12Section   = 0x00010,
         Hour24Section   = 0x00020,
+        TimeZoneSection = 0x00040,
         HourSectionMask = (Hour12Section | Hour24Section),
         TimeSectionMask = (MSecSection | SecondSection | MinuteSection |
-                           HourSectionMask | AmPmSection),
+                           HourSectionMask | AmPmSection | TimeZoneSection),
 
         DaySection         = 0x00100,
         MonthSection       = 0x00200,
@@ -159,11 +160,14 @@ public:
     };
 
     struct StateNode {
-        StateNode() : state(Invalid), conflicts(false) {}
+        StateNode() : state(Invalid), padded(0), conflicts(false) {}
+        StateNode(const QDateTime &val, State ok=Acceptable, int pad=0, bool bad=false)
+            : value(val), state(ok), padded(pad), conflicts(bad) {}
         QString input;
-        State state;
-        bool conflicts;
         QDateTime value;
+        State state;
+        int padded;
+        bool conflicts;
     };
 
     enum AmPm {
@@ -176,13 +180,11 @@ public:
         LowerCase
     };
 
-#ifndef QT_NO_DATESTRING
-    StateNode parse(QString &input, int &cursorPosition, const QDateTime &currentValue, bool fixup) const;
-#endif
-    bool parseFormat(const QString &format);
-#ifndef QT_NO_DATESTRING
+#if QT_CONFIG(datestring)
+    StateNode parse(QString input, int position, const QDateTime &defaultValue, bool fixup) const;
     bool fromString(const QString &text, QDate *date, QTime *time) const;
 #endif
+    bool parseFormat(const QString &format);
 
     enum FieldInfoFlag {
         Numeric = 0x01,
@@ -200,13 +202,30 @@ public:
 private:
     int sectionMaxSize(Section s, int count) const;
     QString sectionText(const QString &text, int sectionIndex, int index) const;
-    int parseSection(const QDateTime &currentValue, int sectionIndex, QString &txt, int &cursorPosition,
-                     int index, QDateTimeParser::State &state, int *used = 0) const;
-#ifndef QT_NO_TEXTDATE
+#if QT_CONFIG(datestring)
+    StateNode scanString(const QDateTime &defaultValue,
+                         bool fixup, QString *input) const;
+    struct ParsedSection {
+        int value;
+        int used;
+        int zeroes;
+        State state;
+        Q_DECL_CONSTEXPR ParsedSection(State ok = Invalid,
+                                       int val = 0, int read = 0, int zs = 0)
+            : value(ok == Invalid ? -1 : val), used(read), zeroes(zs), state(ok)
+            {}
+    };
+    ParsedSection parseSection(const QDateTime &currentValue, int sectionIndex,
+                               int offset, QString *text) const;
     int findMonth(const QString &str1, int monthstart, int sectionIndex,
                   QString *monthName = 0, int *used = 0) const;
     int findDay(const QString &str1, int intDaystart, int sectionIndex,
                 QString *dayName = 0, int *used = 0) const;
+    ParsedSection findTimeZone(QStringRef str, const QDateTime &when,
+                               int maxVal, int minVal) const;
+#if QT_CONFIG(timezone)
+    // Implemented in qdatetime.cpp:
+    static int startsWithLocalTimeZone(const QStringRef name);
 #endif
 
     enum AmPmFinder {
@@ -218,6 +237,8 @@ private:
         PossibleBoth = 4
     };
     AmPmFinder findAmPm(QString &str, int index, int *used = 0) const;
+#endif // datestring
+
     bool potentialValue(const QStringRef &str, int min, int max, int index,
                         const QDateTime &currentValue, int insert) const;
     bool potentialValue(const QString &str, int min, int max, int index,

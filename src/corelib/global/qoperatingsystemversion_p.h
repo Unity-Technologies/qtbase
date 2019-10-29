@@ -53,26 +53,15 @@
 
 #include "qoperatingsystemversion.h"
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
-static inline QOperatingSystemVersion::OSType currentType()
-{
-#if defined(Q_OS_WIN)
-    return QOperatingSystemVersion::Windows;
-#elif defined(Q_OS_MACOS)
-    return QOperatingSystemVersion::MacOS;
-#elif defined(Q_OS_IOS)
-    return QOperatingSystemVersion::IOS;
-#elif defined(Q_OS_TVOS)
-    return QOperatingSystemVersion::TvOS;
-#elif defined(Q_OS_WATCHOS)
-    return QOperatingSystemVersion::WatchOS;
-#elif defined(Q_OS_ANDROID)
-    return QOperatingSystemVersion::Android;
-#else
-    return QOperatingSystemVersion::Unknown;
+#ifdef Q_OS_WIN
+OSVERSIONINFOEX qWindowsVersionInfo();
 #endif
-}
 
 QT_END_NAMESPACE
 

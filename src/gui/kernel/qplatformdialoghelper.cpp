@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
@@ -42,8 +42,11 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QVariant>
 #include <QtCore/QSharedData>
+#if QT_CONFIG(settings)
 #include <QtCore/QSettings>
+#endif
 #include <QtCore/QUrl>
+#include <QtCore/QVector>
 #include <QtGui/QColor>
 
 #include <algorithm>
@@ -60,7 +63,7 @@ QT_BEGIN_NAMESPACE
 
 */
 
-static const int buttonRoleLayouts[2][5][14] =
+static const int buttonRoleLayouts[2][6][14] =
 {
     // Qt::Horizontal
     {
@@ -92,7 +95,15 @@ static const int buttonRoleLayouts[2][5][14] =
         // MacModelessLayout
         { QPlatformDialogHelper::ResetRole, QPlatformDialogHelper::ApplyRole, QPlatformDialogHelper::ActionRole, QPlatformDialogHelper::Stretch,
           QPlatformDialogHelper::HelpRole, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL,
-          QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL }
+          QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL },
+
+          // AndroidLayout (neutral, stretch, dismissive, affirmative)
+          // https://material.io/guidelines/components/dialogs.html#dialogs-specs
+        { QPlatformDialogHelper::HelpRole, QPlatformDialogHelper::ResetRole, QPlatformDialogHelper::ApplyRole, QPlatformDialogHelper::ActionRole,
+          QPlatformDialogHelper::Stretch, QPlatformDialogHelper::RejectRole | QPlatformDialogHelper::Reverse,
+          QPlatformDialogHelper::NoRole | QPlatformDialogHelper::Reverse, QPlatformDialogHelper::DestructiveRole | QPlatformDialogHelper::Reverse,
+          QPlatformDialogHelper::AlternateRole | QPlatformDialogHelper::Reverse, QPlatformDialogHelper::AcceptRole | QPlatformDialogHelper::Reverse,
+          QPlatformDialogHelper::YesRole | QPlatformDialogHelper::Reverse, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL }
     },
 
     // Qt::Vertical
@@ -120,9 +131,19 @@ static const int buttonRoleLayouts[2][5][14] =
         // MacModelessLayout
         { QPlatformDialogHelper::ActionRole, QPlatformDialogHelper::ApplyRole, QPlatformDialogHelper::ResetRole, QPlatformDialogHelper::Stretch,
           QPlatformDialogHelper::HelpRole, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL,
-          QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL }
+          QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL },
+
+          // AndroidLayout
+          // (affirmative
+          //  dismissive
+          //  neutral)
+          // https://material.io/guidelines/components/dialogs.html#dialogs-specs
+        { QPlatformDialogHelper::YesRole, QPlatformDialogHelper::AcceptRole, QPlatformDialogHelper::AlternateRole, QPlatformDialogHelper::DestructiveRole,
+          QPlatformDialogHelper::NoRole, QPlatformDialogHelper::RejectRole, QPlatformDialogHelper::Stretch, QPlatformDialogHelper::ActionRole, QPlatformDialogHelper::ApplyRole,
+          QPlatformDialogHelper::ResetRole, QPlatformDialogHelper::HelpRole, QPlatformDialogHelper::EOL, QPlatformDialogHelper::EOL }
     }
 };
+
 
 QPlatformDialogHelper::QPlatformDialogHelper()
 {
@@ -265,7 +286,7 @@ QColorDialogStaticData::QColorDialogStaticData() : customSet(false)
 
 void QColorDialogStaticData::readSettings()
 {
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
     const QSettings settings(QSettings::UserScope, QStringLiteral("QtProject"));
     for (int i = 0; i < int(CustomColorCount); ++i) {
         const QVariant v = settings.value(QLatin1String("Qt/customColors/") + QString::number(i));
@@ -277,8 +298,9 @@ void QColorDialogStaticData::readSettings()
 
 void QColorDialogStaticData::writeSettings() const
 {
-#ifndef QT_NO_SETTINGS
+#if QT_CONFIG(settings)
     if (customSet) {
+        const_cast<QColorDialogStaticData*>(this)->customSet = false;
         QSettings settings(QSettings::UserScope, QStringLiteral("QtProject"));
         for (int i = 0; i < int(CustomColorCount); ++i)
             settings.setValue(QLatin1String("Qt/customColors/") + QString::number(i), customRgb[i]);
@@ -645,18 +667,18 @@ QStringList QFileDialogOptions::history() const
 
 void QFileDialogOptions::setLabelText(QFileDialogOptions::DialogLabel label, const QString &text)
 {
-    if (label >= 0 && label < DialogLabelCount)
+    if (unsigned(label) < unsigned(DialogLabelCount))
         d->labels[label] = text;
 }
 
 QString QFileDialogOptions::labelText(QFileDialogOptions::DialogLabel label) const
 {
-    return (label >= 0 && label < DialogLabelCount) ? d->labels[label] : QString();
+    return (unsigned(label) < unsigned(DialogLabelCount)) ? d->labels[label] : QString();
 }
 
 bool QFileDialogOptions::isLabelExplicitlySet(DialogLabel label)
 {
-    return label >= 0 && label < DialogLabelCount && !d->labels[label].isEmpty();
+    return unsigned(label) < unsigned(DialogLabelCount) && !d->labels[label].isEmpty();
 }
 
 QUrl QFileDialogOptions::initialDirectory() const
@@ -767,7 +789,8 @@ class QMessageDialogOptionsPrivate : public QSharedData
 public:
     QMessageDialogOptionsPrivate() :
         icon(QMessageDialogOptions::NoIcon),
-        buttons(QPlatformDialogHelper::Ok)
+        buttons(QPlatformDialogHelper::Ok),
+        nextCustomButtonId(QPlatformDialogHelper::LastButton + 1)
     {}
 
     QString windowTitle;
@@ -776,6 +799,8 @@ public:
     QString informativeText;
     QString detailedText;
     QPlatformDialogHelper::StandardButtons buttons;
+    QVector<QMessageDialogOptions::CustomButton> customButtons;
+    int nextCustomButtonId;
 };
 
 QMessageDialogOptions::QMessageDialogOptions(QMessageDialogOptionsPrivate *dd)
@@ -867,6 +892,35 @@ QPlatformDialogHelper::StandardButtons QMessageDialogOptions::standardButtons() 
     return d->buttons;
 }
 
+int QMessageDialogOptions::addButton(const QString &label, QPlatformDialogHelper::ButtonRole role,
+                                     void *buttonImpl)
+{
+    const CustomButton b(d->nextCustomButtonId++, label, role, buttonImpl);
+    d->customButtons.append(b);
+    return b.id;
+}
+
+static inline bool operator==(const QMessageDialogOptions::CustomButton &a,
+                              const QMessageDialogOptions::CustomButton &b) {
+    return a.id == b.id;
+}
+
+void QMessageDialogOptions::removeButton(int id)
+{
+    d->customButtons.removeOne(CustomButton(id));
+}
+
+const QVector<QMessageDialogOptions::CustomButton> &QMessageDialogOptions::customButtons()
+{
+    return d->customButtons;
+}
+
+const QMessageDialogOptions::CustomButton *QMessageDialogOptions::customButton(int id)
+{
+    int i = d->customButtons.indexOf(CustomButton(id));
+    return (i < 0 ? nullptr : &d->customButtons.at(i));
+}
+
 QPlatformDialogHelper::ButtonRole QPlatformDialogHelper::buttonRole(QPlatformDialogHelper::StandardButton button)
 {
     switch (button) {
@@ -917,6 +971,8 @@ const int *QPlatformDialogHelper::buttonLayout(Qt::Orientation orientation, Butt
         policy = MacLayout;
 #elif defined (Q_OS_LINUX) || defined (Q_OS_UNIX)
         policy = KdeLayout;
+#elif defined (Q_OS_ANDROID)
+        policy = AndroidLayout;
 #else
         policy = WinLayout;
 #endif

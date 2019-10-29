@@ -49,6 +49,7 @@ public slots:
     void init();
 
 private Q_SLOTS:
+    void consistent();
     void qhash();
     void qhash_of_empty_and_null_qstring();
     void qhash_of_empty_and_null_qbytearray();
@@ -60,6 +61,17 @@ private Q_SLOTS:
 
     void setGlobalQHashSeed();
 };
+
+void tst_QHashFunctions::consistent()
+{
+    // QString-like
+    {
+        const QString s = QStringLiteral("abcdefghijklmnopqrstuvxyz").repeated(16);
+
+        QCOMPARE(qHash(s), qHash(QStringRef(&s)));
+        QCOMPARE(qHash(s), qHash(QStringView(s)));
+    }
+}
 
 void tst_QHashFunctions::initTestCase()
 {
@@ -160,6 +172,14 @@ void tst_QHashFunctions::qhash_of_empty_and_null_qstring()
     QString null, empty("");
     QCOMPARE(null, empty);
     QCOMPARE(qHash(null, seed), qHash(empty, seed));
+
+    QStringRef nullRef, emptyRef(&empty);
+    QCOMPARE(nullRef, emptyRef);
+    QCOMPARE(qHash(nullRef, seed), qHash(emptyRef, seed));
+
+    QStringView nullView, emptyView(empty);
+    QCOMPARE(nullView, emptyView);
+    QCOMPARE(qHash(nullView, seed), qHash(emptyView, seed));
 }
 
 void tst_QHashFunctions::qhash_of_empty_and_null_qbytearray()
@@ -264,17 +284,17 @@ void tst_QHashFunctions::rangeCommutative()
 void tst_QHashFunctions::setGlobalQHashSeed()
 {
     // Setter works as advertised
-    qSetGlobalQHashSeed(0x10101010);
-    QCOMPARE(qGlobalQHashSeed(), 0x10101010);
+    qSetGlobalQHashSeed(0);
+    QCOMPARE(qGlobalQHashSeed(), 0);
 
     // Creating a new QHash doesn't reset the seed
     QHash<QString, int> someHash;
     someHash.insert("foo", 42);
-    QCOMPARE(qGlobalQHashSeed(), 0x10101010);
+    QCOMPARE(qGlobalQHashSeed(), 0);
 
     // Reset works as advertised
     qSetGlobalQHashSeed(-1);
-    QVERIFY(qGlobalQHashSeed() != -1);
+    QVERIFY(qGlobalQHashSeed() > 0);
 }
 
 QTEST_APPLESS_MAIN(tst_QHashFunctions)

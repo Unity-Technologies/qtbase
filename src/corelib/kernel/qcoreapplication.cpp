@@ -46,6 +46,7 @@
 #include "qcoreevent.h"
 #include "qeventloop.h"
 #endif
+#include "qmetaobject.h"
 #include "qcorecmdlineargs_p.h"
 #include <qdatastream.h>
 #include <qdebug.h>
@@ -55,12 +56,13 @@
 #include <qmutex.h>
 #include <private/qloggingregistry_p.h>
 #include <qstandardpaths.h>
-#include <qtextcodec.h>
 #ifndef QT_NO_QOBJECT
 #include <qthread.h>
-#include <qthreadpool.h>
 #include <qthreadstorage.h>
 #include <private/qthread_p.h>
+#if QT_CONFIG(thread)
+#include <qthreadpool.h>
+#endif
 #endif
 #include <qelapsedtimer.h>
 #include <qlibraryinfo.h>
@@ -114,6 +116,16 @@
 
 #ifdef Q_OS_VXWORKS
 #  include <taskLib.h>
+#endif
+
+#ifdef Q_OS_WASM
+#include <emscripten.h>
+#endif
+
+#ifdef QT_BOOTSTRAPPED
+#include <private/qtrace_p.h>
+#else
+#include <qtcore_tracepoints_p.h>
 #endif
 
 #include <algorithm>
@@ -262,9 +274,7 @@ typedef QList<QtStartUpFunction> QStartUpFuncList;
 Q_GLOBAL_STATIC(QStartUpFuncList, preRList)
 typedef QList<QtCleanUpFunction> QVFuncList;
 Q_GLOBAL_STATIC(QVFuncList, postRList)
-#ifndef QT_NO_QOBJECT
-static QBasicMutex globalPreRoutinesMutex;
-#endif
+static QBasicMutex globalRoutinesMutex;
 
 /*!
     \internal
@@ -277,13 +287,13 @@ void qAddPreRoutine(QtStartUpFunction p)
     QStartUpFuncList *list = preRList();
     if (!list)
         return;
-    // Due to C++11 parallel dynamic initialization, this can be called
-    // from multiple threads.
-#ifndef QT_NO_THREAD
-    QMutexLocker locker(&globalPreRoutinesMutex);
-#endif
+
     if (QCoreApplication::instance())
         p();
+
+    // Due to C++11 parallel dynamic initialization, this can be called
+    // from multiple threads.
+    QMutexLocker locker(&globalRoutinesMutex);
     list->prepend(p); // in case QCoreApplication is re-created, see qt_call_pre_routines
 }
 
@@ -292,6 +302,7 @@ void qAddPostRoutine(QtCleanUpFunction p)
     QVFuncList *list = postRList();
     if (!list)
         return;
+    QMutexLocker locker(&globalRoutinesMutex);
     list->prepend(p);
 }
 
@@ -300,6 +311,7 @@ void qRemovePostRoutine(QtCleanUpFunction p)
     QVFuncList *list = postRList();
     if (!list)
         return;
+    QMutexLocker locker(&globalRoutinesMutex);
     list->removeAll(p);
 }
 
@@ -308,15 +320,16 @@ static void qt_call_pre_routines()
     if (!preRList.exists())
         return;
 
-#ifndef QT_NO_THREAD
-    QMutexLocker locker(&globalPreRoutinesMutex);
-#endif
-    QVFuncList *list = &(*preRList);
-    // Unlike qt_call_post_routines, we don't empty the list, because
-    // Q_COREAPP_STARTUP_FUNCTION is a macro, so the user expects
-    // the function to be executed every time QCoreApplication is created.
-    for (int i = 0; i < list->count(); ++i)
-        list->at(i)();
+    QVFuncList list;
+    {
+        QMutexLocker locker(&globalRoutinesMutex);
+        // Unlike qt_call_post_routines, we don't empty the list, because
+        // Q_COREAPP_STARTUP_FUNCTION is a macro, so the user expects
+        // the function to be executed every time QCoreApplication is created.
+        list = *preRList;
+    }
+    for (int i = 0; i < list.count(); ++i)
+        list.at(i)();
 }
 
 void Q_CORE_EXPORT qt_call_post_routines()
@@ -324,9 +337,19 @@ void Q_CORE_EXPORT qt_call_post_routines()
     if (!postRList.exists())
         return;
 
-    QVFuncList *list = &(*postRList);
-    while (!list->isEmpty())
-        (list->takeFirst())();
+    forever {
+        QVFuncList list;
+        {
+            // extract the current list and make the stored list empty
+            QMutexLocker locker(&globalRoutinesMutex);
+            qSwap(*postRList, list);
+        }
+
+        if (list.isEmpty())
+            break;
+        for (QtCleanUpFunction f : qAsConst(list))
+            f();
+    }
 }
 
 
@@ -426,7 +449,7 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
     , argv(aargv)
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     , origArgc(0)
-    , origArgv(Q_NULLPTR)
+    , origArgv(nullptr)
 #endif
     , application_type(QCoreApplicationPrivate::Tty)
 #ifndef QT_NO_QOBJECT
@@ -459,6 +482,10 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
         qFatal("FATAL: The application binary appears to be running setuid, this is a security hole.");
 #  endif // Q_OS_UNIX
 
+#ifdef Q_OS_WINRT
+    QThreadData::setMainThread();
+#endif
+
     QThread *cur = QThread::currentThread(); // note: this may end up setting theMainThread!
     if (cur != theMainThread)
         qWarning("WARNING: QApplication was not created in the main() thread.");
@@ -467,6 +494,13 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
 
 QCoreApplicationPrivate::~QCoreApplicationPrivate()
 {
+#ifdef Q_OS_WASM
+    EM_ASM(
+        // unmount persistent directory as IDBFS
+        // see also QTBUG-70002
+        FS.unmount('/home/web_user');
+    );
+#endif
 #ifndef QT_NO_QOBJECT
     cleanupThreadData();
 #endif
@@ -481,7 +515,7 @@ QCoreApplicationPrivate::~QCoreApplicationPrivate()
 void QCoreApplicationPrivate::cleanupThreadData()
 {
     if (threadData && !threadData_clean) {
-#ifndef QT_NO_THREAD
+#if QT_CONFIG(thread)
         void *data = &threadData->tls;
         QThreadStorageData::finish((void **)data);
 #endif
@@ -506,29 +540,10 @@ void QCoreApplicationPrivate::cleanupThreadData()
 void QCoreApplicationPrivate::createEventDispatcher()
 {
     Q_Q(QCoreApplication);
-#if defined(Q_OS_UNIX)
-#  if defined(Q_OS_DARWIN)
-    bool ok = false;
-    int value = qEnvironmentVariableIntValue("QT_EVENT_DISPATCHER_CORE_FOUNDATION", &ok);
-    if (ok && value > 0)
-        eventDispatcher = new QEventDispatcherCoreFoundation(q);
-    else
-        eventDispatcher = new QEventDispatcherUNIX(q);
-#  elif !defined(QT_NO_GLIB)
-    if (qEnvironmentVariableIsEmpty("QT_NO_GLIB") && QEventDispatcherGlib::versionSupported())
-        eventDispatcher = new QEventDispatcherGlib(q);
-    else
-        eventDispatcher = new QEventDispatcherUNIX(q);
-#  else
-        eventDispatcher = new QEventDispatcherUNIX(q);
-#  endif
-#elif defined(Q_OS_WINRT)
-    eventDispatcher = new QEventDispatcherWinRT(q);
-#elif defined(Q_OS_WIN)
-    eventDispatcher = new QEventDispatcherWin32(q);
-#else
-#  error "QEventDispatcher not yet ported to this platform"
-#endif
+    QThreadData *data = QThreadData::current();
+    Q_ASSERT(!data->hasEventDispatcher());
+    eventDispatcher = data->createEventDispatcher();
+    eventDispatcher->setParent(q);
 }
 
 void QCoreApplicationPrivate::eventDispatcherReady()
@@ -755,9 +770,17 @@ QCoreApplication::QCoreApplication(int &argc, char **argv
 #endif
 }
 
+/*!
+  \enum QCoreApplication::anonymous
+  \internal
+
+  \value ApplicationFlags QT_VERSION
+*/
 
 void QCoreApplicationPrivate::init()
 {
+    Q_TRACE_SCOPE(QCoreApplicationPrivate_init);
+
 #if defined(Q_OS_MACOS)
     QMacAutoReleasePool pool;
 #endif
@@ -768,6 +791,17 @@ void QCoreApplicationPrivate::init()
 
     Q_ASSERT_X(!QCoreApplication::self, "QCoreApplication", "there should be only one application object");
     QCoreApplication::self = q;
+
+#ifdef Q_OS_WASM
+    EM_ASM(
+        // mount and sync persistent filesystem to sandbox
+        FS.mount(IDBFS, {}, '/home/web_user');
+        FS.syncfs(true, function(err) {
+            if (err)
+                Module.print(err);
+        });
+    );
+#endif
 
     // Store app name/version (so they're still available after QCoreApplication is destroyed)
     if (!coreappdata()->applicationNameSet)
@@ -816,8 +850,9 @@ void QCoreApplicationPrivate::init()
 
 #ifndef QT_NO_QOBJECT
     // use the event dispatcher created by the app programmer (if any)
-    if (!eventDispatcher)
-        eventDispatcher = threadData->eventDispatcher.load();
+    Q_ASSERT(!eventDispatcher);
+    eventDispatcher = threadData->eventDispatcher.load();
+
     // otherwise we create one
     if (!eventDispatcher)
         createEventDispatcher();
@@ -864,7 +899,7 @@ QCoreApplication::~QCoreApplication()
     QCoreApplicationPrivate::is_app_running = false;
 #endif
 
-#if !defined(QT_NO_THREAD)
+#if QT_CONFIG(thread)
     // Synchronize and stop the global thread pool threads.
     QThreadPool *globalThreadPool = 0;
     QT_TRY {
@@ -932,6 +967,10 @@ bool QCoreApplication::isSetuidAllowed()
     Sets the attribute \a attribute if \a on is true;
     otherwise clears the attribute.
 
+    \note Some application attributes must be set \b before creating a
+    QCoreApplication instance. Refer to the Qt::ApplicationAttribute
+    documentation for more information.
+
     \sa testAttribute()
 */
 void QCoreApplication::setAttribute(Qt::ApplicationAttribute attribute, bool on)
@@ -940,6 +979,31 @@ void QCoreApplication::setAttribute(Qt::ApplicationAttribute attribute, bool on)
         QCoreApplicationPrivate::attribs |= 1 << attribute;
     else
         QCoreApplicationPrivate::attribs &= ~(1 << attribute);
+#if defined(QT_NO_QOBJECT)
+    if (Q_UNLIKELY(qApp)) {
+#else
+    if (Q_UNLIKELY(QCoreApplicationPrivate::is_app_running)) {
+#endif
+        switch (attribute) {
+            case Qt::AA_EnableHighDpiScaling:
+            case Qt::AA_DisableHighDpiScaling:
+            case Qt::AA_PluginApplication:
+            case Qt::AA_UseDesktopOpenGL:
+            case Qt::AA_UseOpenGLES:
+            case Qt::AA_UseSoftwareOpenGL:
+            case Qt::AA_ShareOpenGLContexts:
+#ifdef QT_BOOTSTRAPPED
+                qWarning("Attribute %d must be set before QCoreApplication is created.",
+                         attribute);
+#else
+                qWarning("Attribute Qt::%s must be set before QCoreApplication is created.",
+                         QMetaEnum::fromType<Qt::ApplicationAttribute>().valueToKey(attribute));
+#endif
+                break;
+            default:
+                break;
+        }
+    }
 }
 
 /*!
@@ -1022,6 +1086,21 @@ bool QCoreApplication::notifyInternal2(QObject *receiver, QEvent *event)
     if (!selfRequired)
         return doNotify(receiver, event);
     return self->notify(receiver, event);
+}
+
+/*!
+    \internal
+    \since 5.10
+
+    Forwards the \a event to the \a receiver, using the spontaneous
+    state of the \a originatingEvent if specified.
+*/
+bool QCoreApplication::forwardEvent(QObject *receiver, QEvent *event, QEvent *originatingEvent)
+{
+    if (event && originatingEvent)
+        event->spont = originatingEvent->spont;
+
+    return notifyInternal2(receiver, event);
 }
 
 /*!
@@ -1146,16 +1225,29 @@ bool QCoreApplicationPrivate::sendThroughObjectEventFilters(QObject *receiver, Q
  */
 bool QCoreApplicationPrivate::notify_helper(QObject *receiver, QEvent * event)
 {
+    // Note: when adjusting the tracepoints in here
+    // consider adjusting QApplicationPrivate::notify_helper too.
+    Q_TRACE(QCoreApplication_notify_entry, receiver, event, event->type());
+    bool consumed = false;
+    bool filtered = false;
+    Q_TRACE_EXIT(QCoreApplication_notify_exit, consumed, filtered);
+
     // send to all application event filters (only does anything in the main thread)
     if (QCoreApplication::self
             && receiver->d_func()->threadData->thread == mainThread()
-            && QCoreApplication::self->d_func()->sendThroughApplicationEventFilters(receiver, event))
-        return true;
+            && QCoreApplication::self->d_func()->sendThroughApplicationEventFilters(receiver, event)) {
+        filtered = true;
+        return filtered;
+    }
     // send to all receiver event filters
-    if (sendThroughObjectEventFilters(receiver, event))
-        return true;
+    if (sendThroughObjectEventFilters(receiver, event)) {
+        filtered = true;
+        return filtered;
+    }
+
     // deliver the event
-    return receiver->event(event);
+    consumed = receiver->event(event);
+    return consumed;
 }
 
 /*!
@@ -1331,6 +1423,13 @@ void QCoreApplicationPrivate::execCleanup()
   By convention, a \a returnCode of 0 means success, and any non-zero
   value indicates an error.
 
+  It's good practice to always connect signals to this slot using a
+  \l{Qt::}{QueuedConnection}. If a signal connected (non-queued) to this slot
+  is emitted before control enters the main event loop (such as before
+  "int main" calls \l{QCoreApplication::}{exec()}), the slot has no effect
+  and the application never exits. Using a queued connection ensures that the
+  slot will not be invoked until after control enters the main event loop.
+
   Note that unlike the C library function of the same name, this
   function \e does return to the caller -- it is event processing that
   stops.
@@ -1353,6 +1452,7 @@ void QCoreApplication::exit(int returnCode)
   QCoreApplication management of posted events
  *****************************************************************************/
 
+#ifndef QT_NO_QOBJECT
 /*!
     \fn bool QCoreApplication::sendEvent(QObject *receiver, QEvent *event)
 
@@ -1367,6 +1467,28 @@ void QCoreApplication::exit(int returnCode)
 
     \sa postEvent(), notify()
 */
+bool QCoreApplication::sendEvent(QObject *receiver, QEvent *event)
+{
+    Q_TRACE(QCoreApplication_sendEvent, receiver, event, event->type());
+
+    if (event)
+        event->spont = false;
+    return notifyInternal2(receiver, event);
+}
+
+/*!
+    \internal
+*/
+bool QCoreApplication::sendSpontaneousEvent(QObject *receiver, QEvent *event)
+{
+    Q_TRACE(QCoreApplication_sendSpontaneousEvent, receiver, event, event->type());
+
+    if (event)
+        event->spont = true;
+    return notifyInternal2(receiver, event);
+}
+
+#endif // QT_NO_QOBJECT
 
 /*!
     \since 4.3
@@ -1395,6 +1517,8 @@ void QCoreApplication::exit(int returnCode)
 */
 void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
 {
+    Q_TRACE_SCOPE(QCoreApplication_postEvent, receiver, event, event->type());
+
     if (receiver == 0) {
         qWarning("QCoreApplication::postEvent: Unexpected null receiver");
         delete event;
@@ -1431,6 +1555,7 @@ void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
     // if this is one of the compressible events, do compression
     if (receiver->d_func()->postedEvents
         && self && self->compressEvent(event, receiver, &data->postEventList)) {
+        Q_TRACE(QCoreApplication_postEvent_event_compressed, receiver, event);
         return;
     }
 
@@ -1462,6 +1587,7 @@ void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
     // delete the event on exceptions to protect against memory leaks till the event is
     // properly owned in the postEventList
     QScopedPointer<QEvent> eventDeleter(event);
+    Q_TRACE(QCoreApplication_postEvent_event_posted, receiver, event, event->type());
     data->postEventList.addEvent(QPostEvent(receiver, event, priority));
     eventDeleter.take();
     event->posted = true;
@@ -1720,8 +1846,7 @@ void QCoreApplicationPrivate::sendPostedEvents(QObject *receiver, int event_type
     If \a receiver is null, the events of \a eventType are removed for
     all objects. If \a eventType is 0, all the events are removed for
     \a receiver. You should never call this function with \a eventType
-    of 0. If you do call it in this way, be aware that killing events
-    may cause \a receiver to break one or more invariants.
+    of 0.
 
     \threadsafe
 */
@@ -1772,9 +1897,7 @@ void QCoreApplication::removePostedEvents(QObject *receiver, int eventType)
     }
 
     locker.unlock();
-    for (int i = 0; i < events.count(); ++i) {
-        delete events[i];
-    }
+    qDeleteAll(events);
 }
 
 /*!
@@ -1843,7 +1966,7 @@ bool QCoreApplication::event(QEvent *e)
 
     \value UnicodeUTF8   UTF-8.
     \omitvalue Latin1
-    \omitvalue DefaultCodec  UTF-8.
+    \omitvalue DefaultCodec \omit UTF-8. \endomit
     \omitvalue CodecForTr
 
     \sa QObject::tr(), QString::fromUtf8()
@@ -1873,6 +1996,13 @@ void QCoreApplicationPrivate::maybeQuit()
     It's common to connect the QGuiApplication::lastWindowClosed() signal
     to quit(), and you also often connect e.g. QAbstractButton::clicked() or
     signals in QAction, QMenu, or QMenuBar to it.
+
+    It's good practice to always connect signals to this slot using a
+    \l{Qt::}{QueuedConnection}. If a signal connected (non-queued) to this slot
+    is emitted before control enters the main event loop (such as before
+    "int main" calls \l{QCoreApplication::}{exec()}), the slot has no effect
+    and the application never exits. Using a queued connection ensures that the
+    slot will not be invoked until after control enters the main event loop.
 
     Example:
 
@@ -1937,7 +2067,10 @@ bool QCoreApplication::installTranslator(QTranslator *translationFile)
     if (!QCoreApplicationPrivate::checkInstance("installTranslator"))
         return false;
     QCoreApplicationPrivate *d = self->d_func();
-    d->translators.prepend(translationFile);
+    {
+        QWriteLocker locker(&d->translateMutex);
+        d->translators.prepend(translationFile);
+    }
 
 #ifndef QT_NO_TRANSLATION_BUILDER
     if (translationFile->isEmpty())
@@ -1969,8 +2102,10 @@ bool QCoreApplication::removeTranslator(QTranslator *translationFile)
     if (!QCoreApplicationPrivate::checkInstance("removeTranslator"))
         return false;
     QCoreApplicationPrivate *d = self->d_func();
+    QWriteLocker locker(&d->translateMutex);
     if (d->translators.removeAll(translationFile)) {
 #ifndef QT_NO_QOBJECT
+        locker.unlock();
         if (!self->closingDown()) {
             QEvent ev(QEvent::LanguageChange);
             QCoreApplication::sendEvent(self, &ev);
@@ -1988,9 +2123,13 @@ static void replacePercentN(QString *result, int n)
         int len = 0;
         while ((percentPos = result->indexOf(QLatin1Char('%'), percentPos + len)) != -1) {
             len = 1;
+            if (percentPos + len == result->length())
+                break;
             QString fmt;
             if (result->at(percentPos + len) == QLatin1Char('L')) {
                 ++len;
+                if (percentPos + len == result->length())
+                    break;
                 fmt = QLatin1String("%L1");
             } else {
                 fmt = QLatin1String("%1");
@@ -2006,7 +2145,7 @@ static void replacePercentN(QString *result, int n)
 }
 
 /*!
-    \reentrant
+    \threadsafe
 
     Returns the translation text for \a sourceText, by querying the
     installed translation files. The translation files are searched
@@ -2035,13 +2174,7 @@ static void replacePercentN(QString *result, int n)
     This function is not virtual. You can use alternative translation
     techniques by subclassing \l QTranslator.
 
-    \warning This method is reentrant only if all translators are
-    installed \e before calling this method. Installing or removing
-    translators while performing translations is not supported. Doing
-    so will most likely result in crashes or other undesirable
-    behavior.
-
-    \sa QObject::tr(), installTranslator()
+    \sa QObject::tr(), installTranslator(), removeTranslator(), translate()
 */
 QString QCoreApplication::translate(const char *context, const char *sourceText,
                                     const char *disambiguation, int n)
@@ -2051,14 +2184,18 @@ QString QCoreApplication::translate(const char *context, const char *sourceText,
     if (!sourceText)
         return result;
 
-    if (self && !self->d_func()->translators.isEmpty()) {
-        QList<QTranslator*>::ConstIterator it;
-        QTranslator *translationFile;
-        for (it = self->d_func()->translators.constBegin(); it != self->d_func()->translators.constEnd(); ++it) {
-            translationFile = *it;
-            result = translationFile->translate(context, sourceText, disambiguation, n);
-            if (!result.isNull())
-                break;
+    if (self) {
+        QCoreApplicationPrivate *d = self->d_func();
+        QReadLocker locker(&d->translateMutex);
+        if (!d->translators.isEmpty()) {
+            QList<QTranslator*>::ConstIterator it;
+            QTranslator *translationFile;
+            for (it = d->translators.constBegin(); it != d->translators.constEnd(); ++it) {
+                translationFile = *it;
+                result = translationFile->translate(context, sourceText, disambiguation, n);
+                if (!result.isNull())
+                    break;
+            }
         }
     }
 
@@ -2082,8 +2219,11 @@ QString qtTrId(const char *id, int n)
 
 bool QCoreApplicationPrivate::isTranslatorInstalled(QTranslator *translator)
 {
-    return QCoreApplication::self
-           && QCoreApplication::self->d_func()->translators.contains(translator);
+    if (!QCoreApplication::self)
+        return false;
+    QCoreApplicationPrivate *d = QCoreApplication::self->d_func();
+    QReadLocker locker(&d->translateMutex);
+    return d->translators.contains(translator);
 }
 
 #else
@@ -2554,9 +2694,9 @@ QStringList QCoreApplication::libraryPaths()
         QStringList *app_libpaths = new QStringList;
         coreappdata()->app_libpaths.reset(app_libpaths);
 
-        const QByteArray libPathEnv = qgetenv("QT_PLUGIN_PATH");
+        QString libPathEnv = qEnvironmentVariable("QT_PLUGIN_PATH");
         if (!libPathEnv.isEmpty()) {
-            QStringList paths = QFile::decodeName(libPathEnv).split(QDir::listSeparator(), QString::SkipEmptyParts);
+            QStringList paths = libPathEnv.split(QDir::listSeparator(), QString::SkipEmptyParts);
             for (QStringList::const_iterator it = paths.constBegin(); it != paths.constEnd(); ++it) {
                 QString canonicalPath = QDir(*it).canonicalPath();
                 if (!canonicalPath.isEmpty()
@@ -2809,7 +2949,7 @@ bool QCoreApplication::hasPendingEvents()
 
 /*!
     Returns a pointer to the event dispatcher object for the main thread. If no
-    event dispatcher exists for the thread, this function returns 0.
+    event dispatcher exists for the thread, this function returns \nullptr.
 */
 QAbstractEventDispatcher *QCoreApplication::eventDispatcher()
 {
@@ -2865,6 +3005,7 @@ void QCoreApplication::setEventDispatcher(QAbstractEventDispatcher *eventDispatc
 
 /*!
     \fn void qAddPostRoutine(QtCleanUpFunction ptr)
+    \threadsafe
     \relates QCoreApplication
 
     Adds a global routine that will be called from the QCoreApplication
@@ -2878,10 +3019,10 @@ void QCoreApplication::setEventDispatcher(QAbstractEventDispatcher *eventDispatc
 
     \snippet code/src_corelib_kernel_qcoreapplication.cpp 4
 
-    Note that for an application- or module-wide cleanup, qaddPostRoutine()
+    Note that for an application- or module-wide cleanup, qAddPostRoutine()
     is often not suitable. For example, if the program is split into dynamically
     loaded modules, the relevant module may be unloaded long before the
-    QCoreApplication destructor is called. In such cases, if using qaddPostRoutine()
+    QCoreApplication destructor is called. In such cases, if using qAddPostRoutine()
     is still desirable, qRemovePostRoutine() can be used to prevent a routine
     from being called by the QCoreApplication destructor. For example, if that
     routine was called before the module was unloaded.
@@ -2897,11 +3038,14 @@ void QCoreApplication::setEventDispatcher(QAbstractEventDispatcher *eventDispatc
     By selecting the right parent object, this can often be made to
     clean up the module's data at the right moment.
 
+    \note This function has been thread-safe since Qt 5.10.
+
     \sa qRemovePostRoutine()
 */
 
 /*!
     \fn void qRemovePostRoutine(QtCleanUpFunction ptr)
+    \threadsafe
     \relates QCoreApplication
     \since 5.3
 
@@ -2909,6 +3053,8 @@ void QCoreApplication::setEventDispatcher(QAbstractEventDispatcher *eventDispatc
     routines called by the QCoreApplication destructor. The routine
     must have been previously added to the list by a call to
     qAddPostRoutine(), otherwise this function has no effect.
+
+    \note This function has been thread-safe since Qt 5.10.
 
     \sa qAddPostRoutine()
 */

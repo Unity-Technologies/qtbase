@@ -42,12 +42,15 @@
 #include "qapplication.h"
 #include <private/qguiapplication_p.h>
 #include "qdesktopwidget.h"
+#include <private/qdesktopwidget_p.h>
 #include "qevent.h"
 #include "qpixmap.h"
 #include "qscreen.h"
 #include "qpainter.h"
 #include "qtimer.h"
+#if QT_CONFIG(action)
 #include "qaction.h"
+#endif // QT_CONFIG(action)
 #include "qcursor.h"
 #include "qbitmap.h"
 #include "qtextdocument.h"
@@ -144,12 +147,12 @@ public:
     static QWhatsThat *instance;
 
 protected:
-    void showEvent(QShowEvent *e) Q_DECL_OVERRIDE;
-    void mousePressEvent(QMouseEvent*) Q_DECL_OVERRIDE;
-    void mouseReleaseEvent(QMouseEvent*) Q_DECL_OVERRIDE;
-    void mouseMoveEvent(QMouseEvent*) Q_DECL_OVERRIDE;
-    void keyPressEvent(QKeyEvent*) Q_DECL_OVERRIDE;
-    void paintEvent(QPaintEvent*) Q_DECL_OVERRIDE;
+    void showEvent(QShowEvent *e) override;
+    void mousePressEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void mouseMoveEvent(QMouseEvent*) override;
+    void keyPressEvent(QKeyEvent*) override;
+    void paintEvent(QPaintEvent*) override;
 
 private:
     QPointer<QWidget>widget;
@@ -209,7 +212,7 @@ QWhatsThat::QWhatsThat(const QString& txt, QWidget* parent, QWidget *showTextFor
     }
     else
     {
-        int sw = QApplication::desktop()->width() / 3;
+        int sw = QDesktopWidgetPrivate::width() / 3;
         if (sw < 200)
             sw = 200;
         else if (sw > 300)
@@ -364,8 +367,10 @@ class QWhatsThisPrivate : public QObject
     QWhatsThisPrivate();
     ~QWhatsThisPrivate();
     static QWhatsThisPrivate *instance;
-    bool eventFilter(QObject *, QEvent *) Q_DECL_OVERRIDE;
+    bool eventFilter(QObject *, QEvent *) override;
+#if QT_CONFIG(action)
     QPointer<QAction> action;
+#endif // QT_CONFIG(action)
     static void say(QWidget *, const QString &, int x = 0, int y = 0);
     static void notifyToplevels(QEvent *e);
     bool leaveOnMouseRelease;
@@ -407,8 +412,10 @@ QWhatsThisPrivate::QWhatsThisPrivate()
 
 QWhatsThisPrivate::~QWhatsThisPrivate()
 {
+#if QT_CONFIG(action)
     if (action)
         action->setChecked(false);
+#endif // QT_CONFIG(action)
 #ifndef QT_NO_CURSOR
     QApplication::restoreOverrideCursor();
 #endif
@@ -484,6 +491,7 @@ bool QWhatsThisPrivate::eventFilter(QObject *o, QEvent *e)
     return true;
 }
 
+#if QT_CONFIG(action)
 class QWhatsThisAction: public QAction
 {
     Q_OBJECT
@@ -515,6 +523,7 @@ void QWhatsThisAction::actionTriggered()
         QWhatsThisPrivate::instance->action = this;
     }
 }
+#endif // QT_CONFIG(action)
 
 /*!
     This function switches the user interface into "What's This?"
@@ -582,14 +591,14 @@ void QWhatsThisPrivate::say(QWidget * widget, const QString &text, int x, int y)
     // okay, now to find a suitable location
 
     int scr = (widget ?
-                QApplication::desktop()->screenNumber(widget) :
+                QDesktopWidgetPrivate::screenNumber(widget) :
 #if 0 /* Used to be included in Qt4 for Q_WS_X11 */ && !defined(QT_NO_CURSOR)
                 QCursor::x11Screen()
 #else
-                QApplication::desktop()->screenNumber(QPoint(x,y))
+                QDesktopWidgetPrivate::screenNumber(QPoint(x,y))
 #endif
                );
-    QRect screen = QApplication::desktop()->screenGeometry(scr);
+    QRect screen = QDesktopWidgetPrivate::screenGeometry(scr);
 
     int w = whatsThat->width();
     int h = whatsThat->height();
@@ -671,10 +680,12 @@ void QWhatsThis::hideText()
     The returned QAction provides a convenient way to let users enter
     "What's This?" mode.
 */
+#if QT_CONFIG(action)
 QAction *QWhatsThis::createAction(QObject *parent)
 {
     return new QWhatsThisAction(parent);
 }
+#endif // QT_CONFIG(action)
 
 QT_END_NAMESPACE
 

@@ -1702,6 +1702,9 @@ void tst_QTextEdit::adjustScrollbars()
     QLatin1String txt("\nabc def ghi jkl mno pqr stu vwx");
     ed->setText(txt + txt + txt + txt);
 
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "setMinimum/MaximumSize does not work on WinRT", Abort);
+#endif
     QVERIFY(ed->verticalScrollBar()->maximum() > 0);
 
     ed->moveCursor(QTextCursor::End);
@@ -1882,6 +1885,9 @@ void tst_QTextEdit::copyPasteBackgroundImage()
     QBrush ba = a->cellAt(0, 0).format().background();
     QBrush bb = b->cellAt(0, 0).format().background();
 
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "Fails on WinRT - QTBUG-68297", Abort);
+#endif
     QCOMPARE(ba.style(), Qt::TexturePattern);
     QCOMPARE(ba.style(), bb.style());
 
@@ -2507,7 +2513,7 @@ void tst_QTextEdit::highlightLongLine()
     };
     NumHighlighter nh(edit.document());
     edit.show();
-    QTest::qWaitForWindowActive(edit.windowHandle());
+    QVERIFY(QTest::qWaitForWindowActive(edit.windowHandle()));
     QCoreApplication::processEvents();
     //If there is a quadratic behaviour, this would take forever.
     QVERIFY(true);
@@ -2604,30 +2610,20 @@ namespace {
     class MyPaintEngine : public QPaintEngine
     {
     public:
-        bool begin(QPaintDevice *)
-        {
-            return true;
-        }
+        bool begin(QPaintDevice *) override { return true; }
 
-        bool end()
-        {
-            return true;
-        }
+        bool end() override { return true; }
 
-        void updateState(const QPaintEngineState &)
-        {
-        }
+        void updateState(const QPaintEngineState &) override  { }
 
-        void drawPixmap(const QRectF &, const QPixmap &, const QRectF &)
-        {
-        }
+        void drawPixmap(const QRectF &, const QPixmap &, const QRectF &) override { }
 
-        void drawTextItem(const QPointF &, const QTextItem &textItem) Q_DECL_OVERRIDE
+        void drawTextItem(const QPointF &, const QTextItem &textItem) override
         {
             itemFonts.append(qMakePair(textItem.text(), textItem.font()));
         }
 
-        Type type() const { return User; }
+        Type type() const override { return User; }
 
 
         QList<QPair<QString, QFont> > itemFonts;

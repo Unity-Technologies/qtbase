@@ -42,6 +42,7 @@
 #include "qglobal.h"
 #include "qdir.h"
 #include "qfileinfo_p.h"
+#include "qdebug.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -185,17 +186,25 @@ uint QFileInfoPrivate::getFileFlags(QAbstractFileEngine::FileFlags request) cons
 QDateTime &QFileInfoPrivate::getFileTime(QAbstractFileEngine::FileTime request) const
 {
     Q_ASSERT(fileEngine); // should never be called when using the native FS
-    if (fileTimes.size() != 3)
-        fileTimes.resize(3);
     if (!cache_enabled)
         clearFlags();
-    uint cf;
-    if (request == QAbstractFileEngine::CreationTime)
-        cf = CachedCTime;
-    else if (request == QAbstractFileEngine::ModificationTime)
-        cf = CachedMTime;
-    else
+
+    uint cf = 0;
+    switch (request) {
+    case QAbstractFileEngine::AccessTime:
         cf = CachedATime;
+        break;
+    case QAbstractFileEngine::BirthTime:
+        cf = CachedBTime;
+        break;
+    case QAbstractFileEngine::MetadataChangeTime:
+        cf = CachedMCTime;
+        break;
+    case QAbstractFileEngine::ModificationTime:
+        cf = CachedMTime;
+        break;
+    }
+
     if (!getCachedFlag(cf)) {
         fileTimes[request] = fileEngine->fileTime(request);
         setCachedFlag(cf);
@@ -262,8 +271,8 @@ QDateTime &QFileInfoPrivate::getFileTime(QAbstractFileEngine::FileTime request) 
     info objects, just append one to the file name given to the constructors
     or setFile().
 
-    The file's dates are returned by created(), lastModified() and
-    lastRead(). Information about the file's access permissions is
+    The file's dates are returned by created(), lastModified(), lastRead() and
+    fileTime(). Information about the file's access permissions is
     obtained with isReadable(), isWritable() and isExecutable(). The
     file's ownership is available from owner(), ownerId(), group() and
     groupId(). You can examine a file's permissions and ownership in a
@@ -582,9 +591,6 @@ QString QFileInfo::absolutePath() const
 
     if (d->isDefaultConstructed) {
         return QLatin1String("");
-    } else if (d->fileEntry.isEmpty()) {
-        qWarning("QFileInfo::absolutePath: Constructed with empty filename");
-        return QLatin1String("");
     }
     return d->getFileName(QAbstractFileEngine::AbsolutePathName);
 }
@@ -697,6 +703,8 @@ bool QFileInfo::exists() const
 */
 bool QFileInfo::exists(const QString &file)
 {
+    if (file.isEmpty())
+        return false;
     QFileSystemEntry entry(file);
     QFileSystemMetaData data;
     QAbstractFileEngine *engine =
@@ -904,14 +912,10 @@ QDir QFileInfo::absoluteDir() const
 bool QFileInfo::isReadable() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::UserReadPermission))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::UserReadPermission);
-        return (d->metaData.permissions() & QFile::ReadUser) != 0;
-    }
-    return d->getFileFlags(QAbstractFileEngine::ReadUserPerm);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::UserReadPermission,
+                [d]() { return (d->metaData.permissions() & QFile::ReadUser) != 0; },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::ReadUserPerm); });
 }
 
 /*!
@@ -925,14 +929,10 @@ bool QFileInfo::isReadable() const
 bool QFileInfo::isWritable() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::UserWritePermission))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::UserWritePermission);
-        return (d->metaData.permissions() & QFile::WriteUser) != 0;
-    }
-    return d->getFileFlags(QAbstractFileEngine::WriteUserPerm);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::UserWritePermission,
+                [d]() { return (d->metaData.permissions() & QFile::WriteUser) != 0; },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::WriteUserPerm); });
 }
 
 /*!
@@ -943,14 +943,10 @@ bool QFileInfo::isWritable() const
 bool QFileInfo::isExecutable() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::UserExecutePermission))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::UserExecutePermission);
-        return (d->metaData.permissions() & QFile::ExeUser) != 0;
-    }
-    return d->getFileFlags(QAbstractFileEngine::ExeUserPerm);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::UserExecutePermission,
+                [d]() { return (d->metaData.permissions() & QFile::ExeUser) != 0; },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::ExeUserPerm); });
 }
 
 /*!
@@ -962,14 +958,10 @@ bool QFileInfo::isExecutable() const
 bool QFileInfo::isHidden() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::HiddenAttribute))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::HiddenAttribute);
-        return d->metaData.isHidden();
-    }
-    return d->getFileFlags(QAbstractFileEngine::HiddenFlag);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::HiddenAttribute,
+                [d]() { return d->metaData.isHidden(); },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::HiddenFlag); });
 }
 
 /*!
@@ -1005,14 +997,10 @@ bool QFileInfo::isNativePath() const
 bool QFileInfo::isFile() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::FileType))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::FileType);
-        return d->metaData.isFile();
-    }
-    return d->getFileFlags(QAbstractFileEngine::FileType);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::FileType,
+                [d]() { return d->metaData.isFile(); },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::FileType); });
 }
 
 /*!
@@ -1024,14 +1012,10 @@ bool QFileInfo::isFile() const
 bool QFileInfo::isDir() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::DirectoryType))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::DirectoryType);
-        return d->metaData.isDirectory();
-    }
-    return d->getFileFlags(QAbstractFileEngine::DirectoryType);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::DirectoryType,
+                [d]() { return d->metaData.isDirectory(); },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::DirectoryType); });
 }
 
 
@@ -1045,14 +1029,10 @@ bool QFileInfo::isDir() const
 bool QFileInfo::isBundle() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::BundleType))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::BundleType);
-        return d->metaData.isBundle();
-    }
-    return d->getFileFlags(QAbstractFileEngine::BundleType);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::BundleType,
+                [d]() { return d->metaData.isBundle(); },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::BundleType); });
 }
 
 /*!
@@ -1079,14 +1059,10 @@ bool QFileInfo::isBundle() const
 bool QFileInfo::isSymLink() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::LegacyLinkType))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::LegacyLinkType);
-        return d->metaData.isLegacyLink();
-    }
-    return d->getFileFlags(QAbstractFileEngine::LinkType);
+    return d->checkAttribute<bool>(
+                QFileSystemMetaData::LegacyLinkType,
+                [d]() { return d->metaData.isLegacyLink(); },
+                [d]() { return d->getFileFlags(QAbstractFileEngine::LinkType); });
 }
 
 /*!
@@ -1098,7 +1074,7 @@ bool QFileInfo::isRoot() const
 {
     Q_D(const QFileInfo);
     if (d->isDefaultConstructed)
-        return true;
+        return false;
     if (d->fileEngine == 0) {
         if (d->fileEntry.isRoot()) {
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
@@ -1174,14 +1150,10 @@ QString QFileInfo::owner() const
 uint QFileInfo::ownerId() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return 0;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::UserId))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::UserId);
-        return d->metaData.userId();
-    }
-    return d->fileEngine->ownerId(QAbstractFileEngine::OwnerUser);
+    return d->checkAttribute(uint(-2),
+                QFileSystemMetaData::UserId,
+                [d]() { return d->metaData.userId(); },
+                [d]() { return d->fileEngine->ownerId(QAbstractFileEngine::OwnerUser); });
 }
 
 /*!
@@ -1213,14 +1185,10 @@ QString QFileInfo::group() const
 uint QFileInfo::groupId() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return 0;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::GroupId))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::GroupId);
-        return d->metaData.groupId();
-    }
-    return d->fileEngine->ownerId(QAbstractFileEngine::OwnerGroup);
+    return d->checkAttribute(uint(-2),
+                QFileSystemMetaData::GroupId,
+                [d]() { return d->metaData.groupId(); },
+                [d]() { return d->fileEngine->ownerId(QAbstractFileEngine::OwnerGroup); });
 }
 
 /*!
@@ -1242,16 +1210,15 @@ uint QFileInfo::groupId() const
 bool QFileInfo::permission(QFile::Permissions permissions) const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return false;
-    if (d->fileEngine == 0) {
-        // the QFileSystemMetaData::MetaDataFlag and QFile::Permissions overlap, so just static cast.
-        QFileSystemMetaData::MetaDataFlag permissionFlags = static_cast<QFileSystemMetaData::MetaDataFlag>((int)permissions);
-        if (!d->cache_enabled || !d->metaData.hasFlags(permissionFlags))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, permissionFlags);
-        return (d->metaData.permissions() & permissions) == permissions;
-    }
-    return d->getFileFlags(QAbstractFileEngine::FileFlags((int)permissions)) == (uint)permissions;
+    // the QFileSystemMetaData::MetaDataFlag and QFile::Permissions overlap, so just cast.
+    auto fseFlags = QFileSystemMetaData::MetaDataFlag(int(permissions));
+    auto feFlags = QAbstractFileEngine::FileFlags(int(permissions));
+    return d->checkAttribute<bool>(
+                fseFlags,
+                [=]() { return (d->metaData.permissions() & permissions) == permissions; },
+        [=]() {
+            return d->getFileFlags(feFlags) == uint(permissions);
+        });
 }
 
 /*!
@@ -1264,14 +1231,12 @@ bool QFileInfo::permission(QFile::Permissions permissions) const
 QFile::Permissions QFileInfo::permissions() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return 0;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::Permissions))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::Permissions);
-        return d->metaData.permissions();
-    }
-    return QFile::Permissions(d->getFileFlags(QAbstractFileEngine::PermsMask) & QAbstractFileEngine::PermsMask);
+    return d->checkAttribute<QFile::Permissions>(
+                QFileSystemMetaData::Permissions,
+                [d]() { return d->metaData.permissions(); },
+        [d]() {
+            return QFile::Permissions(d->getFileFlags(QAbstractFileEngine::PermsMask) & QAbstractFileEngine::PermsMask);
+        });
 }
 
 
@@ -1284,64 +1249,77 @@ QFile::Permissions QFileInfo::permissions() const
 qint64 QFileInfo::size() const
 {
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return 0;
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::SizeAttribute))
-            QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::SizeAttribute);
-        return d->metaData.size();
-    }
-    if (!d->getCachedFlag(QFileInfoPrivate::CachedSize)) {
-        d->setCachedFlag(QFileInfoPrivate::CachedSize);
-        d->fileSize = d->fileEngine->size();
-    }
-    return d->fileSize;
+    return d->checkAttribute<qint64>(
+                QFileSystemMetaData::SizeAttribute,
+                [d]() { return d->metaData.size(); },
+        [d]() {
+            if (!d->getCachedFlag(QFileInfoPrivate::CachedSize)) {
+                d->setCachedFlag(QFileInfoPrivate::CachedSize);
+                d->fileSize = d->fileEngine->size();
+            }
+            return d->fileSize;
+        });
 }
 
+#if QT_DEPRECATED_SINCE(5, 10)
 /*!
-    Returns the date and local time when the file was created.
+    \deprecated
 
-    On most Unix systems, this function returns the time of the last
-    status change. A status change occurs when the file is created,
-    but it also occurs whenever the user writes or sets inode
-    information (for example, changing the file permissions).
+    Returns the date and time when the file was created, the time its metadata
+    was last changed or the time of last modification, whichever one of the
+    three is available (in that order).
 
-    If neither creation time nor "last status change" time are not
-    available, returns the same as lastModified().
+    This function is deprecated. Instead, use the birthTime() function to get
+    the time the file was created, metadataChangeTime() to get the time its
+    metadata was last changed, or lastModified() to get the time it was last modified.
 
-    \sa lastModified(), lastRead()
+    \sa birthTime(), metadataChangeTime(), lastModified(), lastRead()
 */
 QDateTime QFileInfo::created() const
 {
-    Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return QDateTime();
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::CreationTime))
-            if (!QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::CreationTime))
-                return QDateTime();
-        return d->metaData.creationTime().toLocalTime();
-    }
-    return d->getFileTime(QAbstractFileEngine::CreationTime).toLocalTime();
+    QDateTime d = fileTime(QFile::FileBirthTime);
+    if (d.isValid())
+        return d;
+    return fileTime(QFile::FileMetadataChangeTime);
+}
+#endif
+
+/*!
+    \since 5.10
+    Returns the date and time when the file was created / born.
+
+    If the file birth time is not available, this function returns an invalid
+    QDateTime.
+
+    \sa lastModified(), lastRead(), metadataChangeTime()
+*/
+QDateTime QFileInfo::birthTime() const
+{
+    return fileTime(QFile::FileBirthTime);
+}
+
+/*!
+    \since 5.10
+    Returns the date and time when the file metadata was changed. A metadata
+    change occurs when the file is created, but it also occurs whenever the
+    user writes or sets inode information (for example, changing the file
+    permissions).
+
+    \sa lastModified(), lastRead()
+*/
+QDateTime QFileInfo::metadataChangeTime() const
+{
+    return fileTime(QFile::FileMetadataChangeTime);
 }
 
 /*!
     Returns the date and local time when the file was last modified.
 
-    \sa created(), lastRead()
+    \sa birthTime(), lastRead(), metadataChangeTime(), fileTime()
 */
 QDateTime QFileInfo::lastModified() const
 {
-    Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return QDateTime();
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::ModificationTime))
-            if (!QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::ModificationTime))
-                return QDateTime();
-        return d->metaData.modificationTime().toLocalTime();
-    }
-    return d->getFileTime(QAbstractFileEngine::ModificationTime).toLocalTime();
+    return fileTime(QFile::FileModificationTime);
 }
 
 /*!
@@ -1350,20 +1328,50 @@ QDateTime QFileInfo::lastModified() const
     On platforms where this information is not available, returns the
     same as lastModified().
 
-    \sa created(), lastModified()
+    \sa birthTime(), lastModified(), metadataChangeTime(), fileTime()
 */
 QDateTime QFileInfo::lastRead() const
 {
+    return fileTime(QFile::FileAccessTime);
+}
+
+/*!
+    \since 5.10
+
+    Returns the file time specified by \a time. If the time cannot be
+    determined, an invalid date time is returned.
+
+    \sa QFile::FileTime, QDateTime::isValid()
+*/
+QDateTime QFileInfo::fileTime(QFile::FileTime time) const
+{
+    Q_STATIC_ASSERT(int(QFile::FileAccessTime) == int(QAbstractFileEngine::AccessTime));
+    Q_STATIC_ASSERT(int(QFile::FileBirthTime) == int(QAbstractFileEngine::BirthTime));
+    Q_STATIC_ASSERT(int(QFile::FileMetadataChangeTime) == int(QAbstractFileEngine::MetadataChangeTime));
+    Q_STATIC_ASSERT(int(QFile::FileModificationTime) == int(QAbstractFileEngine::ModificationTime));
+
     Q_D(const QFileInfo);
-    if (d->isDefaultConstructed)
-        return QDateTime();
-    if (d->fileEngine == 0) {
-        if (!d->cache_enabled || !d->metaData.hasFlags(QFileSystemMetaData::AccessTime))
-            if (!QFileSystemEngine::fillMetaData(d->fileEntry, d->metaData, QFileSystemMetaData::AccessTime))
-                return QDateTime();
-        return d->metaData.accessTime().toLocalTime();
+    auto fetime = QAbstractFileEngine::FileTime(time);
+    QFileSystemMetaData::MetaDataFlags flag;
+    switch (time) {
+    case QFile::FileAccessTime:
+        flag = QFileSystemMetaData::AccessTime;
+        break;
+    case QFile::FileBirthTime:
+        flag = QFileSystemMetaData::BirthTime;
+        break;
+    case QFile::FileMetadataChangeTime:
+        flag = QFileSystemMetaData::MetadataChangeTime;
+        break;
+    case QFile::FileModificationTime:
+        flag = QFileSystemMetaData::ModificationTime;
+        break;
     }
-    return d->getFileTime(QAbstractFileEngine::AccessTime).toLocalTime();
+
+    return d->checkAttribute<QDateTime>(
+                flag,
+                [=]() { return d->metaData.fileTime(fetime).toLocalTime(); },
+                [=]() { return d->getFileTime(fetime).toLocalTime(); });
 }
 
 /*!
@@ -1409,5 +1417,16 @@ void QFileInfo::setCaching(bool enable)
 
     Synonym for QList<QFileInfo>.
 */
+
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug dbg, const QFileInfo &fi)
+{
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
+    dbg.noquote();
+    dbg << "QFileInfo(" << QDir::toNativeSeparators(fi.filePath()) << ')';
+    return dbg;
+}
+#endif
 
 QT_END_NAMESPACE

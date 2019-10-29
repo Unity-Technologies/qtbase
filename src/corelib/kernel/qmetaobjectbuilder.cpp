@@ -190,12 +190,14 @@ class QMetaEnumBuilderPrivate
 {
 public:
     QMetaEnumBuilderPrivate(const QByteArray& _name)
-        : name(_name), isFlag(false)
+        : name(_name), enumName(_name), isFlag(false), isScoped(false)
     {
     }
 
     QByteArray name;
+    QByteArray enumName;
     bool isFlag;
+    bool isScoped;
     QList<QByteArray> keys;
     QVector<int> values;
 };
@@ -636,7 +638,9 @@ QMetaEnumBuilder QMetaObjectBuilder::addEnumerator(const QByteArray& name)
 QMetaEnumBuilder QMetaObjectBuilder::addEnumerator(const QMetaEnum& prototype)
 {
     QMetaEnumBuilder en = addEnumerator(prototype.name());
+    en.setEnumName(prototype.enumName());
     en.setIsFlag(prototype.isFlag());
+    en.setIsScoped(prototype.isScoped());
     int count = prototype.keyCount();
     for (int index = 0; index < count; ++index)
         en.addKey(prototype.key(index), prototype.value(index));
@@ -1214,7 +1218,7 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
             - int(d->methods.size())       // return "parameters" don't have names
             - int(d->constructors.size()); // "this" parameters don't have names
     if (buf) {
-        Q_STATIC_ASSERT_X(QMetaObjectPrivate::OutputRevision == 7, "QMetaObjectBuilder should generate the same version as moc");
+        Q_STATIC_ASSERT_X(QMetaObjectPrivate::OutputRevision == 8, "QMetaObjectBuilder should generate the same version as moc");
         pmeta->revision = QMetaObjectPrivate::OutputRevision;
         pmeta->flags = d->flags;
         pmeta->className = 0;   // Class name is always the first string.
@@ -1242,7 +1246,7 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
 
         pmeta->enumeratorCount = int(d->enumerators.size());
         pmeta->enumeratorData = dataIndex;
-        dataIndex += 4 * int(d->enumerators.size());
+        dataIndex += 5 * int(d->enumerators.size());
 
         pmeta->constructorCount = int(d->constructors.size());
         pmeta->constructorData = dataIndex;
@@ -1259,7 +1263,7 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
             dataIndex += int(d->properties.size());
         if (hasRevisionedProperties)
             dataIndex += int(d->properties.size());
-        dataIndex += 4 * int(d->enumerators.size());
+        dataIndex += 5 * int(d->enumerators.size());
         dataIndex += 5 * int(d->constructors.size());
     }
 
@@ -1408,14 +1412,17 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
     Q_ASSERT(!buf || dataIndex == pmeta->enumeratorData);
     for (const auto &enumerator : d->enumerators) {
         int name = strings.enter(enumerator.name);
-        int isFlag = (int)(enumerator.isFlag);
+        int enumName = strings.enter(enumerator.enumName);
+        int isFlag = enumerator.isFlag ? EnumIsFlag : 0;
+        int isScoped = enumerator.isScoped ? EnumIsScoped : 0;
         int count = enumerator.keys.size();
         int enumOffset = enumIndex;
         if (buf) {
             data[dataIndex]     = name;
-            data[dataIndex + 1] = isFlag;
-            data[dataIndex + 2] = count;
-            data[dataIndex + 3] = enumOffset;
+            data[dataIndex + 1] = enumName;
+            data[dataIndex + 2] = isFlag | isScoped;
+            data[dataIndex + 3] = count;
+            data[dataIndex + 4] = enumOffset;
         }
         for (int key = 0; key < count; ++key) {
             int keyIndex = strings.enter(enumerator.keys[key]);
@@ -1424,7 +1431,7 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
                 data[enumOffset++] = enumerator.values[key];
             }
         }
-        dataIndex += 4;
+        dataIndex += 5;
         enumIndex += 2 * count;
     }
 
@@ -1641,6 +1648,7 @@ void QMetaObjectBuilder::serialize(QDataStream& stream) const
     for (const auto &enumerator : d->enumerators) {
         stream << enumerator.name;
         stream << enumerator.isFlag;
+        stream << enumerator.isScoped;
         stream << enumerator.keys;
         stream << enumerator.values;
     }
@@ -1807,6 +1815,7 @@ void QMetaObjectBuilder::deserialize
         addEnumerator(name);
         QMetaEnumBuilderPrivate &enumerator = d->enumerators[index];
         stream >> enumerator.isFlag;
+        stream >> enumerator.isScoped;
         stream >> enumerator.keys;
         stream >> enumerator.values;
         if (enumerator.keys.size() != enumerator.values.size()) {
@@ -2594,7 +2603,7 @@ QMetaEnumBuilderPrivate *QMetaEnumBuilder::d_func() const
 */
 
 /*!
-    Returns the name of the enumerator (without the scope).
+    Returns the type name of the enumerator (without the scope).
 */
 QByteArray QMetaEnumBuilder::name() const
 {
@@ -2603,6 +2612,33 @@ QByteArray QMetaEnumBuilder::name() const
         return d->name;
     else
         return QByteArray();
+}
+
+/*!
+    Returns the enum name of the enumerator (without the scope).
+
+    \since 5.12
+*/
+QByteArray QMetaEnumBuilder::enumName() const
+{
+    QMetaEnumBuilderPrivate *d = d_func();
+    if (d)
+        return d->enumName;
+    else
+        return QByteArray();
+}
+
+/*!
+    Sets this enumerator to have the enum name \c alias.
+
+    \since 5.12
+    \sa isFlag(), enumName()
+*/
+void QMetaEnumBuilder::setEnumName(const QByteArray &alias)
+{
+    QMetaEnumBuilderPrivate *d = d_func();
+    if (d)
+        d->enumName = alias;
 }
 
 /*!
@@ -2630,6 +2666,31 @@ void QMetaEnumBuilder::setIsFlag(bool value)
     QMetaEnumBuilderPrivate *d = d_func();
     if (d)
         d->isFlag = value;
+}
+
+/*!
+    Return \c true if this enumerator should be considered scoped (C++11 enum class).
+
+    \sa setIsScoped()
+*/
+bool QMetaEnumBuilder::isScoped() const
+{
+    QMetaEnumBuilderPrivate *d = d_func();
+    if (d)
+        return d->isScoped;
+    return false;
+}
+
+/*!
+    Sets this enumerator to be a scoped enum if \value is true
+
+    \sa isScoped()
+*/
+void QMetaEnumBuilder::setIsScoped(bool value)
+{
+    QMetaEnumBuilderPrivate *d = d_func();
+    if (d)
+        d->isScoped = value;
 }
 
 /*!

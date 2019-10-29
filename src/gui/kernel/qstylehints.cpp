@@ -79,6 +79,7 @@ public:
         , m_tabFocusBehavior(-1)
         , m_uiEffects(-1)
         , m_wheelScrollLines(-1)
+        , m_mouseQuickSelectionThreshold(-1)
         {}
 
     int m_mouseDoubleClickInterval;
@@ -90,6 +91,7 @@ public:
     int m_tabFocusBehavior;
     int m_uiEffects;
     int m_wheelScrollLines;
+    int m_mouseQuickSelectionThreshold;
 };
 
 /*!
@@ -365,6 +367,17 @@ bool QStyleHints::showIsMaximized() const
 }
 
 /*!
+    \property QStyleHints::showShortcutsInContextMenus
+    \since 5.10
+    \brief \c true if the platform normally shows shortcut key sequences in
+    context menus, otherwise \c false.
+*/
+bool QStyleHints::showShortcutsInContextMenus() const
+{
+    return themeableHint(QPlatformTheme::ShowShortcutsInContextMenus, QPlatformIntegration::ShowShortcutsInContextMenus).toBool();
+}
+
+/*!
     \property QStyleHints::passwordMaskDelay
     \brief the time, in milliseconds, a typed letter is displayed unshrouded
     in a text input field in password mode.
@@ -524,6 +537,40 @@ void QStyleHints::setWheelScrollLines(int scrollLines)
         return;
     d->m_wheelScrollLines = scrollLines;
     emit wheelScrollLinesChanged(scrollLines);
+}
+
+/*!
+    Sets the mouse quick selection threshold.
+    \internal
+    \sa mouseQuickSelectionThreshold()
+    \since 5.11
+*/
+void QStyleHints::setMouseQuickSelectionThreshold(int threshold)
+{
+    Q_D(QStyleHints);
+    if (d->m_mouseQuickSelectionThreshold == threshold)
+        return;
+    d->m_mouseQuickSelectionThreshold = threshold;
+    emit mouseQuickSelectionThresholdChanged(threshold);
+}
+
+/*!
+    \property QStyleHints::mouseQuickSelectionThreshold
+    \brief Quick selection mouse threshold in QLineEdit.
+
+    This property defines how much the mouse cursor should be moved along the y axis
+    to trigger a quick selection during a normal QLineEdit text selection.
+
+    If the property value is less than or equal to 0, the quick selection feature is disabled.
+
+    \since 5.11
+*/
+int QStyleHints::mouseQuickSelectionThreshold() const
+{
+    Q_D(const QStyleHints);
+    if (d->m_mouseQuickSelectionThreshold >= 0)
+        return d->m_mouseQuickSelectionThreshold;
+    return themeableHint(QPlatformTheme::MouseQuickSelectionThreshold, QPlatformIntegration::MouseQuickSelectionThreshold).toInt();
 }
 
 QT_END_NAMESPACE

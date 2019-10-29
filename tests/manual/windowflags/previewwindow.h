@@ -30,17 +30,23 @@
 #define PREVIEWWINDOW_H
 
 #include <QDialog>
+#include <QRasterWindow>
 
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
 QT_END_NAMESPACE
 
-class PreviewWindow : public QWidget
+class PreviewWindow : public QRasterWindow
+{
+    void paintEvent(QPaintEvent *event);
+};
+
+class PreviewWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    PreviewWindow(QWidget *parent = 0);
+    PreviewWidget(QWidget *parent = 0);
 
     void setWindowFlags(Qt::WindowFlags flags);
 

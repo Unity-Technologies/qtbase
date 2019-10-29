@@ -43,7 +43,9 @@
 #include <QtCore/QPoint>
 #include <QtCore/QTimer>
 
-#ifndef QT_NO_XKBCOMMON_EVDEV
+#include <QtGui/private/qtguiglobal_p.h>
+
+#if QT_CONFIG(xkbcommon)
 #include <xkbcommon/xkbcommon.h>
 #endif
 
@@ -64,16 +66,13 @@ QT_BEGIN_NAMESPACE
 
 class QLibInputKeyboard : public QObject
 {
-    Q_OBJECT
-
 public:
     QLibInputKeyboard();
     ~QLibInputKeyboard();
 
     void processKey(libinput_event_keyboard *e);
 
-#ifndef QT_NO_XKBCOMMON_EVDEV
-private slots:
+#if QT_CONFIG(xkbcommon)
     void handleRepeat();
 
 private:
@@ -96,6 +95,7 @@ private:
         QString unicodeText;
         int repeatCount;
     } m_repeatData;
+    Qt::KeyboardModifiers m_mods;
 #endif
 };
 

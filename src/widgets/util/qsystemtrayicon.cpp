@@ -61,7 +61,11 @@
 #include "qgridlayout.h"
 #include "qapplication.h"
 #include "qdesktopwidget.h"
+#include <private/qdesktopwidget_p.h>
 #include "qbitmap.h"
+
+#include <private/qhighdpiscaling_p.h>
+#include <qpa/qplatformscreen.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -196,8 +200,23 @@ QSystemTrayIcon::~QSystemTrayIcon()
 void QSystemTrayIcon::setContextMenu(QMenu *menu)
 {
     Q_D(QSystemTrayIcon);
+    QMenu *oldMenu = d->menu.data();
     d->menu = menu;
     d->updateMenu_sys();
+    if (oldMenu != menu && d->qpa_sys) {
+        // Show the QMenu-based menu for QPA plugins that do not provide native menus
+        if (oldMenu && !oldMenu->platformMenu())
+            QObject::disconnect(d->qpa_sys, &QPlatformSystemTrayIcon::contextMenuRequested, menu, nullptr);
+        if (menu && !menu->platformMenu()) {
+            QObject::connect(d->qpa_sys, &QPlatformSystemTrayIcon::contextMenuRequested,
+                             menu,
+                             [menu](QPoint globalNativePos, const QPlatformScreen *platformScreen)
+            {
+                QScreen *screen = platformScreen ? platformScreen->screen() : nullptr;
+                menu->popup(QHighDpi::fromNativePixels(globalNativePos, screen), nullptr);
+            });
+        }
+    }
 }
 
 /*!
@@ -323,7 +342,9 @@ bool QSystemTrayIcon::event(QEvent *e)
 
      \value Unknown     Unknown reason
      \value Context     The context menu for the system tray entry was requested
-     \value DoubleClick The system tray entry was double clicked
+     \value DoubleClick The system tray entry was double clicked. \note On macOS, a
+        double click will only be emitted if no context menu is set, since the menu
+        opens on mouse press
      \value Trigger     The system tray entry was clicked
      \value MiddleClick The system tray entry was clicked with the middle mouse button
 
@@ -348,7 +369,7 @@ bool QSystemTrayIcon::event(QEvent *e)
 
     Currently this signal is not sent on \macos.
 
-    \note We follow Microsoft Windows XP/Vista behavior, so the
+    \note We follow Microsoft Windows behavior, so the
     signal is also emitted when the user clicks on a tray icon with
     a balloon message displayed.
 
@@ -502,6 +523,8 @@ QBalloonTip::QBalloonTip(const QIcon &icon, const QString &title,
     closeButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     closeButton->setFixedSize(closeButtonSize, closeButtonSize);
     QObject::connect(closeButton, SIGNAL(clicked()), this, SLOT(close()));
+#else
+    Q_UNUSED(closeButtonSize);
 #endif
 
 #if QT_CONFIG(label)
@@ -512,7 +535,7 @@ QBalloonTip::QBalloonTip(const QIcon &icon, const QString &title,
     msgLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 
     // smart size for the message label
-    int limit = QApplication::desktop()->availableGeometry(msgLabel).size().width() / 3;
+    int limit = QDesktopWidgetPrivate::availableGeometry(msgLabel).size().width() / 3;
     if (msgLabel->sizeHint().width() > limit) {
         msgLabel->setWordWrap(true);
         if (msgLabel->sizeHint().width() > limit) {
@@ -579,7 +602,7 @@ void QBalloonTip::resizeEvent(QResizeEvent *ev)
 void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
 {
     this->showArrow = showArrow;
-    QRect scr = QApplication::desktop()->screenGeometry(pos);
+    QRect scr = QDesktopWidgetPrivate::screenGeometry(pos);
     QSize sh = sizeHint();
     const int border = 1;
     const int ah = 18, ao = 18, aw = 18, rc = 7;

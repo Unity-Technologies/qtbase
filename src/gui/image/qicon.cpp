@@ -47,8 +47,10 @@
 #include "private/qiconloader_p.h"
 #include "qpainter.h"
 #include "qfileinfo.h"
+#if QT_CONFIG(mimetype)
 #include <qmimedatabase.h>
 #include <qmimetype.h>
+#endif
 #include "qpixmapcache.h"
 #include "qvariant.h"
 #include "qcache.h"
@@ -1079,10 +1081,10 @@ void QIcon::addFile(const QString &fileName, const QSize &size, Mode mode, State
 
         QFileInfo info(fileName);
         QIconEngine *engine = iconEngineFromSuffix(fileName, info.suffix());
-#ifndef QT_NO_MIMETYPE
+#if QT_CONFIG(mimetype)
         if (!engine)
             engine = iconEngineFromSuffix(fileName, QMimeDatabase().mimeTypeForFile(info).preferredSuffix());
-#endif // !QT_NO_MIMETYPE
+#endif // mimetype
         d = new QIconPrivate(engine ? engine : new QPixmapIconEngine);
     }
 
@@ -1158,13 +1160,43 @@ QStringList QIcon::themeSearchPaths()
 }
 
 /*!
+    \since 5.11
+
+    Returns the fallback search paths for icons.
+
+    The default value will depend on the platform.
+
+    \sa setFallbackSearchPaths(), themeSearchPaths()
+*/
+QStringList QIcon::fallbackSearchPaths()
+{
+    return QIconLoader::instance()->fallbackSearchPaths();
+}
+
+/*!
+    \since 5.11
+
+    Sets the fallback search paths for icons to \a paths.
+
+    \note To add some path without replacing existing ones:
+
+    \snippet code/src_gui_image_qicon.cpp 5
+
+    \sa fallbackSearchPaths(), setThemeSearchPaths()
+*/
+void QIcon::setFallbackSearchPaths(const QStringList &paths)
+{
+    QIconLoader::instance()->setFallbackSearchPaths(paths);
+}
+
+/*!
     \since 4.6
 
     Sets the current icon theme to \a name.
 
     The \a name should correspond to a directory name in the
     themeSearchPath() containing an index.theme
-    file describing it's contents.
+    file describing its contents.
 
     \sa themeSearchPaths(), themeName()
 */
@@ -1187,6 +1219,37 @@ void QIcon::setThemeName(const QString &name)
 QString QIcon::themeName()
 {
     return QIconLoader::instance()->themeName();
+}
+
+/*!
+    \since 5.12
+
+    Returns the name of the fallback icon theme.
+
+    On X11, if not set, the fallback icon theme depends on your desktop
+    settings. On other platforms it is not set by default.
+
+    \sa setFallbackThemeName(), themeName()
+*/
+QString QIcon::fallbackThemeName()
+{
+    return QIconLoader::instance()->fallbackThemeName();
+}
+
+/*!
+    \since 5.12
+
+    Sets the fallback icon theme to \a name.
+
+    The \a name should correspond to a directory name in the
+    themeSearchPath() containing an index.theme
+    file describing its contents.
+
+    \sa fallbackThemeName(), themeSearchPaths(), themeName()
+*/
+void QIcon::setFallbackThemeName(const QString &name)
+{
+    QIconLoader::instance()->setFallbackThemeName(name);
 }
 
 /*!
@@ -1216,7 +1279,10 @@ QString QIcon::themeName()
     the lookup. These caches can be generated using gtk-update-icon-cache:
     \l{https://developer.gnome.org/gtk3/stable/gtk-update-icon-cache.html}.
 
-    \sa themeName(), setThemeName(), themeSearchPaths()
+    \note If an icon can't be found in the current theme, then it will be
+    searched in fallbackSearchPaths() as an unthemed icon.
+
+    \sa themeName(), setThemeName(), themeSearchPaths(), fallbackSearchPaths()
 */
 QIcon QIcon::fromTheme(const QString &name)
 {
@@ -1469,8 +1535,13 @@ QString qt_findAtNxFile(const QString &baseFileName, qreal targetDevicePixelRati
         return baseFileName;
 
     int dotIndex = baseFileName.lastIndexOf(QLatin1Char('.'));
-    if (dotIndex == -1) /* no dot */
+    if (dotIndex == -1) { /* no dot */
         dotIndex = baseFileName.size(); /* append */
+    } else if (dotIndex >= 2 && baseFileName[dotIndex - 1] == QLatin1Char('9')
+        && baseFileName[dotIndex - 2] == QLatin1Char('.')) {
+        // If the file has a .9.* (9-patch image) extension, we must ensure that the @nx goes before it.
+        dotIndex -= 2;
+    }
 
     QString atNxfileName = baseFileName;
     atNxfileName.insert(dotIndex, QLatin1String("@2x"));

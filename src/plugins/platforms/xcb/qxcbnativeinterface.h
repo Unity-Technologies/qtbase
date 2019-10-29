@@ -46,12 +46,11 @@
 #include <QtCore/QRect>
 
 #include "qxcbexport.h"
+#include "qxcbconnection.h"
 
 QT_BEGIN_NAMESPACE
 
-class QWidget;
 class QXcbScreen;
-class QXcbConnection;
 class QXcbNativeInterfaceHandler;
 
 class Q_XCB_EXPORT QXcbNativeInterface : public QPlatformNativeInterface
@@ -73,7 +72,11 @@ public:
         ScreenSubpixelType,
         ScreenAntialiasingEnabled,
         AtspiBus,
-        CompositingEnabled
+        CompositingEnabled,
+        VkSurface,
+        GeneratePeekerId,
+        RemovePeekerId,
+        PeekEventQueue
     };
 
     QXcbNativeInterface();
@@ -95,7 +98,7 @@ public:
 
     QFunctionPointer platformFunction(const QByteArray &function) const override;
 
-    inline const QByteArray &genericEventFilterType() const { return m_genericEventFilterType; }
+    inline const QByteArray &nativeEventType() const { return m_nativeEventType; }
 
     void *displayForWindow(QWindow *window);
     void *connectionForWindow(QWindow *window);
@@ -113,11 +116,14 @@ public:
     static void setAppTime(QScreen *screen, xcb_timestamp_t time);
     static void setAppUserTime(QScreen *screen, xcb_timestamp_t time);
 
-    Q_INVOKABLE bool systemTrayAvailable(const QScreen *screen) const;
-    Q_INVOKABLE void setParentRelativeBackPixmap(QWindow *window);
-    Q_INVOKABLE bool systrayVisualHasAlphaChannel();
-    Q_INVOKABLE bool requestSystemTrayWindowDock(const QWindow *window);
-    Q_INVOKABLE QRect systemTrayWindowGlobalGeometry(const QWindow *window);
+    static qint32 generatePeekerId();
+    static bool removePeekerId(qint32 peekerId);
+    static bool peekEventQueue(QXcbEventQueue::PeekerCallback peeker, void *peekerData = nullptr,
+                               QXcbEventQueue::PeekOptions option = QXcbEventQueue::PeekDefault,
+                               qint32 peekerId = -1);
+
+    Q_INVOKABLE QString dumpConnectionNativeWindows(const QXcbConnection *connection, WId root) const;
+    Q_INVOKABLE QString dumpNativeWindows(WId root = 0) const;
 
     void addHandler(QXcbNativeInterfaceHandler *handler);
     void removeHandler(QXcbNativeInterfaceHandler *handler);
@@ -125,9 +131,7 @@ signals:
     void systemTrayWindowChanged(QScreen *screen);
 
 private:
-    xcb_window_t locateSystemTray(xcb_connection_t *conn, const QXcbScreen *screen);
-
-    const QByteArray m_genericEventFilterType;
+    const QByteArray m_nativeEventType = QByteArrayLiteral("xcb_generic_event_t");
 
     xcb_atom_t m_sysTraySelectionAtom = XCB_ATOM_NONE;
 

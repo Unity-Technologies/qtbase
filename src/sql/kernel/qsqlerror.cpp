@@ -91,11 +91,40 @@ public:
 */
 
 /*!
+    \fn QSqlError::QSqlError(const QString &driverText, const QString &databaseText, ErrorType type, int number)
     \obsolete
 
     Constructs an error containing the driver error text \a
     driverText, the database-specific error text \a databaseText, the
     type \a type and the optional error number \a number.
+*/
+
+/*! \fn QSqlError::QSqlError(QSqlError &&other)
+    Move-constructs a QSqlError instance, making it point at the same
+    object that \a other was pointing to.
+
+    \note The moved-from object \a other is placed in a
+    partially-formed state, in which the only valid operations are
+    destruction and assignment of a new value.
+
+    \since 5.10
+*/
+
+/*! \fn QSqlError::operator=(QSqlError &&other)
+    Move-assigns \a other to this QSqlError instance.
+
+    \note The moved-from object \a other is placed in a
+    partially-formed state, in which the only valid operations are
+    destruction and assignment of a new value.
+
+    \since 5.10
+*/
+
+/*! \fn QSqlError::swap(QSqlError &other)
+    Swaps error \a other with this error. This operation is very fast
+    and never fails.
+
+    \since 5.10
 */
 
 #if QT_DEPRECATED_SINCE(5, 3)
@@ -116,8 +145,10 @@ QSqlError::QSqlError(const QString& driverText, const QString& databaseText, Err
     Constructs an error containing the driver error text \a
     driverText, the database-specific error text \a databaseText, the
     type \a type and the error code \a code.
-*/
 
+    \note DB2: It is possible for DB2 to report more than one error code.
+    When this happens, \c ; is used as separator between the error codes.
+*/
 QSqlError::QSqlError(const QString &driverText, const QString &databaseText,
                      ErrorType type, const QString &code)
 {
@@ -146,7 +177,10 @@ QSqlError::QSqlError(const QSqlError& other)
 
 QSqlError& QSqlError::operator=(const QSqlError& other)
 {
-    *d = *other.d;
+    if (d)
+        *d = *other.d;
+    else
+        d = new QSqlErrorPrivate(*other.d);
     return *this;
 }
 

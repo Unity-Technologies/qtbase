@@ -64,7 +64,8 @@ Q_DECLARE_TYPEINFO(Type, Q_MOVABLE_TYPE);
 struct EnumDef
 {
     QByteArray name;
-    QList<QByteArray> values;
+    QByteArray enumName;
+    QVector<QByteArray> values;
     bool isEnumClass; // c++11 enum class
     EnumDef() : isEnumClass(false) {}
 };
@@ -121,7 +122,7 @@ struct PropertyDef
 {
     PropertyDef():notifyId(-1), constant(false), final(false), gspec(ValueSpec), revision(0){}
     QByteArray name, type, member, read, write, reset, designable, scriptable, editable, stored, user, notify, inPrivateClass;
-    int notifyId;
+    int notifyId; // -1 means no notifyId, >= 0 means signal defined in this class, < -1 means signal not defined in this class
     bool constant;
     bool final;
     enum Specification  { ValueSpec, ReferenceSpec, PointerSpec };
@@ -179,6 +180,7 @@ struct ClassDef : BaseDef {
 
     QVector<FunctionDef> constructorList;
     QVector<FunctionDef> signalList, slotList, methodList, publicList;
+    QVector<QByteArray> nonClassSignalList;
     int notifyableProperties = 0;
     QVector<PropertyDef> propertyList;
     int revisionedMethods = 0;
@@ -205,10 +207,10 @@ public:
     bool noInclude;
     bool mustIncludeQPluginH;
     QByteArray includePath;
-    QList<QByteArray> includeFiles;
+    QVector<QByteArray> includeFiles;
     QVector<ClassDef> classList;
     QMap<QByteArray, QByteArray> interface2IdMap;
-    QList<QByteArray> metaTypes;
+    QVector<QByteArray> metaTypes;
     // map from class name to fully qualified name
     QHash<QByteArray, QByteArray> knownQObjectClasses;
     QHash<QByteArray, QByteArray> knownGadgets;

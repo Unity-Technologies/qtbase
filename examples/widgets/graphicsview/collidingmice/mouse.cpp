@@ -52,12 +52,12 @@
 
 #include <QGraphicsScene>
 #include <QPainter>
+#include <QRandomGenerator>
 #include <QStyleOption>
+#include <qmath.h>
 
-#include <math.h>
-
-static const double Pi = 3.14159265358979323846264338327950288419717;
-static double TwoPi = 2.0 * Pi;
+const qreal Pi = M_PI;
+const qreal TwoPi = 2 * M_PI;
 
 static qreal normalizeAngle(qreal angle)
 {
@@ -71,9 +71,9 @@ static qreal normalizeAngle(qreal angle)
 //! [0]
 Mouse::Mouse()
     : angle(0), speed(0), mouseEyeDirection(0),
-      color(qrand() % 256, qrand() % 256, qrand() % 256)
+      color(QRandomGenerator::global()->bounded(256), QRandomGenerator::global()->bounded(256), QRandomGenerator::global()->bounded(256))
 {
-    setRotation(qrand() % (360 * 16));
+    setRotation(QRandomGenerator::global()->bounded(360 * 16));
 }
 //! [0]
 
@@ -140,9 +140,7 @@ void Mouse::advance(int step)
 //! [5]
     QLineF lineToCenter(QPointF(0, 0), mapFromScene(0, 0));
     if (lineToCenter.length() > 150) {
-        qreal angleToCenter = ::acos(lineToCenter.dx() / lineToCenter.length());
-        if (lineToCenter.dy() < 0)
-            angleToCenter = TwoPi - angleToCenter;
+        qreal angleToCenter = std::atan2(lineToCenter.dy(), lineToCenter.dx());
         angleToCenter = normalizeAngle((Pi - angleToCenter) + Pi / 2);
 
         if (angleToCenter < Pi && angleToCenter > Pi / 4) {
@@ -171,9 +169,7 @@ void Mouse::advance(int step)
             continue;
 
         QLineF lineToMouse(QPointF(0, 0), mapFromItem(item, 0, 0));
-        qreal angleToMouse = ::acos(lineToMouse.dx() / lineToMouse.length());
-        if (lineToMouse.dy() < 0)
-            angleToMouse = TwoPi - angleToMouse;
+        qreal angleToMouse = std::atan2(lineToMouse.dy(), lineToMouse.dx());
         angleToMouse = normalizeAngle((Pi - angleToMouse) + Pi / 2);
 
         if (angleToMouse >= 0 && angleToMouse < Pi / 2) {
@@ -190,16 +186,16 @@ void Mouse::advance(int step)
 
     // Add some random movement
 //! [10]
-    if (dangerMice.size() > 1 && (qrand() % 10) == 0) {
-        if (qrand() % 1)
-            angle += (qrand() % 100) / 500.0;
+    if (dangerMice.size() > 1 && QRandomGenerator::global()->bounded(10) == 0) {
+        if (QRandomGenerator::global()->bounded(1))
+            angle += QRandomGenerator::global()->bounded(1 / 500.0);
         else
-            angle -= (qrand() % 100) / 500.0;
+            angle -= QRandomGenerator::global()->bounded(1 / 500.0);
     }
 //! [10]
 
 //! [11]
-    speed += (-50 + qrand() % 100) / 100.0;
+    speed += (-50 + QRandomGenerator::global()->bounded(100)) / 100.0;
 
     qreal dx = ::sin(angle) * 10;
     mouseEyeDirection = (qAbs(dx / 5) < 1) ? 0 : dx / 5;

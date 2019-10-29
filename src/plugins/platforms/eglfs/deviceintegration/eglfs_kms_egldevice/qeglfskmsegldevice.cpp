@@ -58,7 +58,7 @@ bool QEglFSKmsEglDevice::open()
 {
     Q_ASSERT(fd() == -1);
 
-    int fd = drmOpen(devicePath().toLocal8Bit().constData(), Q_NULLPTR);
+    int fd = drmOpen(devicePath().toLocal8Bit().constData(), nullptr);
     if (Q_UNLIKELY(fd < 0))
         qFatal("Could not open DRM (NV) device");
 
@@ -77,9 +77,9 @@ void QEglFSKmsEglDevice::close()
     setFd(-1);
 }
 
-EGLNativeDisplayType QEglFSKmsEglDevice::nativeDisplay() const
+void *QEglFSKmsEglDevice::nativeDisplay() const
 {
-    return reinterpret_cast<EGLNativeDisplayType>(m_devInt->eglDevice());
+    return m_devInt->eglDevice();
 }
 
 QPlatformScreen *QEglFSKmsEglDevice::createScreen(const QKmsOutput &output)

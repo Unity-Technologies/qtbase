@@ -513,6 +513,14 @@ void tst_QVersionNumber::fromString()
     QCOMPARE(QVersionNumber::fromString(constructionString), expectedVersion);
     QCOMPARE(QVersionNumber::fromString(constructionString, &index), expectedVersion);
     QCOMPARE(index, suffixIndex);
+
+    QCOMPARE(QVersionNumber::fromString(QStringView(constructionString)), expectedVersion);
+    QCOMPARE(QVersionNumber::fromString(QStringView(constructionString), &index), expectedVersion);
+    QCOMPARE(index, suffixIndex);
+
+    QCOMPARE(QVersionNumber::fromString(QLatin1String(constructionString.toLatin1())), expectedVersion);
+    QCOMPARE(QVersionNumber::fromString(QLatin1String(constructionString.toLatin1()), &index), expectedVersion);
+    QCOMPARE(index, suffixIndex);
 }
 
 void tst_QVersionNumber::toString_data()
@@ -578,10 +586,7 @@ void tst_QVersionNumber::serialize()
 
 void tst_QVersionNumber::moveSemantics()
 {
-#if defined(_MSC_VER) && _MSC_VER == 1600
-#  define Q_MSVC_2010
-#endif
-#if defined(Q_COMPILER_RVALUE_REFS) && !defined(Q_MSVC_2010)
+#ifdef Q_COMPILER_RVALUE_REFS
     // QVersionNumber(QVersionNumber &&)
     {
         QVersionNumber v1(1, 2, 3);
@@ -605,7 +610,7 @@ void tst_QVersionNumber::moveSemantics()
         QCOMPARE(v1, v2);
     }
 #endif
-#if defined(Q_COMPILER_REF_QUALIFIERS) && !defined(Q_MSVC_2010)
+#ifdef Q_COMPILER_REF_QUALIFIERS
     // normalized()
     {
         QVersionNumber v(1, 0, 0);
@@ -631,10 +636,8 @@ void tst_QVersionNumber::moveSemantics()
         QVERIFY(!segments.empty());
     }
 #endif
-#if !defined(Q_COMPILER_RVALUE_REFS) && !defined(Q_COMPILER_REF_QUALIFIERS) && !defined(Q_MSVC_2010)
+#if !defined(Q_COMPILER_RVALUE_REFS) && !defined(Q_COMPILER_REF_QUALIFIERS)
     QSKIP("This test requires C++11 move semantics support in the compiler.");
-#elif defined(Q_MSVC_2010)
-    QSKIP("This test requires compiler generated move constructors and operators.");
 #endif
 }
 

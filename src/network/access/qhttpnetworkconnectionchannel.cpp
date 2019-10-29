@@ -53,7 +53,6 @@
 #    include <private/qsslsocket_p.h>
 #    include <QtNetwork/qsslkey.h>
 #    include <QtNetwork/qsslcipher.h>
-#    include <QtNetwork/qsslconfiguration.h>
 #endif
 
 #ifndef QT_NO_BEARERMANAGEMENT
@@ -61,6 +60,20 @@
 #endif
 
 QT_BEGIN_NAMESPACE
+
+namespace
+{
+
+class ProtocolHandlerDeleter : public QObject
+{
+public:
+    explicit ProtocolHandlerDeleter(QAbstractProtocolHandler *h) : handler(h) {}
+    ~ProtocolHandlerDeleter() { delete handler; }
+private:
+    QAbstractProtocolHandler *handler = nullptr;
+};
+
+}
 
 // TODO: Put channel specific stuff here so it does not polute qhttpnetworkconnection.cpp
 
@@ -174,8 +187,8 @@ void QHttpNetworkConnectionChannel::init()
         if (!ignoreSslErrorsList.isEmpty())
             sslSocket->ignoreSslErrors(ignoreSslErrorsList);
 
-        if (!sslConfiguration.isNull())
-           sslSocket->setSslConfiguration(sslConfiguration);
+        if (sslConfiguration.data() && !sslConfiguration->isNull())
+           sslSocket->setSslConfiguration(*sslConfiguration);
     } else {
 #endif // !QT_NO_SSL
         if (connection->connectionType() != QHttpNetworkConnection::ConnectionTypeHTTP2)
@@ -194,6 +207,9 @@ void QHttpNetworkConnectionChannel::init()
 
 void QHttpNetworkConnectionChannel::close()
 {
+    if (state == QHttpNetworkConnectionChannel::ClosingState)
+        return;
+
     if (!socket)
         state = QHttpNetworkConnectionChannel::IdleState;
     else if (socket->state() == QAbstractSocket::UnconnectedState)
@@ -238,6 +254,20 @@ bool QHttpNetworkConnectionChannel::sendRequest()
     return protocolHandler->sendRequest();
 }
 
+/*
+ * Invoke "protocolHandler->sendRequest" using a queued connection.
+ * It's used to return to the event loop before invoking sendRequest when
+ * there's a very real chance that the request could have been aborted
+ * (i.e. after having emitted 'encrypted').
+ */
+void QHttpNetworkConnectionChannel::sendRequestDelayed()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        Q_ASSERT(!protocolHandler.isNull());
+        if (reply)
+            protocolHandler->sendRequest();
+    }, Qt::ConnectionType::QueuedConnection);
+}
 
 void QHttpNetworkConnectionChannel::_q_receiveReply()
 {
@@ -421,6 +451,44 @@ void QHttpNetworkConnectionChannel::allDone()
     if (!reply) {
         qWarning("QHttpNetworkConnectionChannel::allDone() called without reply. Please report at http://bugreports.qt.io/");
         return;
+    }
+
+    // For clear text HTTP/2 we tried to upgrade from HTTP/1.1 to HTTP/2; for
+    // ConnectionTypeHTTP2Direct we can never be here in case of failure
+    // (after an attempt to read HTTP/1.1 as HTTP/2 frames) or we have a normal
+    // HTTP/2 response and thus can skip this test:
+    if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2
+        && !ssl && !switchedToHttp2) {
+        if (Http2::is_protocol_upgraded(*reply)) {
+            switchedToHttp2 = true;
+            protocolHandler->setReply(nullptr);
+
+            // As allDone() gets called from the protocol handler, it's not yet
+            // safe to delete it. There is no 'deleteLater', since
+            // QAbstractProtocolHandler is not a QObject. Instead we do this
+            // trick with ProtocolHandlerDeleter, a QObject-derived class.
+            // These dances below just make it somewhat exception-safe.
+            // 1. Create a new owner:
+            QAbstractProtocolHandler *oldHandler = protocolHandler.data();
+            QScopedPointer<ProtocolHandlerDeleter> deleter(new ProtocolHandlerDeleter(oldHandler));
+            // 2. Retire the old one:
+            protocolHandler.take();
+            // 3. Call 'deleteLater':
+            deleter->deleteLater();
+            // 3. Give up the ownerthip:
+            deleter.take();
+
+            connection->fillHttp2Queue();
+            protocolHandler.reset(new QHttp2ProtocolHandler(this));
+            QHttp2ProtocolHandler *h2c = static_cast<QHttp2ProtocolHandler *>(protocolHandler.data());
+            QMetaObject::invokeMethod(h2c, "_q_receiveReply", Qt::QueuedConnection);
+            QMetaObject::invokeMethod(connection, "_q_startNextRequest", Qt::QueuedConnection);
+            return;
+        } else {
+            // Ok, whatever happened, we do not try HTTP/2 anymore ...
+            connection->setConnectionType(QHttpNetworkConnection::ConnectionTypeHTTP);
+            connection->d_func()->activeChannelCount = connection->d_func()->channelCount;
+        }
     }
 
     // while handling 401 & 407, we might reset the status code, so save this.
@@ -661,7 +729,10 @@ void QHttpNetworkConnectionChannel::setSslConfiguration(const QSslConfiguration 
     if (socket)
         static_cast<QSslSocket *>(socket)->setSslConfiguration(config);
 
-    sslConfiguration = config;
+    if (sslConfiguration.data())
+        *sslConfiguration = config;
+    else
+        sslConfiguration.reset(new QSslConfiguration(config));
 }
 
 #endif
@@ -839,21 +910,35 @@ void QHttpNetworkConnectionChannel::_q_connected()
                 connection->setSslContext(socketSslContext);
         }
 #endif
+    } else if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
+        state = QHttpNetworkConnectionChannel::IdleState;
+        protocolHandler.reset(new QHttp2ProtocolHandler(this));
+        if (spdyRequestsToSend.count() > 0) {
+            // In case our peer has sent us its settings (window size, max concurrent streams etc.)
+            // let's give _q_receiveReply a chance to read them first ('invokeMethod', QueuedConnection).
+            QMetaObject::invokeMethod(connection, "_q_startNextRequest", Qt::QueuedConnection);
+        }
     } else {
         state = QHttpNetworkConnectionChannel::IdleState;
-        if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2) {
-            // We have to reset QHttp2ProtocolHandler's state machine, it's a new
-            // connection and the handler's state is unique per connection.
-            protocolHandler.reset(new QHttp2ProtocolHandler(this));
-            if (spdyRequestsToSend.count() > 0) {
-                // wait for data from the server first (e.g. initial window, max concurrent requests)
-                QMetaObject::invokeMethod(connection, "_q_startNextRequest", Qt::QueuedConnection);
+        const bool tryProtocolUpgrade = connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2;
+        if (tryProtocolUpgrade) {
+            // For HTTP/1.1 it's already created and never reset.
+            protocolHandler.reset(new QHttpProtocolHandler(this));
+        }
+        switchedToHttp2 = false;
+
+        if (!reply)
+            connection->d_func()->dequeueRequest(socket);
+
+        if (reply) {
+            if (tryProtocolUpgrade) {
+                // Let's augment our request with some magic headers and try to
+                // switch to HTTP/2.
+                const Http2::ProtocolParameters params(connection->http2Parameters());
+                Q_ASSERT(params.validate());
+                params.addProtocolUpgradeHeaders(&request);
             }
-        } else {
-            if (!reply)
-                connection->d_func()->dequeueRequest(socket);
-            if (reply)
-                sendRequest();
+            sendRequest();
         }
     }
 }
@@ -884,7 +969,10 @@ void QHttpNetworkConnectionChannel::_q_error(QAbstractSocket::SocketError socket
         } else if (state != QHttpNetworkConnectionChannel::IdleState && state != QHttpNetworkConnectionChannel::ReadingState) {
             // Try to reconnect/resend before sending an error.
             // While "Reading" the _q_disconnected() will handle this.
-            if (reconnectAttempts-- > 0) {
+            // If we're using ssl then the protocolHandler is not initialized until
+            // "encrypted" has been emitted, since retrying requires the protocolHandler (asserted)
+            // we will not try if encryption is not done.
+            if (!pendingEncrypt && reconnectAttempts-- > 0) {
                 resendCurrentRequest();
                 return;
             } else {
@@ -1027,11 +1115,13 @@ void QHttpNetworkConnectionChannel::_q_error(QAbstractSocket::SocketError socket
 void QHttpNetworkConnectionChannel::_q_proxyAuthenticationRequired(const QNetworkProxy &proxy, QAuthenticator* auth)
 {
     if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2
+        || connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2Direct
 #ifndef QT_NO_SSL
         || connection->connectionType() == QHttpNetworkConnection::ConnectionTypeSPDY
 #endif
         ) {
-        connection->d_func()->emitProxyAuthenticationRequired(this, proxy, auth);
+        if (spdyRequestsToSend.count() > 0)
+            connection->d_func()->emitProxyAuthenticationRequired(this, proxy, auth);
     } else { // HTTP
         // Need to dequeue the request before we can emit the error.
         if (!reply)
@@ -1067,7 +1157,10 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
     QSslSocket *sslSocket = qobject_cast<QSslSocket *>(socket);
     Q_ASSERT(sslSocket);
 
-    if (!protocolHandler) {
+    if (!protocolHandler && connection->connectionType() != QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
+        // ConnectionTypeHTTP2Direct does not rely on ALPN/NPN to negotiate HTTP/2,
+        // after establishing a secure connection we immediately start sending
+        // HTTP/2 frames.
         switch (sslSocket->sslConfiguration().nextProtocolNegotiationStatus()) {
         case QSslConfiguration::NextProtocolNegotiationNegotiated:
         case QSslConfiguration::NextProtocolNegotiationUnsupported: {
@@ -1081,6 +1174,7 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
                 // has gone to the SPDY queue already
                 break;
             } else if (nextProtocol == QSslConfiguration::ALPNProtocolHTTP2) {
+                switchedToHttp2 = true;
                 protocolHandler.reset(new QHttp2ProtocolHandler(this));
                 connection->setConnectionType(QHttpNetworkConnection::ConnectionTypeHTTP2);
                 break;
@@ -1093,8 +1187,15 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
             Q_FALLTHROUGH();
         case QSslConfiguration::NextProtocolNegotiationNone: {
             protocolHandler.reset(new QHttpProtocolHandler(this));
+            if (!sslConfiguration.data()) {
+                // Our own auto-tests bypass the normal initialization (done by
+                // QHttpThreadDelegate), this means in the past we'd have here
+                // the default constructed QSslConfiguration without any protocols
+                // to negotiate. Let's create it now:
+                sslConfiguration.reset(new QSslConfiguration);
+            }
 
-            QList<QByteArray> protocols = sslConfiguration.allowedNextProtocols();
+            QList<QByteArray> protocols = sslConfiguration->allowedNextProtocols();
             const int nProtocols = protocols.size();
             // Clear the protocol that we failed to negotiate, so we do not try
             // it again on other channels that our connection can create/open.
@@ -1104,10 +1205,10 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
                 protocols.removeAll(QSslConfiguration::NextProtocolSpdy3_0);
 
             if (nProtocols > protocols.size()) {
-                sslConfiguration.setAllowedNextProtocols(protocols);
+                sslConfiguration->setAllowedNextProtocols(protocols);
                 const int channelCount = connection->d_func()->channelCount;
                 for (int i = 0; i < channelCount; ++i)
-                    connection->d_func()->channels[i].setSslConfiguration(sslConfiguration);
+                    connection->d_func()->channels[i].setSslConfiguration(*sslConfiguration);
             }
 
             connection->setConnectionType(QHttpNetworkConnection::ConnectionTypeHTTP);
@@ -1125,7 +1226,8 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
             emitFinishedWithError(QNetworkReply::SslHandshakeFailedError,
                                   "detected unknown Next Protocol Negotiation protocol");
         }
-    } else if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2) {
+    } else if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2
+               || connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
         // We have to reset QHttp2ProtocolHandler's state machine, it's a new
         // connection and the handler's state is unique per connection.
         protocolHandler.reset(new QHttp2ProtocolHandler(this));
@@ -1137,10 +1239,12 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
     pendingEncrypt = false;
 
     if (connection->connectionType() == QHttpNetworkConnection::ConnectionTypeSPDY ||
-        connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2) {
+        connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2 ||
+        connection->connectionType() == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
         // we call setSpdyWasUsed(true) on the replies in the SPDY handler when the request is sent
         if (spdyRequestsToSend.count() > 0) {
-            // wait for data from the server first (e.g. initial window, max concurrent requests)
+            // In case our peer has sent us its settings (window size, max concurrent streams etc.)
+            // let's give _q_receiveReply a chance to read them first ('invokeMethod', QueuedConnection).
             QMetaObject::invokeMethod(connection, "_q_startNextRequest", Qt::QueuedConnection);
         }
     } else { // HTTP
@@ -1152,7 +1256,7 @@ void QHttpNetworkConnectionChannel::_q_encrypted()
             emit reply->encrypted();
         }
         if (reply)
-            sendRequest();
+            sendRequestDelayed();
     }
 }
 

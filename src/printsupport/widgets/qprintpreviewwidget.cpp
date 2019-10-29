@@ -64,13 +64,13 @@ public:
         setCacheMode(DeviceCoordinateCache);
     }
 
-    QRectF boundingRect() const Q_DECL_OVERRIDE
+    QRectF boundingRect() const override
     { return brect; }
 
     inline int pageNumber() const
     { return pageNum; }
 
-    void paint(QPainter *painter, const QStyleOptionGraphicsItem *item, QWidget *widget) Q_DECL_OVERRIDE;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *item, QWidget *widget) override;
 
 private:
     int pageNum;
@@ -145,7 +145,7 @@ class GraphicsView : public QGraphicsView
 {
     Q_OBJECT
 public:
-    GraphicsView(QWidget* parent = 0)
+    GraphicsView(QWidget* parent = nullptr)
         : QGraphicsView(parent)
     {
 #ifdef Q_OS_MAC
@@ -156,7 +156,7 @@ signals:
     void resized();
 
 protected:
-    void resizeEvent(QResizeEvent* e) Q_DECL_OVERRIDE
+    void resizeEvent(QResizeEvent* e) override
     {
         {
             const QSignalBlocker blocker(verticalScrollBar()); // Don't change page, QTBUG-14517
@@ -165,7 +165,7 @@ protected:
         emit resized();
     }
 
-    void showEvent(QShowEvent* e) Q_DECL_OVERRIDE
+    void showEvent(QShowEvent* e) override
     {
         QGraphicsView::showEvent(e);
         emit resized();
@@ -179,7 +179,7 @@ class QPrintPreviewWidgetPrivate : public QWidgetPrivate
     Q_DECLARE_PUBLIC(QPrintPreviewWidget)
 public:
     QPrintPreviewWidgetPrivate()
-        : scene(0), curPage(1),
+        : scene(nullptr), curPage(1),
           viewMode(QPrintPreviewWidget::SinglePageView),
           zoomMode(QPrintPreviewWidget::FitInView),
           zoomFactor(1), initialized(false), fitting(true)
@@ -324,8 +324,7 @@ void QPrintPreviewWidgetPrivate::init()
     scene->setBackgroundBrush(Qt::gray);
     graphicsView->setScene(scene);
 
-    QVBoxLayout *layout = new QVBoxLayout;
-    q->setLayout(layout);
+    QVBoxLayout *layout = new QVBoxLayout(q);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(graphicsView);
 }

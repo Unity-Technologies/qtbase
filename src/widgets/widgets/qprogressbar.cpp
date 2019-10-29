@@ -213,7 +213,7 @@ bool QProgressBarPrivate::repaintRequired() const
 
     Note that whether or not the text is drawn is dependent on the style.
     Currently CleanLooks and Plastique draw the text. Mac, Windows
-    and WindowsXP style do not.
+    and WindowsVista style do not.
 
     \sa textDirection
 */
@@ -421,7 +421,7 @@ QSize QProgressBar::sizeHint() const
     QStyleOptionProgressBar opt;
     initStyleOption(&opt);
     int cw = style()->pixelMetric(QStyle::PM_ProgressBarChunkWidth, &opt, this);
-    QSize size = QSize(qMax(9, cw) * 7 + fm.width(QLatin1Char('0')) * 4, fm.height() + 8);
+    QSize size = QSize(qMax(9, cw) * 7 + fm.horizontalAdvance(QLatin1Char('0')) * 4, fm.height() + 8);
     if (opt.orientation == Qt::Vertical)
         size = size.transposed();
     return style()->sizeFromContents(QStyle::CT_ProgressBar, &opt, size, this);

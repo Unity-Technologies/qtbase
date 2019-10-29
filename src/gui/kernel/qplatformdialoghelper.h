@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
@@ -141,14 +141,16 @@ public:
     Q_ENUM(ButtonRole)
 
     enum ButtonLayout {
-        // keep this in sync with QDialogButtonBox::ButtonLayout and QMessageBox::ButtonLayout
+        // keep this in sync with QDialogButtonBox::ButtonLayout
         UnknownLayout = -1,
         WinLayout,
         MacLayout,
         KdeLayout,
         GnomeLayout,
-        MacModelessLayout
+        MacModelessLayout,
+        AndroidLayout
     };
+    Q_ENUM(ButtonLayout)
 
     QPlatformDialogHelper();
     virtual ~QPlatformDialogHelper();
@@ -457,6 +459,26 @@ public:
 
     void setStandardButtons(QPlatformDialogHelper::StandardButtons buttons);
     QPlatformDialogHelper::StandardButtons standardButtons() const;
+
+    struct CustomButton {
+        explicit CustomButton(
+                int id = -1, const QString &label = QString(),
+                QPlatformDialogHelper::ButtonRole role = QPlatformDialogHelper::InvalidRole,
+                void *button = nullptr) :
+            label(label), role(role), id(id), button(button)
+        {}
+
+        QString label;
+        QPlatformDialogHelper::ButtonRole role;
+        int id;
+        void *button; // strictly internal use only
+    };
+
+    int addButton(const QString &label, QPlatformDialogHelper::ButtonRole role,
+                  void *buttonImpl = nullptr);
+    void removeButton(int id);
+    const QVector<CustomButton> &customButtons();
+    const CustomButton *customButton(int id);
 
 private:
     QMessageDialogOptionsPrivate *d;

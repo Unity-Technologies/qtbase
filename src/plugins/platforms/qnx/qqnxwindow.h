@@ -85,7 +85,7 @@ public:
     void raise() override;
     void lower() override;
     void requestActivateWindow() override;
-    void setWindowState(Qt::WindowState state) override;
+    void setWindowState(Qt::WindowStates state) override;
     void setExposed(bool exposed);
 
     void propagateSizeHints() override;
@@ -94,7 +94,7 @@ public:
     void setMMRendererWindow(screen_window_t handle);
     void clearMMRendererWindow();
 
-    QQnxScreen *screen() const { return m_screen; }
+    QPlatformScreen *screen() const override;
     const QList<QQnxWindow*>& children() const { return m_childWindows; }
 
     QQnxWindow *findWindow(screen_window_t windowHandle);
@@ -142,7 +142,7 @@ private:
     bool m_visible;
     bool m_exposed;
     QRect m_unmaximizedGeometry;
-    Qt::WindowState m_windowState;
+    Qt::WindowStates m_windowState;
     QString m_mmRendererWindowName;
     screen_window_t m_mmRendererWindow;
 

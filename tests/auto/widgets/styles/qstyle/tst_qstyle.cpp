@@ -82,10 +82,7 @@ private slots:
     void testFusionStyle();
 #endif
     void testWindowsStyle();
-#if defined(Q_OS_WIN) && !defined(QT_NO_STYLE_WINDOWSXP)
-    void testWindowsXPStyle();
-#endif
-#if defined(Q_OS_WIN) && !defined(QT_NO_STYLE_WINDOWSVISTA)
+#if defined(Q_OS_WIN) && !defined(QT_NO_STYLE_WINDOWSVISTA) && !defined(Q_OS_WINRT)
     void testWindowsVistaStyle();
 #endif
 #ifdef Q_OS_MAC
@@ -141,14 +138,6 @@ void tst_QStyle::testStyleFactory()
 #endif
 #ifndef QT_NO_STYLE_WINDOWS
     QVERIFY(keys.contains("Windows"));
-#endif
-#ifdef Q_OS_WIN
-    if (QSysInfo::WindowsVersion >= QSysInfo::WV_XP &&
-        (QSysInfo::WindowsVersion & QSysInfo::WV_NT_based))
-        QVERIFY(keys.contains("WindowsXP"));
-    if (QSysInfo::WindowsVersion >= QSysInfo::WV_VISTA &&
-        (QSysInfo::WindowsVersion & QSysInfo::WV_NT_based))
-        QVERIFY(keys.contains("WindowsVista"));
 #endif
 
     foreach (QString styleName , keys) {
@@ -209,6 +198,9 @@ void tst_QStyle::drawItemPixmap()
     QVERIFY(image.reinterpretAsFormat(QImage::Format_RGB32));
     const QRgb *bits = reinterpret_cast<const QRgb *>(image.constBits());
     const QRgb *end = bits + image.byteCount() / sizeof(QRgb);
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "QWidget::resize does not work on WinRT", Continue);
+#endif
     QVERIFY(std::all_of(bits, end, [green] (QRgb r) { return r == green; }));
     testWidget->hide();
 }
@@ -295,16 +287,22 @@ bool tst_QStyle::testAllFunctions(QStyle *style)
 
 bool tst_QStyle::testScrollBarSubControls()
 {
+    const auto *style = testWidget->style();
+    const bool isMacStyle = style->objectName().toLower() == "macintosh";
     QScrollBar scrollBar;
     setFrameless(&scrollBar);
     scrollBar.show();
     const QStyleOptionSlider opt = qt_qscrollbarStyleOption(&scrollBar);
-    foreach (int subControl, QList<int>() << 1 << 2 << 4 << 8) {
-        QRect sr = testWidget->style()->subControlRect(QStyle::CC_ScrollBar, &opt,
-                                    QStyle::SubControl(subControl), &scrollBar);
+    foreach (int sc, QList<int>() << 1 << 2 << 4 << 8) {
+        const auto subControl = static_cast<QStyle::SubControl>(sc);
+        const QRect sr = style->subControlRect(QStyle::CC_ScrollBar, &opt, subControl, &scrollBar);
         if (sr.isNull()) {
-            qWarning("Null rect for subcontrol %d", subControl);
-            return false;
+            // macOS scrollbars no longer have these, so there's no reason to fail
+            if (!(isMacStyle && (subControl == QStyle::SC_ScrollBarAddLine ||
+                                 subControl == QStyle::SC_ScrollBarSubLine))) {
+                qWarning() << "Unexpected null rect for subcontrol" << subControl;
+                return false;
+            }
         }
     }
     return true;
@@ -335,17 +333,6 @@ void tst_QStyle::testWindowsStyle()
     delete wstyle;
 }
 
-#if defined(Q_OS_WIN) && !defined(QT_NO_STYLE_WINDOWSXP)
-// WindowsXP style
-void tst_QStyle::testWindowsXPStyle()
-{
-    QStyle *xpstyle = QStyleFactory::create("WindowsXP");
-    QVERIFY(testAllFunctions(xpstyle));
-    lineUpLayoutTest(xpstyle);
-    delete xpstyle;
-}
-#endif
-
 void writeImage(const QString &fileName, QImage image)
 {
     QImageWriter imageWriter(fileName);
@@ -360,7 +347,7 @@ QImage readImage(const QString &fileName)
 }
 
 
-#if defined(Q_OS_WIN) && !defined(QT_NO_STYLE_WINDOWSVISTA)
+#if defined(Q_OS_WIN) && !defined(QT_NO_STYLE_WINDOWSVISTA) && !defined(Q_OS_WINRT)
 void tst_QStyle::testWindowsVistaStyle()
 {
     QStyle *vistastyle = QStyleFactory::create("WindowsVista");
@@ -368,8 +355,6 @@ void tst_QStyle::testWindowsVistaStyle()
 
     if (QSysInfo::WindowsVersion == QSysInfo::WV_VISTA)
         testPainting(vistastyle, "vista");
-    else if (QSysInfo::WindowsVersion == QSysInfo::WV_XP)
-        testPainting(vistastyle, "xp");
     delete vistastyle;
 }
 #endif
@@ -734,6 +719,9 @@ void tst_QStyle::testFrameOnlyAroundContents()
     area.verticalScrollBar()->setStyle(&frameStyle);
     area.setStyle(&frameStyle);
     // Test that we reserve space for scrollbar spacing
+#ifdef Q_OS_WINRT
+    QEXPECT_FAIL("", "QWidget::setGeometry does not work on WinRT", Continue);
+#endif
     QVERIFY(viewPortWidth == area.viewport()->width() + SCROLLBAR_SPACING);
     delete winStyle;
 }
@@ -748,7 +736,7 @@ public:
         , called(false)
     {}
 
-    void drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPainter *p, const QWidget *w) const Q_DECL_OVERRIDE {
+    void drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPainter *p, const QWidget *w) const override {
         called = true;
         return QProxyStyle::drawPrimitive(pe, opt, p, w);
     }
@@ -791,74 +779,74 @@ class TestStyleOptionInitProxy: public QProxyStyle
     Q_OBJECT
 public:
     mutable bool invalidOptionsDetected;
-    explicit TestStyleOptionInitProxy(QStyle *style = Q_NULLPTR)
+    explicit TestStyleOptionInitProxy(QStyle *style = nullptr)
         : QProxyStyle(style),
           invalidOptionsDetected(false)
     {}
 
-    void drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPainter *p, const QWidget *w) const Q_DECL_OVERRIDE {
+    void drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPainter *p, const QWidget *w) const override {
         checkStyleEnum<QStyle::PrimitiveElement>(pe, opt);
         return QProxyStyle::drawPrimitive(pe, opt, p, w);
     }
 
-    void drawControl(ControlElement element, const QStyleOption *opt, QPainter *p, const QWidget *w) const Q_DECL_OVERRIDE {
+    void drawControl(ControlElement element, const QStyleOption *opt, QPainter *p, const QWidget *w) const override {
         checkStyleEnum<QStyle::ControlElement>(element, opt);
         return QProxyStyle::drawControl(element, opt, p, w);
     }
 
-    QRect subElementRect(SubElement subElement, const QStyleOption *option, const QWidget *widget) const Q_DECL_OVERRIDE {
+    QRect subElementRect(SubElement subElement, const QStyleOption *option, const QWidget *widget) const override {
         checkStyleEnum<QStyle::SubElement>(subElement, option);
         return QProxyStyle::subElementRect(subElement, option, widget);
     }
 
-    void drawComplexControl(ComplexControl cc, const QStyleOptionComplex *opt, QPainter *p, const QWidget *widget) const Q_DECL_OVERRIDE {
+    void drawComplexControl(ComplexControl cc, const QStyleOptionComplex *opt, QPainter *p, const QWidget *widget) const override {
         checkStyleEnum<QStyle::ComplexControl>(cc, opt);
         return QProxyStyle::drawComplexControl(cc, opt, p, widget);
     }
 
-    QRect subControlRect(ComplexControl cc, const QStyleOptionComplex *opt, SubControl sc, const QWidget *widget) const Q_DECL_OVERRIDE {
+    QRect subControlRect(ComplexControl cc, const QStyleOptionComplex *opt, SubControl sc, const QWidget *widget) const override {
         checkStyleEnum<QStyle::ComplexControl>(cc, opt);
         return QProxyStyle::subControlRect(cc, opt, sc, widget);
     }
 
-    int pixelMetric(PixelMetric metric, const QStyleOption *option, const QWidget *widget) const Q_DECL_OVERRIDE {
+    int pixelMetric(PixelMetric metric, const QStyleOption *option, const QWidget *widget) const override {
         checkStyleEnum<QStyle::PixelMetric>(metric, option);
         return QProxyStyle::pixelMetric(metric, option, widget);
     }
 
-    QSize sizeFromContents(ContentsType ct, const QStyleOption *opt, const QSize &contentsSize, const QWidget *w) const Q_DECL_OVERRIDE {
+    QSize sizeFromContents(ContentsType ct, const QStyleOption *opt, const QSize &contentsSize, const QWidget *w) const override {
         checkStyleEnum<QStyle::ContentsType>(ct, opt);
         return QProxyStyle::sizeFromContents(ct, opt, contentsSize, w);
     }
 
-    int styleHint(StyleHint stylehint, const QStyleOption *opt, const QWidget *widget, QStyleHintReturn *returnData) const Q_DECL_OVERRIDE {
+    int styleHint(StyleHint stylehint, const QStyleOption *opt, const QWidget *widget, QStyleHintReturn *returnData) const override {
         checkStyleEnum<QStyle::StyleHint>(stylehint, opt);
         return QProxyStyle::styleHint(stylehint, opt, widget, returnData);
     }
 
-    QPixmap standardPixmap(StandardPixmap standardPixmap, const QStyleOption *opt, const QWidget *widget) const  Q_DECL_OVERRIDE {
+    QPixmap standardPixmap(StandardPixmap standardPixmap, const QStyleOption *opt, const QWidget *widget) const  override {
         checkStyleEnum<QStyle::StandardPixmap>(standardPixmap, opt);
         return QProxyStyle::standardPixmap(standardPixmap, opt, widget);
     }
 
-    QIcon standardIcon(StandardPixmap standardIcon, const QStyleOption *option, const QWidget *widget) const Q_DECL_OVERRIDE {
+    QIcon standardIcon(StandardPixmap standardIcon, const QStyleOption *option, const QWidget *widget) const override {
         checkStyleEnum<QStyle::StandardPixmap>(standardIcon, option);
         return QProxyStyle::standardIcon(standardIcon, option, widget);
     }
 
-    QPixmap generatedIconPixmap(QIcon::Mode iconMode, const QPixmap &pixmap, const QStyleOption *opt) const  Q_DECL_OVERRIDE {
+    QPixmap generatedIconPixmap(QIcon::Mode iconMode, const QPixmap &pixmap, const QStyleOption *opt) const  override {
         checkStyle(QString::asprintf("QIcon::Mode(%i)", iconMode).toLatin1(), opt);
         return QProxyStyle::generatedIconPixmap(iconMode, pixmap, opt);
     }
 
-    int layoutSpacing(QSizePolicy::ControlType control1, QSizePolicy::ControlType control2, Qt::Orientation orientation, const QStyleOption *option, const QWidget *widget) const Q_DECL_OVERRIDE {
+    int layoutSpacing(QSizePolicy::ControlType control1, QSizePolicy::ControlType control2, Qt::Orientation orientation, const QStyleOption *option, const QWidget *widget) const override {
         checkStyle(QString::asprintf("QSizePolicy::ControlType(%i), QSizePolicy::ControlType(%i)", control1, control2).toLatin1(), option);
         return QProxyStyle::layoutSpacing(control1, control2, orientation, option, widget);
     }
 
 private:
     void checkStyle(const QByteArray &info, const QStyleOption *opt) const {
-        if (opt && (opt->version == 0 || opt->styleObject == Q_NULLPTR) ) {
+        if (opt && (opt->version == 0 || opt->styleObject == nullptr) ) {
             invalidOptionsDetected = true;
             qWarning() << baseStyle()->metaObject()->className()
                        << "Invalid QStyleOption found for"

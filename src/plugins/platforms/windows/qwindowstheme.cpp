@@ -38,15 +38,19 @@
 ****************************************************************************/
 
 // SHSTOCKICONINFO is only available since Vista
-#if _WIN32_WINNT < 0x0600
+#if _WIN32_WINNT < 0x0601
 #  undef _WIN32_WINNT
-#  define _WIN32_WINNT 0x0600
+#  define _WIN32_WINNT 0x0601
 #endif
 
 #include "qwindowstheme.h"
+#include "qwindowsmenu.h"
 #include "qwindowsdialoghelpers.h"
 #include "qwindowscontext.h"
 #include "qwindowsintegration.h"
+#if QT_CONFIG(systemtrayicon)
+#  include "qwindowssystemtrayicon.h"
+#endif
 #include "qt_windows.h"
 #include <commctrl.h>
 #include <objbase.h>
@@ -55,20 +59,20 @@
 #endif
 #include <shellapi.h>
 
-#include <QtCore/QVariant>
-#include <QtCore/QCoreApplication>
-#include <QtCore/QDebug>
-#include <QtCore/QTextStream>
-#include <QtCore/QSysInfo>
-#include <QtCore/QCache>
-#include <QtCore/QThread>
-#include <QtCore/QMutex>
-#include <QtCore/QWaitCondition>
-#include <QtGui/QColor>
-#include <QtGui/QPalette>
-#include <QtGui/QGuiApplication>
-#include <QtGui/QPainter>
-#include <QtGui/QPixmapCache>
+#include <QtCore/qvariant.h>
+#include <QtCore/qcoreapplication.h>
+#include <QtCore/qdebug.h>
+#include <QtCore/qtextstream.h>
+#include <QtCore/qsysinfo.h>
+#include <QtCore/qcache.h>
+#include <QtCore/qthread.h>
+#include <QtCore/qmutex.h>
+#include <QtCore/qwaitcondition.h>
+#include <QtGui/qcolor.h>
+#include <QtGui/qpalette.h>
+#include <QtGui/qguiapplication.h>
+#include <QtGui/qpainter.h>
+#include <QtGui/qpixmapcache.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <QtThemeSupport/private/qabstractfileiconengine_p.h>
 #include <QtFontDatabaseSupport/private/qwindowsfontdatabase_p.h>
@@ -103,7 +107,7 @@ static inline bool booleanSystemParametersInfo(UINT what, bool defaultValue)
 {
     BOOL result;
     if (SystemParametersInfo(what, 0, &result, 0))
-        return result ? true : false;
+        return result != FALSE;
     return defaultValue;
 }
 
@@ -117,9 +121,9 @@ static inline DWORD dWordSystemParametersInfo(UINT what, DWORD defaultValue)
 
 static inline QColor mixColors(const QColor &c1, const QColor &c2)
 {
-    return QColor ((c1.red() + c2.red()) / 2,
-                   (c1.green() + c2.green()) / 2,
-                   (c1.blue() + c2.blue()) / 2);
+    return {(c1.red() + c2.red()) / 2,
+            (c1.green() + c2.green()) / 2,
+            (c1.blue() + c2.blue()) / 2};
 }
 
 static inline QColor getSysColor(int index)
@@ -155,7 +159,7 @@ public:
 
     void run() override
     {
-        m_init = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+        m_init = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
         QMutexLocker readyLocker(&m_readyMutex);
         while (!m_cancelled.load()) {
@@ -377,7 +381,7 @@ static inline QPalette menuPalette(const QPalette &systemPalette)
 
 static inline QPalette *menuBarPalette(const QPalette &menuPalette)
 {
-    QPalette *result = 0;
+    QPalette *result = nullptr;
     if (booleanSystemParametersInfo(SPI_GETFLATMENU, false)) {
         result = new QPalette(menuPalette);
         const QColor menubar(getSysColor(COLOR_MENUBAR));
@@ -389,13 +393,13 @@ static inline QPalette *menuBarPalette(const QPalette &menuPalette)
 }
 
 const char *QWindowsTheme::name = "windows";
-QWindowsTheme *QWindowsTheme::m_instance = 0;
+QWindowsTheme *QWindowsTheme::m_instance = nullptr;
 
 QWindowsTheme::QWindowsTheme()
 {
     m_instance = this;
-    std::fill(m_fonts, m_fonts + NFonts, static_cast<QFont *>(0));
-    std::fill(m_palettes, m_palettes + NPalettes, static_cast<QPalette *>(0));
+    std::fill(m_fonts, m_fonts + NFonts, nullptr);
+    std::fill(m_palettes, m_palettes + NPalettes, nullptr);
     refresh();
     refreshIconPixmapSizes();
 }
@@ -404,7 +408,7 @@ QWindowsTheme::~QWindowsTheme()
 {
     clearPalettes();
     clearFonts();
-    m_instance = 0;
+    m_instance = nullptr;
 }
 
 static inline QStringList iconThemeSearchPaths()
@@ -415,13 +419,7 @@ static inline QStringList iconThemeSearchPaths()
 
 static inline QStringList styleNames()
 {
-    QStringList result;
-    if (QSysInfo::WindowsVersion >= QSysInfo::WV_VISTA)
-        result.append(QStringLiteral("WindowsVista"));
-    if (QSysInfo::WindowsVersion >= QSysInfo::WV_XP)
-        result.append(QStringLiteral("WindowsXP"));
-    result.append(QStringLiteral("Windows"));
-    return result;
+    return { QStringLiteral("WindowsVista"), QStringLiteral("Windows") };
 }
 
 static inline int uiEffects()
@@ -483,7 +481,7 @@ QVariant QWindowsTheme::themeHint(ThemeHint hint) const
 void QWindowsTheme::clearPalettes()
 {
     qDeleteAll(m_palettes, m_palettes + NPalettes);
-    std::fill(m_palettes, m_palettes + NPalettes, static_cast<QPalette *>(0));
+    std::fill(m_palettes, m_palettes + NPalettes, nullptr);
 }
 
 void QWindowsTheme::refreshPalettes()
@@ -500,7 +498,7 @@ void QWindowsTheme::refreshPalettes()
 void QWindowsTheme::clearFonts()
 {
     qDeleteAll(m_fonts, m_fonts + NFonts);
-    std::fill(m_fonts, m_fonts + NFonts, static_cast<QFont *>(0));
+    std::fill(m_fonts, m_fonts + NFonts, nullptr);
 }
 
 void QWindowsTheme::refreshFonts()
@@ -509,9 +507,7 @@ void QWindowsTheme::refreshFonts()
     if (!QGuiApplication::desktopSettingsAware())
         return;
     NONCLIENTMETRICS ncm;
-    ncm.cbSize = FIELD_OFFSET(NONCLIENTMETRICS, lfMessageFont) + sizeof(LOGFONT);
-    SystemParametersInfo(SPI_GETNONCLIENTMETRICS, ncm.cbSize , &ncm, 0);
-
+    QWindowsContext::nonClientMetrics(&ncm);
     const QFont menuFont = QWindowsFontDatabase::LOGFONT_to_QFont(ncm.lfMenuFont);
     const QFont messageBoxFont = QWindowsFontDatabase::LOGFONT_to_QFont(ncm.lfMessageFont);
     const QFont statusFont = QWindowsFontDatabase::LOGFONT_to_QFont(ncm.lfStatusFont);
@@ -553,6 +549,13 @@ QPlatformDialogHelper *QWindowsTheme::createPlatformDialogHelper(DialogType type
 {
     return QWindowsDialogs::createHelper(type);
 }
+
+#if QT_CONFIG(systemtrayicon)
+QPlatformSystemTrayIcon *QWindowsTheme::createPlatformSystemTrayIcon() const
+{
+    return new QWindowsSystemTrayIcon;
+}
+#endif
 
 void QWindowsTheme::windowsThemeChanged(QWindow * window)
 {
@@ -603,7 +606,7 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
     int resourceId = -1;
     SHSTOCKICONID stockId = SIID_INVALID;
     UINT stockFlags = 0;
-    LPCTSTR iconName = 0;
+    LPCTSTR iconName = nullptr;
     switch (sp) {
     case DriveCDIcon:
         stockId = SIID_DRIVECD;
@@ -713,7 +716,7 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
     }
 
     if (iconName) {
-        HICON iconHandle = LoadIcon(NULL, iconName);
+        HICON iconHandle = LoadIcon(nullptr, iconName);
         QPixmap pixmap = qt_pixmapFromWinHICON(iconHandle);
         DestroyIcon(iconHandle);
         if (!pixmap.isNull())
@@ -773,7 +776,7 @@ static QPixmap pixmapFromShellImageList(int iImageList, const SHFILEINFO &info)
     // For MinGW:
     static const IID iID_IImageList = {0x46eb5926, 0x582e, 0x4017, {0x9f, 0xdf, 0xe8, 0x99, 0x8d, 0xaa, 0x9, 0x50}};
 
-    IImageList *imageList = 0;
+    IImageList *imageList = nullptr;
     HRESULT hr = SHGetImageList(iImageList, iID_IImageList, reinterpret_cast<void **>(&imageList));
     if (hr != S_OK)
         return result;
@@ -829,7 +832,7 @@ QPixmap QWindowsFileIconEngine::filePixmap(const QSize &size, QIcon::Mode, QIcon
 {
     /* We don't use the variable, but by storing it statically, we
      * ensure CoInitialize is only called once. */
-    static HRESULT comInit = CoInitialize(NULL);
+    static HRESULT comInit = CoInitialize(nullptr);
     Q_UNUSED(comInit);
 
     static QCache<QString, FakePointer<int> > dirIconEntryCache(1000);
@@ -920,6 +923,57 @@ QPixmap QWindowsFileIconEngine::filePixmap(const QSize &size, QIcon::Mode, QIcon
 QIcon QWindowsTheme::fileIcon(const QFileInfo &fileInfo, QPlatformTheme::IconOptions iconOptions) const
 {
     return QIcon(new QWindowsFileIconEngine(fileInfo, iconOptions));
+}
+
+static inline bool doUseNativeMenus()
+{
+    const unsigned options = QWindowsIntegration::instance()->options();
+    if ((options & QWindowsIntegration::NoNativeMenus) != 0)
+        return false;
+    if ((options & QWindowsIntegration::AlwaysUseNativeMenus) != 0)
+        return true;
+    // "Auto" mode: For non-widget or Quick Controls 2 applications
+    if (!QCoreApplication::instance()->inherits("QApplication"))
+        return true;
+    const QWindowList &topLevels = QGuiApplication::topLevelWindows();
+    for (const QWindow *t : topLevels) {
+        if (t->inherits("QQuickApplicationWindow"))
+            return true;
+    }
+    return false;
+}
+
+bool QWindowsTheme::useNativeMenus()
+{
+    static const bool result = doUseNativeMenus();
+    return result;
+}
+
+QPlatformMenuItem *QWindowsTheme::createPlatformMenuItem() const
+{
+    qCDebug(lcQpaMenus) << __FUNCTION__;
+    return QWindowsTheme::useNativeMenus() ? new QWindowsMenuItem : nullptr;
+}
+
+QPlatformMenu *QWindowsTheme::createPlatformMenu() const
+{
+    qCDebug(lcQpaMenus) << __FUNCTION__;
+    // We create a popup menu here, since it will likely be used as context
+    // menu. Submenus should be created the factory functions of
+    // QPlatformMenu/Bar. Note though that Quick Controls 1 will use this
+    // function for submenus as well, but this has been found to work.
+    return QWindowsTheme::useNativeMenus() ? new QWindowsPopupMenu : nullptr;
+}
+
+QPlatformMenuBar *QWindowsTheme::createPlatformMenuBar() const
+{
+    qCDebug(lcQpaMenus) << __FUNCTION__;
+    return QWindowsTheme::useNativeMenus() ? new QWindowsMenuBar : nullptr;
+}
+
+void QWindowsTheme::showPlatformMenuBar()
+{
+    qCDebug(lcQpaMenus) << __FUNCTION__;
 }
 
 QT_END_NAMESPACE

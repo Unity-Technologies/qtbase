@@ -42,27 +42,18 @@ inline bool toBool(const QString &str)
 inline QString toString(const DomString *str)
 { return str ? str->text() : QString(); }
 
-enum StringFlags {
-    Utf8String = 0x1,
-    MultiLineString = 0x2
-};
-
-inline QString fixString(const QString &str, const QString &indent,
-                         unsigned *stringFlags = 0)
+inline QString fixString(const QString &str, const QString &indent)
 {
     QString cursegment;
     QStringList result;
     const QByteArray utf8 = str.toUtf8();
     const int utf8Length = utf8.length();
 
-    unsigned flags = 0;
-
     for (int i = 0; i < utf8Length; ++i) {
         const uchar cbyte = utf8.at(i);
         if (cbyte >= 0x80) {
             cursegment += QLatin1Char('\\');
             cursegment += QString::number(cbyte, 8);
-            flags |= Utf8String;
         } else {
             switch(cbyte) {
             case '\\':
@@ -72,7 +63,6 @@ inline QString fixString(const QString &str, const QString &indent,
             case '\r':
                 break;
             case '\n':
-                flags |= MultiLineString;
                 cursegment += QLatin1String("\\n\"\n\""); break;
             default:
                 cursegment += QLatin1Char(cbyte);
@@ -98,37 +88,14 @@ inline QString fixString(const QString &str, const QString &indent,
     rc += result.join(joinstr);
     rc += QLatin1Char('"');
 
-    if (result.size() > 1)
-        flags |= MultiLineString;
-
-    if (stringFlags)
-        *stringFlags = flags;
-
     return rc;
-}
-
-inline QString writeString(const QString &s, const QString &indent)
-{
-    unsigned flags = 0;
-    const QString ret = fixString(s, indent, &flags);
-    if (flags & Utf8String)
-        return QLatin1String("QString::fromUtf8(") + ret + QLatin1Char(')');
-    // MSVC cannot concat L"foo" "bar" (C2308: concatenating mismatched strings),
-    // use QLatin1String instead (all platforms to avoid cross-compiling issues).
-    if (flags & MultiLineString)
-        return QLatin1String("QLatin1String(") + ret + QLatin1Char(')');
-    return QLatin1String("QStringLiteral(") + ret + QLatin1Char(')');
 }
 
 inline QHash<QString, DomProperty *> propertyMap(const QList<DomProperty *> &properties)
 {
     QHash<QString, DomProperty *> map;
-
-    for (int i=0; i<properties.size(); ++i) {
-        DomProperty *p = properties.at(i);
-        map.insert(p->attributeName(), p);
-    }
-
+    for (DomProperty *p : properties)
+         map.insert(p->attributeName(), p);
     return map;
 }
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #############################################################################
 ##
 ## Copyright (C) 2016 The Qt Company Ltd.
@@ -26,25 +26,32 @@
 ## $QT_END_LICENSE$
 ##
 #############################################################################
+"""Parse CLDR data for QTimeZone use with MS-Windows
 
+Script to parse the CLDR supplemental/windowsZones.xml file and encode
+for use in QTimeZone.  See ``./cldr2qlocalexml.py`` for where to get
+the CLDR data.  Pass its common/ directory as first parameter to this
+script and the qtbase root directory as second parameter.  It shall
+update qtbase's src/corelib/tools/qtimezoneprivate_data_p.h ready for
+use.
 
-# Script to parse the CLDR supplemental/windowsZones.xml file and encode for use in QTimeZone
-# XML structure is as follows:
-#
-# <supplementalData>
-#     <version number="$Revision: 7825 $"/>
-#     <generation date="$Date: 2012-10-10 14:45:31 -0700 (Wed, 10 Oct 2012) $"/>
-#     <windowsZones>
-#         <mapTimezones otherVersion="7dc0101" typeVersion="2012f">
-#             <!-- (UTC-08:00) Pacific Time (US & Canada) -->
-#             <mapZone other="Pacific Standard Time" territory="001" type="America/Los_Angeles"/>
-#             <mapZone other="Pacific Standard Time" territory="CA"  type="America/Vancouver America/Dawson America/Whitehorse"/>
-#             <mapZone other="Pacific Standard Time" territory="MX"  type="America/Tijuana"/>
-#             <mapZone other="Pacific Standard Time" territory="US"  type="America/Los_Angeles"/>
-#             <mapZone other="Pacific Standard Time" territory="ZZ"  type="PST8PDT"/>
-#       </mapTimezones>
-#     </windowsZones>
-# </supplementalData>
+The XML structure is as follows:
+
+ <supplementalData>
+     <version number="$Revision: 7825 $"/>
+     <generation date="$Date: 2012-10-10 14:45:31 -0700 (Wed, 10 Oct 2012) $"/>
+     <windowsZones>
+         <mapTimezones otherVersion="7dc0101" typeVersion="2012f">
+             <!-- (UTC-08:00) Pacific Time (US & Canada) -->
+             <mapZone other="Pacific Standard Time" territory="001" type="America/Los_Angeles"/>
+             <mapZone other="Pacific Standard Time" territory="CA"  type="America/Vancouver America/Dawson America/Whitehorse"/>
+             <mapZone other="Pacific Standard Time" territory="MX"  type="America/Tijuana"/>
+             <mapZone other="Pacific Standard Time" territory="US"  type="America/Los_Angeles"/>
+             <mapZone other="Pacific Standard Time" territory="ZZ"  type="PST8PDT"/>
+       </mapTimezones>
+     </windowsZones>
+ </supplementalData>
+"""
 
 import os
 import sys
@@ -328,15 +335,18 @@ while s and s != GENERATED_BLOCK_START:
 
 # Write out generated block start tag and warning
 newTempFile.write(GENERATED_BLOCK_START)
-newTempFile.write("\n\
-/*\n\
-    This part of the file was generated on %s from the\n\
-    Common Locale Data Repository v%s supplemental/windowsZones.xml file %s\n\
-\n\
-    http://www.unicode.org/cldr/\n\
-\n\
-    Do not change this data, only generate it using cldr2qtimezone.py.\n\
-*/\n\n" % (str(datetime.date.today()), cldr_version, versionNumber) )
+newTempFile.write("""
+/*
+    This part of the file was generated on %s from the
+    Common Locale Data Repository v%s supplemental/windowsZones.xml file %s
+
+    http://www.unicode.org/cldr/
+
+    Do not edit this code: run cldr2qtimezone.py on updated (or
+    edited) CLDR data; see qtbase/util/local_database/.
+*/
+
+""" % (str(datetime.date.today()), cldr_version, versionNumber) )
 
 windowsIdData = ByteArrayData()
 ianaIdData = ByteArrayData()
@@ -346,7 +356,7 @@ newTempFile.write("// Windows ID Key, Country Enum, IANA ID Index\n")
 newTempFile.write("static const QZoneData zoneDataTable[] = {\n")
 for index in windowsIdDict:
     data = windowsIdDict[index]
-    newTempFile.write("    { %6d,%6d,%6d }, // %s / %s\n" \
+    newTempFile.write("    { %6d,%6d,%6d }, // %s / %s\n"
                          % (data['windowsKey'],
                             data['countryId'],
                             ianaIdData.append(data['ianaList']),
@@ -361,7 +371,7 @@ print "Done Zone Data"
 newTempFile.write("// Windows ID Key, Windows ID Index, IANA ID Index, UTC Offset\n")
 newTempFile.write("static const QWindowsData windowsDataTable[] = {\n")
 for windowsKey in windowsIdList:
-    newTempFile.write("    { %6d,%6d,%6d,%6d }, // %s\n" \
+    newTempFile.write("    { %6d,%6d,%6d,%6d }, // %s\n"
                          % (windowsKey,
                             windowsIdData.append(windowsIdList[windowsKey][0]),
                             ianaIdData.append(defaultDict[windowsKey]),
@@ -377,7 +387,7 @@ newTempFile.write("// IANA ID Index, UTC Offset\n")
 newTempFile.write("static const QUtcData utcDataTable[] = {\n")
 for index in utcIdList:
     data = utcIdList[index]
-    newTempFile.write("    { %6d,%6d }, // %s\n" \
+    newTempFile.write("    { %6d,%6d }, // %s\n"
                          % (ianaIdData.append(data[0]),
                             data[1],
                             data[0]))

@@ -29,7 +29,7 @@
     \example graphicsview/dragdroprobot
     \title Drag and Drop Robot Example
     \ingroup examples-graphicsview
-    \brief Demonstrates how to drag and drop items in a graphics view
+    \brief Demonstrates how to drag and drop items in a graphics view.
 
     The Drag and Drop Robot example shows how to implement Drag and Drop in a
     QGraphicsItem subclass, as well as how to animate items using Qt's
@@ -257,7 +257,7 @@
     \snippet graphicsview/dragdroprobot/coloritem.cpp 0
 
     \c ColorItem's constructor assigns an opaque random color to its color
-    member by making use of qrand(). For improved usability, it assigns a
+    member by making use of \l QRandomGenerator. For improved usability, it assigns a
     tooltip that provides a useful hint to the user, and it also sets a
     suitable cursor. This ensures that the cursor will chance to
     Qt::OpenHandCursor when the mouse pointer hovers over the item.

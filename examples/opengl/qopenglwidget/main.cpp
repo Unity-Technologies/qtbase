@@ -69,11 +69,15 @@ int main( int argc, char ** argv )
     parser.addVersionOption();
     QCommandLineOption multipleSampleOption("multisample", "Multisampling");
     parser.addOption(multipleSampleOption);
+    QCommandLineOption srgbOption("srgb", "Use sRGB Color Space");
+    parser.addOption(srgbOption);
     parser.process(a);
 
     QSurfaceFormat format;
     format.setDepthBufferSize(24);
     format.setStencilBufferSize(8);
+    if (parser.isSet(srgbOption))
+        format.setColorSpace(QSurfaceFormat::sRGBColorSpace);
     if (parser.isSet(multipleSampleOption))
         format.setSamples(4);
     QSurfaceFormat::setDefaultFormat(format);

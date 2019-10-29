@@ -193,6 +193,10 @@ public:
     QWheelEvent(const QPointF &pos, const QPointF &globalPos, QPoint pixelDelta, QPoint angleDelta,
                 int qt4Delta, Qt::Orientation qt4Orientation, Qt::MouseButtons buttons,
                 Qt::KeyboardModifiers modifiers, Qt::ScrollPhase phase, Qt::MouseEventSource source, bool inverted);
+
+    QWheelEvent(QPointF pos, QPointF globalPos, QPoint pixelDelta, QPoint angleDelta,
+                Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers, Qt::ScrollPhase phase,
+                bool inverted, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
     ~QWheelEvent();
 
 
@@ -205,10 +209,10 @@ public:
 #ifndef QT_NO_INTEGER_EVENT_COORDINATES
     inline QPoint pos() const { return p.toPoint(); }
     inline QPoint globalPos()   const { return g.toPoint(); }
-    inline int x() const { return p.x(); }
-    inline int y() const { return p.y(); }
-    inline int globalX() const { return g.x(); }
-    inline int globalY() const { return g.y(); }
+    inline int x() const { return int(p.x()); }
+    inline int y() const { return int(p.y()); }
+    inline int globalX() const { return int(g.x()); }
+    inline int globalY() const { return int(g.y()); }
 #endif
     inline const QPointF &posF() const { return p; }
     inline const QPointF &globalPosF()   const { return g; }
@@ -225,13 +229,14 @@ protected:
     QPointF g;
     QPoint pixelD;
     QPoint angleD;
-    int qt4D;
-    Qt::Orientation qt4O;
+    int qt4D = 0;
+    Qt::Orientation qt4O = Qt::Vertical;
     Qt::MouseButtons mouseState;
-    uint ph : 2;
+    uint _unused_ : 2; // Kept for binary compatibility
     uint src: 2;
     bool invertedScrolling : 1;
-    int reserved : 27;
+    uint ph : 3;
+    int reserved : 24;
 
     friend class QApplication;
 };
@@ -301,8 +306,13 @@ protected:
 class Q_GUI_EXPORT QNativeGestureEvent : public QInputEvent
 {
 public:
-    QNativeGestureEvent(Qt::NativeGestureType type, const QPointF &localPos, const QPointF &windowPos,
+#if QT_DEPRECATED_SINCE(5, 10)
+    QT_DEPRECATED QNativeGestureEvent(Qt::NativeGestureType type, const QPointF &localPos, const QPointF &windowPos,
                         const QPointF &screenPos, qreal value, ulong sequenceId, quint64 intArgument);
+#endif
+    QNativeGestureEvent(Qt::NativeGestureType type, const QTouchDevice *dev, const QPointF &localPos, const QPointF &windowPos,
+                        const QPointF &screenPos, qreal value, ulong sequenceId, quint64 intArgument);
+    ~QNativeGestureEvent();
     Qt::NativeGestureType gestureType() const { return mGestureType; }
     qreal value() const { return mRealValue; }
 
@@ -313,6 +323,8 @@ public:
     const QPointF &localPos() const { return mLocalPos; }
     const QPointF &windowPos() const { return mWindowPos; }
     const QPointF &screenPos() const { return mScreenPos; }
+
+    const QTouchDevice *device() const;
 
 protected:
     Qt::NativeGestureType mGestureType;
@@ -591,7 +603,7 @@ Q_DECLARE_TYPEINFO(QInputMethodQueryEvent::QueryPair, Q_MOVABLE_TYPE);
 
 #endif // QT_NO_INPUTMETHOD
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
 
 class QMimeData;
 
@@ -664,7 +676,7 @@ public:
     QDragLeaveEvent();
     ~QDragLeaveEvent();
 };
-#endif // QT_NO_DRAGANDDROP
+#endif // QT_CONFIG(draganddrop)
 
 
 class Q_GUI_EXPORT QHelpEvent : public QEvent
@@ -717,7 +729,7 @@ class Q_GUI_EXPORT QActionEvent : public QEvent
 {
     QAction *act, *bef;
 public:
-    QActionEvent(int type, QAction *action, QAction *before = Q_NULLPTR);
+    QActionEvent(int type, QAction *action, QAction *before = nullptr);
     ~QActionEvent();
 
     inline QAction *action() const { return act; }
@@ -845,7 +857,7 @@ public:
         TouchPoint(const TouchPoint &other);
 #ifdef Q_COMPILER_RVALUE_REFS
         TouchPoint(TouchPoint &&other) Q_DECL_NOEXCEPT
-            : d(Q_NULLPTR)
+            : d(nullptr)
         { qSwap(d, other.d); }
         TouchPoint &operator=(TouchPoint &&other) Q_DECL_NOEXCEPT
         { qSwap(d, other.d); return *this; }
@@ -933,7 +945,7 @@ public:
 #endif
 
     explicit QTouchEvent(QEvent::Type eventType,
-                         QTouchDevice *device = Q_NULLPTR,
+                         QTouchDevice *device = nullptr,
                          Qt::KeyboardModifiers modifiers = Qt::NoModifier,
                          Qt::TouchPointStates touchPointStates = Qt::TouchPointStates(),
                          const QList<QTouchEvent::TouchPoint> &touchPoints = QList<QTouchEvent::TouchPoint>());

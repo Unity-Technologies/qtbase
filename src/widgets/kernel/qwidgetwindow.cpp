@@ -57,7 +57,7 @@ QT_BEGIN_NAMESPACE
 
 Q_WIDGETS_EXPORT extern bool qt_tab_all_widgets();
 
-QWidget *qt_button_down = 0; // widget got last button-down
+Q_WIDGETS_EXPORT QWidget *qt_button_down = 0; // widget got last button-down
 
 // popup control
 QWidget *qt_popup_down = 0; // popup that contains the pressed widget
@@ -69,7 +69,16 @@ class QWidgetWindowPrivate : public QWindowPrivate
 {
     Q_DECLARE_PUBLIC(QWidgetWindow)
 public:
-    QWindow *eventReceiver() Q_DECL_OVERRIDE {
+    void setVisible(bool visible) override
+    {
+        Q_Q(QWidgetWindow);
+        if (QWidget *widget = q->widget())
+            QWidgetPrivate::get(widget)->setVisible(visible);
+        else
+            QWindowPrivate::setVisible(visible);
+    }
+
+    QWindow *eventReceiver() override {
         Q_Q(QWidgetWindow);
         QWindow *w = q;
         while (w->parent() && qobject_cast<QWidgetWindow *>(w) && qobject_cast<QWidgetWindow *>(w->parent())) {
@@ -78,7 +87,7 @@ public:
         return w;
     }
 
-    void clearFocusObject() Q_DECL_OVERRIDE
+    void clearFocusObject() override
     {
         Q_Q(QWidgetWindow);
         QWidget *widget = q->widget();
@@ -86,7 +95,10 @@ public:
             widget->focusWidget()->clearFocus();
     }
 
-    QRectF closestAcceptableGeometry(const QRectF &rect) const Q_DECL_OVERRIDE;
+    QRectF closestAcceptableGeometry(const QRectF &rect) const override;
+#if QT_CONFIG(opengl)
+    QOpenGLContext *shareContext() const override;
+#endif
 
     void processSafeAreaMarginsChanged() override
     {
@@ -125,6 +137,15 @@ QRectF QWidgetWindowPrivate::closestAcceptableGeometry(const QRectF &rect) const
     return result;
 }
 
+#if QT_CONFIG(opengl)
+QOpenGLContext *QWidgetWindowPrivate::shareContext() const
+{
+    Q_Q(const QWidgetWindow);
+    const QWidgetPrivate *widgetPrivate = QWidgetPrivate::get(q->widget());
+    return widgetPrivate->shareContext();
+}
+#endif // opengl
+
 QWidgetWindow::QWidgetWindow(QWidget *widget)
     : QWindow(*new QWidgetWindowPrivate(), 0)
     , m_widget(widget)
@@ -157,7 +178,7 @@ QObject *QWidgetWindow::focusObject() const
 {
     QWidget *windowWidget = m_widget;
     if (!windowWidget)
-        return Q_NULLPTR;
+        return nullptr;
 
     // A window can't have a focus object if it's being destroyed.
     if (QWidgetPrivate::get(windowWidget)->data.in_destructor)
@@ -173,6 +194,15 @@ QObject *QWidgetWindow::focusObject() const
         return focusObj;
 
     return widget;
+}
+
+void QWidgetWindow::setNativeWindowVisibility(bool visible)
+{
+    Q_D(QWidgetWindow);
+    // Call base class setVisible() implementation to run the QWindow
+    // visibility logic. Don't call QWidgetWindowPrivate::setVisible()
+    // since that will recurse back into QWidget code.
+    d->QWindowPrivate::setVisible(visible);
 }
 
 static inline bool shouldBePropagatedToWidget(QEvent *event)
@@ -201,12 +231,13 @@ bool QWidgetWindow::event(QEvent *event)
         // generated before WA_DontShowOnScreen was set
         if (!shouldBePropagatedToWidget(event))
             return true;
-        return QCoreApplication::sendEvent(m_widget, event);
+        return QCoreApplication::forwardEvent(m_widget, event);
     }
 
     switch (event->type()) {
     case QEvent::Close:
         handleCloseEvent(static_cast<QCloseEvent *>(event));
+        QWindow::event(event);
         return true;
 
     case QEvent::Enter:
@@ -218,7 +249,7 @@ bool QWidgetWindow::event(QEvent *event)
     // are sent by QApplicationPrivate::notifyActiveWindowChange()
     case QEvent::FocusIn:
         handleFocusInEvent(static_cast<QFocusEvent *>(event));
-        // Fallthrough
+        Q_FALLTHROUGH();
     case QEvent::FocusOut: {
 #ifndef QT_NO_ACCESSIBILITY
         QAccessible::State state;
@@ -233,7 +264,7 @@ bool QWidgetWindow::event(QEvent *event)
             if (QApplicationPrivate::focus_widget->testAttribute(Qt::WA_InputMethodEnabled))
                 QGuiApplication::inputMethod()->commit();
 
-            QGuiApplication::sendSpontaneousEvent(QApplicationPrivate::focus_widget, event);
+            QGuiApplication::forwardEvent(QApplicationPrivate::focus_widget, event);
         }
         return true;
 
@@ -278,10 +309,12 @@ bool QWidgetWindow::event(QEvent *event)
         return true;
 #endif
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     case QEvent::DragEnter:
+        handleDragEnterEvent(static_cast<QDragEnterEvent *>(event));
+        return true;
     case QEvent::DragMove:
-        handleDragEnterMoveEvent(static_cast<QDragMoveEvent *>(event));
+        handleDragMoveEvent(static_cast<QDragMoveEvent *>(event));
         return true;
     case QEvent::DragLeave:
         handleDragLeaveEvent(static_cast<QDragLeaveEvent *>(event));
@@ -302,7 +335,7 @@ bool QWidgetWindow::event(QEvent *event)
 
     case QEvent::ThemeChange: {
         QEvent widgetEvent(QEvent::ThemeChange);
-        QGuiApplication::sendSpontaneousEvent(m_widget, &widgetEvent);
+        QCoreApplication::forwardEvent(m_widget, &widgetEvent, event);
     }
         return true;
 
@@ -340,7 +373,7 @@ bool QWidgetWindow::event(QEvent *event)
         break;
     }
 
-    if (shouldBePropagatedToWidget(event) && QCoreApplication::sendEvent(m_widget, event))
+    if (shouldBePropagatedToWidget(event) && QCoreApplication::forwardEvent(m_widget, event))
         return true;
 
     return QWindow::event(event);
@@ -399,7 +432,7 @@ void QWidgetWindow::handleEnterLeaveEvent(QEvent *event)
         const QEnterEvent *ee = static_cast<QEnterEvent *>(event);
         QWidget *child = m_widget->childAt(ee->pos());
         QWidget *receiver = child ? child : m_widget.data();
-        QWidget *leave = Q_NULLPTR;
+        QWidget *leave = nullptr;
         if (QApplicationPrivate::inPopupMode() && receiver == m_widget
                 && qt_last_mouse_receiver != m_widget) {
             // This allows to deliver the leave event to the native widget
@@ -449,7 +482,7 @@ void QWidgetWindow::handleFocusInEvent(QFocusEvent *e)
 
 void QWidgetWindow::handleNonClientAreaMouseEvent(QMouseEvent *e)
 {
-    QApplication::sendSpontaneousEvent(m_widget, e);
+    QApplication::forwardEvent(m_widget, e);
 }
 
 void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
@@ -488,7 +521,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
         if (activePopupWidget->isEnabled()) {
             // deliver event
             qt_replay_popup_mouse_event = false;
-            QWidget *receiver = activePopupWidget;
+            QPointer<QWidget> receiver = activePopupWidget;
             QPoint widgetPos = mapped;
             if (qt_button_down)
                 receiver = qt_button_down;
@@ -506,22 +539,25 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
                     // Prevent negative mouse position on enter event - this event
                     // should be properly handled in "handleEnterLeaveEvent()".
                     if (receiverMapped.x() >= 0 && receiverMapped.y() >= 0) {
-                        QApplicationPrivate::dispatchEnterLeave(receiver, Q_NULLPTR, event->screenPos());
+                        QApplicationPrivate::dispatchEnterLeave(receiver, nullptr, event->screenPos());
                         qt_last_mouse_receiver = receiver;
                     }
                 } else {
-                    QApplicationPrivate::dispatchEnterLeave(Q_NULLPTR, qt_last_mouse_receiver, event->screenPos());
+                    QApplicationPrivate::dispatchEnterLeave(nullptr, qt_last_mouse_receiver, event->screenPos());
                     qt_last_mouse_receiver = receiver;
                     receiver = activePopupWidget;
                 }
             }
 #endif
+            if ((event->type() != QEvent::MouseButtonPress)
+                    || !(event->flags().testFlag(Qt::MouseEventCreatedDoubleClick))) {
 
-            QMouseEvent e(event->type(), widgetPos, event->windowPos(), event->screenPos(),
-                          event->button(), event->buttons(), event->modifiers(), event->source());
-            e.setTimestamp(event->timestamp());
-            QApplicationPrivate::sendMouseEvent(receiver, &e, receiver, receiver->window(), &qt_button_down, qt_last_mouse_receiver);
-            qt_last_mouse_receiver = receiver;
+                QMouseEvent e(event->type(), widgetPos, event->windowPos(), event->screenPos(),
+                              event->button(), event->buttons(), event->modifiers(), event->source());
+                e.setTimestamp(event->timestamp());
+                QApplicationPrivate::sendMouseEvent(receiver, &e, receiver, receiver->window(), &qt_button_down, qt_last_mouse_receiver);
+                qt_last_mouse_receiver = receiver;
+            }
         } else {
             // close disabled popups when a mouse button is pressed or released
             switch (event->type()) {
@@ -574,13 +610,13 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
         } else if (event->type() == contextMenuTrigger
                    && event->button() == Qt::RightButton
                    && (openPopupCount == oldOpenPopupCount)) {
-            QWidget *popupEvent = activePopupWidget;
+            QWidget *receiver = activePopupWidget;
             if (qt_button_down)
-                popupEvent = qt_button_down;
+                receiver = qt_button_down;
             else if(popupChild)
-                popupEvent = popupChild;
+                receiver = popupChild;
             QContextMenuEvent e(QContextMenuEvent::Mouse, mapped, event->globalPos(), event->modifiers());
-            QApplication::sendSpontaneousEvent(popupEvent, &e);
+            QApplication::forwardEvent(receiver, &e, event);
         }
 #else
             Q_UNUSED(contextMenuTrigger)
@@ -606,17 +642,15 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
     if (!widget)
         widget = m_widget;
 
-    if (event->type() == QEvent::MouseButtonPress)
+    const bool initialPress = event->buttons() == event->button();
+    if (event->type() == QEvent::MouseButtonPress && initialPress)
         qt_button_down = widget;
 
     QWidget *receiver = QApplicationPrivate::pickMouseReceiver(m_widget, event->windowPos().toPoint(), &mapped, event->type(), event->buttons(),
                                                                qt_button_down, widget);
-
-    if (!receiver) {
-        if (event->type() == QEvent::MouseButtonRelease)
-            QApplicationPrivate::mouse_buttons &= ~event->button();
+    if (!receiver)
         return;
-    }
+
     if ((event->type() != QEvent::MouseButtonPress)
         || !(event->flags().testFlag(Qt::MouseEventCreatedDoubleClick))) {
 
@@ -633,7 +667,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
     if (event->type() == contextMenuTrigger && event->button() == Qt::RightButton
         && m_widget->rect().contains(event->pos())) {
         QContextMenuEvent e(QContextMenuEvent::Mouse, mapped, event->globalPos(), event->modifiers());
-        QGuiApplication::sendSpontaneousEvent(receiver, &e);
+        QGuiApplication::forwardEvent(receiver, &e, event);
     }
 #endif
 }
@@ -665,7 +699,7 @@ void QWidgetWindow::handleKeyEvent(QKeyEvent *event)
     }
     if (!receiver)
         receiver = focusObject();
-    QGuiApplication::sendSpontaneousEvent(receiver, event);
+    QGuiApplication::forwardEvent(receiver, event);
 }
 
 bool QWidgetWindow::updateSize()
@@ -737,8 +771,6 @@ void QWidgetWindow::repaintWindow()
                                                  QWidgetBackingStore::UpdateNow, QWidgetBackingStore::BufferInvalid);
 }
 
-Qt::WindowState effectiveState(Qt::WindowStates state);
-
 // Store normal geometry used for saving application settings.
 void QWidgetWindow::updateNormalGeometry()
 {
@@ -749,7 +781,7 @@ void QWidgetWindow::updateNormalGeometry()
     QRect normalGeometry;
     if (const QPlatformWindow *pw = handle())
         normalGeometry = QHighDpi::fromNativePixels(pw->normalGeometry(), this);
-    if (!normalGeometry.isValid() && effectiveState(m_widget->windowState()) == Qt::WindowNoState)
+    if (!normalGeometry.isValid() && !(m_widget->windowState() & ~Qt::WindowActive))
         normalGeometry = m_widget->geometry();
     if (normalGeometry.isValid())
         tle->normalGeometry = normalGeometry;
@@ -758,7 +790,7 @@ void QWidgetWindow::updateNormalGeometry()
 void QWidgetWindow::handleMoveEvent(QMoveEvent *event)
 {
     if (updatePos())
-        QGuiApplication::sendSpontaneousEvent(m_widget, event);
+        QGuiApplication::forwardEvent(m_widget, event);
 }
 
 void QWidgetWindow::handleResizeEvent(QResizeEvent *event)
@@ -766,7 +798,7 @@ void QWidgetWindow::handleResizeEvent(QResizeEvent *event)
     QSize oldSize = m_widget->data->crect.size();
 
     if (updateSize()) {
-        QGuiApplication::sendSpontaneousEvent(m_widget, event);
+        QGuiApplication::forwardEvent(m_widget, event);
 
         if (m_widget->d_func()->paintOnScreen()) {
             QRegion updateRegion(geometry());
@@ -812,69 +844,89 @@ void QWidgetWindow::handleWheelEvent(QWheelEvent *event)
     QPoint mapped = widget->mapFrom(rootWidget, pos);
 
     QWheelEvent translated(mapped, event->globalPos(), event->pixelDelta(), event->angleDelta(), event->delta(), event->orientation(), event->buttons(), event->modifiers(), event->phase(), event->source(), event->inverted());
-    QGuiApplication::sendSpontaneousEvent(widget, &translated);
+    translated.setTimestamp(event->timestamp());
+    QGuiApplication::forwardEvent(widget, &translated, event);
 }
 
 #endif // QT_CONFIG(wheelevent)
 
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
 
-void QWidgetWindow::handleDragEnterMoveEvent(QDragMoveEvent *event)
+static QWidget *findDnDTarget(QWidget *parent, const QPoint &pos)
 {
-     Q_ASSERT(event->type() ==QEvent::DragMove || !m_dragTarget);
     // Find a target widget under mouse that accepts drops (QTBUG-22987).
-    QWidget *widget = m_widget->childAt(event->pos());
+    QWidget *widget = parent->childAt(pos);
     if (!widget)
-        widget = m_widget;
+        widget = parent;
     for ( ; widget && !widget->isWindow() && !widget->acceptDrops(); widget = widget->parentWidget()) ;
     if (widget && !widget->acceptDrops())
-        widget = 0;
-    // Target widget unchanged: DragMove
-    if (widget && widget == m_dragTarget.data()) {
-        Q_ASSERT(event->type() == QEvent::DragMove);
-        const QPoint mapped = widget->mapFromGlobal(m_widget->mapToGlobal(event->pos()));
-        QDragMoveEvent translated(mapped, event->possibleActions(), event->mimeData(), event->mouseButtons(), event->keyboardModifiers());
-        translated.setDropAction(event->dropAction());
-        if (event->isAccepted()) { // Handling 'DragEnter' should suffice for the application.
-            translated.accept();
-            translated.setDropAction(event->dropAction());
-        }
-        QGuiApplication::sendSpontaneousEvent(widget, &translated);
-        if (translated.isAccepted()) {
-            event->accept();
-        } else {
-            event->ignore();
-        }
-        event->setDropAction(translated.dropAction());
+        widget = nullptr;
+    return widget;
+}
+
+void QWidgetWindow::handleDragEnterEvent(QDragEnterEvent *event, QWidget *widget)
+{
+    Q_ASSERT(m_dragTarget == nullptr);
+    if (!widget)
+        widget = findDnDTarget(m_widget, event->pos());
+    if (!widget) {
+        event->ignore();
         return;
     }
-    // Target widget changed: Send DragLeave to previous, DragEnter to new if there is any
-    if (m_dragTarget.data()) {
-        QDragLeaveEvent le;
-        QGuiApplication::sendSpontaneousEvent(m_dragTarget.data(), &le);
-        m_dragTarget = 0;
-    }
-    if (!widget) {
-         event->ignore();
-         return;
-    }
     m_dragTarget = widget;
+
     const QPoint mapped = widget->mapFromGlobal(m_widget->mapToGlobal(event->pos()));
-    QDragEnterEvent translated(mapped, event->possibleActions(), event->mimeData(), event->mouseButtons(), event->keyboardModifiers());
-    QGuiApplication::sendSpontaneousEvent(widget, &translated);
-    if (translated.isAccepted()) {
-        event->accept();
-    } else {
-        event->ignore();
-    }
+    QDragEnterEvent translated(mapped, event->possibleActions(), event->mimeData(),
+                               event->mouseButtons(), event->keyboardModifiers());
+    QGuiApplication::forwardEvent(m_dragTarget, &translated, event);
+    event->setAccepted(translated.isAccepted());
     event->setDropAction(translated.dropAction());
+}
+
+void QWidgetWindow::handleDragMoveEvent(QDragMoveEvent *event)
+{
+    auto *widget = findDnDTarget(m_widget, event->pos());
+    if (!widget) {
+        event->ignore();
+        if (m_dragTarget) { // Send DragLeave to previous
+            QDragLeaveEvent leaveEvent;
+            QGuiApplication::forwardEvent(m_dragTarget, &leaveEvent, event);
+            m_dragTarget = nullptr;
+        }
+    } else {
+        const QPoint mapped = widget->mapFromGlobal(m_widget->mapToGlobal(event->pos()));
+        QDragMoveEvent translated(mapped, event->possibleActions(), event->mimeData(),
+                                  event->mouseButtons(), event->keyboardModifiers());
+
+        if (widget == m_dragTarget) { // Target widget unchanged: Send DragMove
+            translated.setDropAction(event->dropAction());
+            translated.setAccepted(event->isAccepted());
+            QGuiApplication::forwardEvent(m_dragTarget, &translated, event);
+        } else {
+            if (m_dragTarget) { // Send DragLeave to previous
+                QDragLeaveEvent leaveEvent;
+                QGuiApplication::forwardEvent(m_dragTarget, &leaveEvent, event);
+                m_dragTarget = nullptr;
+            }
+            // Send DragEnter to new widget.
+            handleDragEnterEvent(static_cast<QDragEnterEvent*>(event), widget);
+            // Handling 'DragEnter' should suffice for the application.
+            translated.setDropAction(event->dropAction());
+            translated.setAccepted(event->isAccepted());
+            // The drag enter event is always immediately followed by a drag move event,
+            // see QDragEnterEvent documentation.
+            QGuiApplication::forwardEvent(m_dragTarget, &translated, event);
+        }
+        event->setAccepted(translated.isAccepted());
+        event->setDropAction(translated.dropAction());
+    }
 }
 
 void QWidgetWindow::handleDragLeaveEvent(QDragLeaveEvent *event)
 {
     if (m_dragTarget)
-        QGuiApplication::sendSpontaneousEvent(m_dragTarget.data(), event);
-    m_dragTarget = 0;
+        QGuiApplication::forwardEvent(m_dragTarget, event);
+    m_dragTarget = nullptr;
 }
 
 void QWidgetWindow::handleDropEvent(QDropEvent *event)
@@ -884,16 +936,15 @@ void QWidgetWindow::handleDropEvent(QDropEvent *event)
         event->ignore();
         return;
     }
-    const QPoint mapped = m_dragTarget.data()->mapFromGlobal(m_widget->mapToGlobal(event->pos()));
+    const QPoint mapped = m_dragTarget->mapFromGlobal(m_widget->mapToGlobal(event->pos()));
     QDropEvent translated(mapped, event->possibleActions(), event->mimeData(), event->mouseButtons(), event->keyboardModifiers());
-    QGuiApplication::sendSpontaneousEvent(m_dragTarget.data(), &translated);
-    if (translated.isAccepted())
-        event->accept();
+    QGuiApplication::forwardEvent(m_dragTarget, &translated, event);
+    event->setAccepted(translated.isAccepted());
     event->setDropAction(translated.dropAction());
-    m_dragTarget = 0;
+    m_dragTarget = nullptr;
 }
 
-#endif // QT_NO_DRAGANDDROP
+#endif // QT_CONFIG(draganddrop)
 
 void QWidgetWindow::handleExposeEvent(QExposeEvent *event)
 {
@@ -909,7 +960,7 @@ void QWidgetWindow::handleExposeEvent(QExposeEvent *event)
                 // ... and they haven't been shown by this function yet - show it.
                 wPriv->showChildren(true);
                 QShowEvent showEvent;
-                QCoreApplication::sendSpontaneousEvent(m_widget, &showEvent);
+                QCoreApplication::forwardEvent(m_widget, &showEvent, event);
                 wPriv->childrenShownByExpose = true;
             }
         } else {
@@ -921,14 +972,17 @@ void QWidgetWindow::handleExposeEvent(QExposeEvent *event)
                 // and then, the QPA can send next expose event with null exposed region (not exposed).
                 wPriv->hideChildren(true);
                 QHideEvent hideEvent;
-                QCoreApplication::sendSpontaneousEvent(m_widget, &hideEvent);
+                QCoreApplication::forwardEvent(m_widget, &hideEvent, event);
                 wPriv->childrenShownByExpose = false;
             }
         }
     }
 
     if (exposed) {
+        // QTBUG-39220, QTBUG-58575: set all (potentially fully obscured parent widgets) mapped.
         m_widget->setAttribute(Qt::WA_Mapped);
+        for (QWidget *p = m_widget->parentWidget(); p && !p->testAttribute(Qt::WA_Mapped); p = p->parentWidget())
+            p->setAttribute(Qt::WA_Mapped);
         if (!event->region().isNull())
             wPriv->syncBackingStore(event->region());
     } else {
@@ -941,30 +995,18 @@ void QWidgetWindow::handleWindowStateChangedEvent(QWindowStateChangeEvent *event
     // QWindow does currently not know 'active'.
     Qt::WindowStates eventState = event->oldState();
     Qt::WindowStates widgetState = m_widget->windowState();
+    Qt::WindowStates windowState = windowStates();
     if (widgetState & Qt::WindowActive)
         eventState |= Qt::WindowActive;
 
     // Determine the new widget state, remember maximized/full screen
     // during minimized.
-    switch (windowState()) {
-    case Qt::WindowNoState:
-        widgetState &= ~(Qt::WindowMinimized | Qt::WindowMaximized | Qt::WindowFullScreen);
-        break;
-    case Qt::WindowMinimized:
+    if (windowState & Qt::WindowMinimized) {
         widgetState |= Qt::WindowMinimized;
-        break;
-    case Qt::WindowMaximized:
-        updateNormalGeometry();
-        widgetState |= Qt::WindowMaximized;
-        widgetState &= ~(Qt::WindowMinimized | Qt::WindowFullScreen);
-        break;
-    case Qt::WindowFullScreen:
-        updateNormalGeometry();
-        widgetState |= Qt::WindowFullScreen;
-        widgetState &= ~(Qt::WindowMinimized);
-        break;
-    case Qt::WindowActive: // Not handled by QWindow
-        break;
+    } else {
+        widgetState = windowState | (widgetState & Qt::WindowActive);
+        if (windowState) // Maximized or FullScreen
+            updateNormalGeometry();
     }
 
     // Sent event if the state changed (that is, it is not triggered by
@@ -972,7 +1014,7 @@ void QWidgetWindow::handleWindowStateChangedEvent(QWindowStateChangeEvent *event
     if (widgetState != Qt::WindowStates::Int(m_widget->data->window_state)) {
         m_widget->data->window_state = uint(widgetState);
         QWindowStateChangeEvent widgetEvent(eventState);
-        QGuiApplication::sendSpontaneousEvent(m_widget, &widgetEvent);
+        QGuiApplication::forwardEvent(m_widget, &widgetEvent, event);
     }
 }
 
@@ -1004,7 +1046,8 @@ void QWidgetWindow::handleTabletEvent(QTabletEvent *event)
                         event->pressure(), event->xTilt(), event->yTilt(), event->tangentialPressure(),
                         event->rotation(), event->z(), event->modifiers(), event->uniqueId(), event->button(), event->buttons());
         ev.setTimestamp(event->timestamp());
-        QGuiApplication::sendSpontaneousEvent(widget, &ev);
+        ev.setAccepted(false);
+        QGuiApplication::forwardEvent(widget, &ev, event);
         event->setAccepted(ev.isAccepted());
     }
 
@@ -1028,7 +1071,7 @@ void QWidgetWindow::handleGestureEvent(QNativeGestureEvent *e)
     if (!receiver)
         receiver = m_widget; // last resort
 
-    QApplication::sendSpontaneousEvent(receiver, e);
+    QApplication::forwardEvent(receiver, e);
 }
 #endif // QT_NO_GESTURES
 
@@ -1056,7 +1099,7 @@ void QWidgetWindow::handleContextMenuEvent(QContextMenuEvent *e)
         QPoint pos = fw->inputMethodQuery(Qt::ImMicroFocus).toRect().center();
         QContextMenuEvent widgetEvent(QContextMenuEvent::Keyboard, pos, fw->mapToGlobal(pos),
                                       e->modifiers());
-        QGuiApplication::sendSpontaneousEvent(fw, &widgetEvent);
+        QGuiApplication::forwardEvent(fw, &widgetEvent, e);
     }
 }
 #endif // QT_NO_CONTEXTMENU

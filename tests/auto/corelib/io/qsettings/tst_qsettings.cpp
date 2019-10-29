@@ -118,6 +118,10 @@ private slots:
     void remove();
     void contains();
     void sync();
+    void syncNonWriteableDir();
+#ifdef Q_OS_WIN
+    void syncAlternateDataStream();
+#endif
     void setFallbacksEnabled();
     void setFallbacksEnabled_data();
     void fromFile_data();
@@ -183,6 +187,7 @@ private slots:
     void bom();
     void embeddedZeroByte_data();
     void embeddedZeroByte();
+    void spaceAfterComment();
 
     void testXdg();
 private:
@@ -203,7 +208,7 @@ void tst_QSettings::getSetCheck()
     QCOMPARE(true, obj1.fallbacksEnabled());
 }
 
-static QString settingsPath(const char *path = Q_NULLPTR)
+static QString settingsPath(const char *path = nullptr)
 {
     // Temporary path for files that are specified explicitly in the constructor.
 #ifndef Q_OS_WINRT
@@ -527,7 +532,7 @@ void tst_QSettings::ctor()
             // more details in QMacSettingsPrivate::QMacSettingsPrivate(), organization was comify()-ed
             caseSensitive = settings5.fileName().contains("SoftWare.ORG");;
         } else {
-            caseSensitive = pathconf(QDir::currentPath().toLatin1().constData(), _PC_CASE_SENSITIVE);
+            caseSensitive = pathconf(settings5.fileName().toLatin1().constData(), _PC_CASE_SENSITIVE);
         }
 #elif defined(Q_OS_WIN32) || defined(Q_OS_WINRT)
         caseSensitive = false;
@@ -758,6 +763,34 @@ void tst_QSettings::embeddedZeroByte()
         if (value.toByteArray().contains(QChar::Null))
             QVERIFY(outValue.toByteArray().contains(QChar::Null));
     }
+}
+
+void tst_QSettings::spaceAfterComment()
+{
+    QSettings settings(QFINDTESTDATA("withcomments.ini"), QSettings::IniFormat);
+    QCOMPARE(settings.status(), QSettings::NoError);
+
+    QStringList groups = settings.childGroups();
+    QVERIFY(groups.contains("Regular"));
+    QVERIFY(groups.contains("WithSpaces"));
+    QVERIFY(groups.contains("WithTab"));
+    QVERIFY(groups.contains("SpacedGroup"));
+
+    settings.beginGroup("Regular");
+    QCOMPARE(settings.value("bar"), QVariant(2));
+    settings.endGroup();
+
+    settings.beginGroup("WithSpaces");
+    QCOMPARE(settings.value("bar"), QVariant(4));
+    settings.endGroup();
+
+    settings.beginGroup("WithTab");
+    QCOMPARE(settings.value("bar"), QVariant(6));
+    settings.endGroup();
+
+    settings.beginGroup("SpacedGroup");
+    QCOMPARE(settings.value("bar"), QVariant(7));
+    settings.endGroup();
 }
 
 void tst_QSettings::testErrorHandling_data()
@@ -1182,6 +1215,10 @@ static void testMetaTypesHelper(QSettings::Format format)
     F(QJsonArray) \
     F(QJsonDocument) \
     F(QPersistentModelIndex) \
+    F(QCborSimpleType) \
+    F(QCborValue) \
+    F(QCborArray) \
+    F(QCborMap) \
 
 #define EXCLUDE_NON_SUPPORTED_METATYPES(MetaTypeName) \
 template<> void testMetaTypesHelper<QMetaType::MetaTypeName>(QSettings::Format) \
@@ -1749,6 +1786,78 @@ void tst_QSettings::sync()
     QCOMPARE(settings1.value("moo/gamma/splitter").toInt(), 5);
     QCOMPARE(settings1.allKeys().count(), 11);
 }
+
+void tst_QSettings::syncNonWriteableDir()
+{
+    QTemporaryDir tempDir;
+    QVERIFY2(tempDir.isValid(), qUtf8Printable(tempDir.errorString()));
+
+    // first, create a file
+    QString filename = tempDir.path() + "/config.ini";
+    {
+        QFile f(filename);
+        QVERIFY2(f.open(QIODevice::WriteOnly), qUtf8Printable(f.errorString()));
+    }
+
+    // second, make the dir unwriteable
+    QVERIFY(QFile::setPermissions(tempDir.path(), QFile::ReadUser | QFile::ExeUser));
+    struct UndoSetPermissions {
+        QString name;
+        UndoSetPermissions(const QString &name) : name(name) {}
+        ~UndoSetPermissions()
+        { QFile::setPermissions(name, QFile::ReadUser | QFile::WriteUser | QFile::ExeUser); }
+    };
+    UndoSetPermissions undo(tempDir.path());    // otherwise, QTemporaryDir will fail
+
+    {
+        QSettings settings(filename, QSettings::IniFormat);
+        QVERIFY(settings.isAtomicSyncRequired());
+        settings.setAtomicSyncRequired(false);
+        settings.setValue("alpha/beta", 1);
+        settings.sync();
+        QCOMPARE(settings.status(), QSettings::NoError);
+    }
+
+    QVERIFY(QFileInfo(filename).size() != 0);
+    QSettings settings(filename, QSettings::IniFormat);
+    QCOMPARE(settings.value("alpha/beta"), QVariant(1));
+}
+
+#ifdef Q_OS_WIN
+void tst_QSettings::syncAlternateDataStream()
+{
+    QTemporaryDir tempDir;
+    QVERIFY2(tempDir.isValid(), qUtf8Printable(tempDir.errorString()));
+
+    // first, create a file
+    QString filename = tempDir.path() + "/file";
+    {
+        QFile f(filename);
+        QVERIFY2(f.open(QIODevice::WriteOnly), qUtf8Printable(f.errorString()));
+    }
+
+    // then create an ADS
+    filename += ":config.ini";
+    {
+        QFile f(filename);
+        if (!f.open(QIODevice::WriteOnly))
+            QSKIP("Could not create ADS file (" + f.errorString().toUtf8() + ") - FAT drive?");
+    }
+
+    {
+        QSettings settings(filename, QSettings::IniFormat);
+        QVERIFY(settings.isAtomicSyncRequired());
+        settings.setAtomicSyncRequired(false);
+        settings.setValue("alpha/beta", 1);
+        settings.sync();
+        QCOMPARE(settings.status(), QSettings::NoError);
+    }
+
+    QVERIFY(QFileInfo(filename).size() != 0);
+    QSettings settings(filename, QSettings::IniFormat);
+    QCOMPARE(settings.value("alpha/beta"), QVariant(1));
+}
+#endif
 
 void tst_QSettings::setFallbacksEnabled_data()
 {

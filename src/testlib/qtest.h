@@ -41,7 +41,7 @@
 #ifndef QTEST_H
 #define QTEST_H
 
-#include <QtTest/qtest_global.h>
+#include <QtTest/qttestglobal.h>
 #include <QtTest/qtestcase.h>
 #include <QtTest/qtestdata.h>
 #include <QtTest/qbenchmark.h>
@@ -49,6 +49,7 @@
 #include <QtCore/qbytearray.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qstringlist.h>
+#include <QtCore/qcborcommon.h>
 #include <QtCore/qdatetime.h>
 #include <QtCore/qobject.h>
 #include <QtCore/qvariant.h>
@@ -59,15 +60,22 @@
 #include <QtCore/qsize.h>
 #include <QtCore/qrect.h>
 
+#include <memory>
+
 QT_BEGIN_NAMESPACE
 
 
 namespace QTest
 {
 
+template <> inline char *toString(const QStringView &str)
+{
+    return QTest::toPrettyUnicode(str);
+}
+
 template<> inline char *toString(const QString &str)
 {
-    return QTest::toPrettyUnicode(reinterpret_cast<const ushort *>(str.constData()), str.length());
+    return toString(QStringView(str));
 }
 
 template<> inline char *toString(const QLatin1String &str)
@@ -80,28 +88,34 @@ template<> inline char *toString(const QByteArray &ba)
     return QTest::toPrettyCString(ba.constData(), ba.length());
 }
 
-#ifndef QT_NO_DATESTRING
+#if QT_CONFIG(datestring)
 template<> inline char *toString(const QTime &time)
 {
     return time.isValid()
-        ? qstrdup(qPrintable(time.toString(QLatin1String("hh:mm:ss.zzz"))))
+        ? qstrdup(qPrintable(time.toString(QStringViewLiteral("hh:mm:ss.zzz"))))
         : qstrdup("Invalid QTime");
 }
 
 template<> inline char *toString(const QDate &date)
 {
     return date.isValid()
-        ? qstrdup(qPrintable(date.toString(QLatin1String("yyyy/MM/dd"))))
+        ? qstrdup(qPrintable(date.toString(QStringViewLiteral("yyyy/MM/dd"))))
         : qstrdup("Invalid QDate");
 }
 
 template<> inline char *toString(const QDateTime &dateTime)
 {
     return dateTime.isValid()
-        ? qstrdup(qPrintable(dateTime.toString(QLatin1String("yyyy/MM/dd hh:mm:ss.zzz[t]"))))
+        ? qstrdup(qPrintable(dateTime.toString(QStringViewLiteral("yyyy/MM/dd hh:mm:ss.zzz[t]"))))
         : qstrdup("Invalid QDateTime");
 }
-#endif // QT_NO_DATESTRING
+#endif // datestring
+
+template<> inline char *toString(const QCborError &c)
+{
+    // use the Q_ENUM formatting
+    return toString(c.c);
+}
 
 template<> inline char *toString(const QChar &c)
 {
@@ -194,6 +208,41 @@ template<> inline char *toString(const QVariant &v)
     return qstrdup(vstring.constData());
 }
 
+template <typename T1, typename T2>
+inline char *toString(const QPair<T1, T2> &pair)
+{
+    const QScopedArrayPointer<char> first(toString(pair.first));
+    const QScopedArrayPointer<char> second(toString(pair.second));
+    return toString(QString::asprintf("QPair(%s,%s)", first.data(), second.data()));
+}
+
+template <typename T1, typename T2>
+inline char *toString(const std::pair<T1, T2> &pair)
+{
+    const QScopedArrayPointer<char> first(toString(pair.first));
+    const QScopedArrayPointer<char> second(toString(pair.second));
+    return toString(QString::asprintf("std::pair(%s,%s)", first.data(), second.data()));
+}
+
+template <typename Tuple, int... I>
+inline char *toString(const Tuple & tuple, QtPrivate::IndexesList<I...>) {
+    using UP = std::unique_ptr<char[]>;
+    // Generate a table of N + 1 elements where N is the number of
+    // elements in the tuple.
+    // The last element is needed to support the empty tuple use case.
+    const UP data[] = {
+        UP(toString(std::get<I>(tuple)))..., UP{}
+    };
+    return formatString("std::tuple(", ")", sizeof...(I), data[I].get()...);
+}
+
+template <class... Types>
+inline char *toString(const std::tuple<Types...> &tuple)
+{
+    static const std::size_t params_count = sizeof...(Types);
+    return toString(tuple, typename QtPrivate::Indexes<params_count>::Value());
+}
+
 inline char *toString(std::nullptr_t)
 {
     return toString(QLatin1String("nullptr"));
@@ -242,7 +291,7 @@ inline bool qCompare(QList<T> const &t1, QList<T> const &t2, const char *actual,
             delete [] val2;
         }
     }
-    return compare_helper(isOk, msg, Q_NULLPTR, Q_NULLPTR, actual, expected, file, line);
+    return compare_helper(isOk, msg, nullptr, nullptr, actual, expected, file, line);
 }
 
 template <>

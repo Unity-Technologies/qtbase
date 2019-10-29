@@ -806,6 +806,7 @@ void tst_QMetaObjectBuilder::enumerator()
     QMetaEnumBuilder enum1 = builder.addEnumerator("foo");
     QCOMPARE(enum1.name(), QByteArray("foo"));
     QVERIFY(!enum1.isFlag());
+    QVERIFY(!enum1.isScoped());
     QCOMPARE(enum1.keyCount(), 0);
     QCOMPARE(enum1.index(), 0);
     QCOMPARE(builder.enumeratorCount(), 1);
@@ -814,6 +815,7 @@ void tst_QMetaObjectBuilder::enumerator()
     QMetaEnumBuilder enum2 = builder.addEnumerator("bar");
     QCOMPARE(enum2.name(), QByteArray("bar"));
     QVERIFY(!enum2.isFlag());
+    QVERIFY(!enum2.isScoped());
     QCOMPARE(enum2.keyCount(), 0);
     QCOMPARE(enum2.index(), 1);
     QCOMPARE(builder.enumeratorCount(), 2);
@@ -827,6 +829,8 @@ void tst_QMetaObjectBuilder::enumerator()
 
     // Modify the attributes on enum1.
     enum1.setIsFlag(true);
+    enum1.setIsScoped(true);
+    enum1.setEnumName(QByteArrayLiteral("fooFlag"));
     QCOMPARE(enum1.addKey("ABC", 0), 0);
     QCOMPARE(enum1.addKey("DEF", 1), 1);
     QCOMPARE(enum1.addKey("GHI", -1), 2);
@@ -834,6 +838,8 @@ void tst_QMetaObjectBuilder::enumerator()
     // Check that enum1 is changed, but enum2 is not.
     QCOMPARE(enum1.name(), QByteArray("foo"));
     QVERIFY(enum1.isFlag());
+    QVERIFY(enum1.isScoped());
+    QCOMPARE(enum1.enumName(), QByteArray("fooFlag"));
     QCOMPARE(enum1.keyCount(), 3);
     QCOMPARE(enum1.index(), 0);
     QCOMPARE(enum1.key(0), QByteArray("ABC"));
@@ -845,6 +851,7 @@ void tst_QMetaObjectBuilder::enumerator()
     QCOMPARE(enum1.value(2), -1);
     QCOMPARE(enum2.name(), QByteArray("bar"));
     QVERIFY(!enum2.isFlag());
+    QVERIFY(!enum2.isScoped());
     QCOMPARE(enum2.keyCount(), 0);
     QCOMPARE(enum2.index(), 1);
 
@@ -856,6 +863,7 @@ void tst_QMetaObjectBuilder::enumerator()
     // This time check that only method2 changed.
     QCOMPARE(enum1.name(), QByteArray("foo"));
     QVERIFY(enum1.isFlag());
+    QVERIFY(enum1.isScoped());
     QCOMPARE(enum1.keyCount(), 3);
     QCOMPARE(enum1.index(), 0);
     QCOMPARE(enum1.key(0), QByteArray("ABC"));
@@ -867,6 +875,7 @@ void tst_QMetaObjectBuilder::enumerator()
     QCOMPARE(enum1.value(2), -1);
     QCOMPARE(enum2.name(), QByteArray("bar"));
     QVERIFY(enum2.isFlag());
+    QVERIFY(!enum2.isScoped());
     QCOMPARE(enum2.keyCount(), 2);
     QCOMPARE(enum2.index(), 1);
     QCOMPARE(enum2.key(0), QByteArray("XYZ"));
@@ -879,6 +888,7 @@ void tst_QMetaObjectBuilder::enumerator()
     enum1.removeKey(2);
     QCOMPARE(enum1.name(), QByteArray("foo"));
     QVERIFY(enum1.isFlag());
+    QVERIFY(enum1.isScoped());
     QCOMPARE(enum1.keyCount(), 2);
     QCOMPARE(enum1.index(), 0);
     QCOMPARE(enum1.key(0), QByteArray("ABC"));
@@ -889,6 +899,7 @@ void tst_QMetaObjectBuilder::enumerator()
     QCOMPARE(enum1.value(2), -1);
     QCOMPARE(enum2.name(), QByteArray("bar"));
     QVERIFY(enum2.isFlag());
+    QVERIFY(!enum2.isScoped());
     QCOMPARE(enum2.keyCount(), 2);
     QCOMPARE(enum2.index(), 1);
     QCOMPARE(enum2.key(0), QByteArray("XYZ"));
@@ -903,6 +914,7 @@ void tst_QMetaObjectBuilder::enumerator()
     enum2 = builder.enumerator(0);
     QCOMPARE(enum2.name(), QByteArray("bar"));
     QVERIFY(enum2.isFlag());
+    QVERIFY(!enum2.isScoped());
     QCOMPARE(enum2.keyCount(), 2);
     QCOMPARE(enum2.index(), 0);
     QCOMPARE(enum2.key(0), QByteArray("XYZ"));

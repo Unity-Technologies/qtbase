@@ -219,8 +219,8 @@ class Q_WIDGETS_EXPORT QTableWidget : public QTableView
 
     friend class QTableModel;
 public:
-    explicit QTableWidget(QWidget *parent = Q_NULLPTR);
-    QTableWidget(int rows, int columns, QWidget *parent = Q_NULLPTR);
+    explicit QTableWidget(QWidget *parent = nullptr);
+    QTableWidget(int rows, int columns, QWidget *parent = nullptr);
     ~QTableWidget();
 
     void setRowCount(int rows);
@@ -261,6 +261,8 @@ public:
     void editItem(QTableWidgetItem *item);
     void openPersistentEditor(QTableWidgetItem *item);
     void closePersistentEditor(QTableWidgetItem *item);
+    using QAbstractItemView::isPersistentEditorOpen;
+    bool isPersistentEditorOpen(QTableWidgetItem *item) const;
 
     QWidget *cellWidget(int row, int column) const;
     void setCellWidget(int row, int column, QWidget *widget);
@@ -300,6 +302,7 @@ Q_SIGNALS:
 
     void itemActivated(QTableWidgetItem *item);
     void itemEntered(QTableWidgetItem *item);
+    // ### Qt 6: add changed roles
     void itemChanged(QTableWidgetItem *item);
 
     void currentItemChanged(QTableWidgetItem *current, QTableWidgetItem *previous);
@@ -316,7 +319,7 @@ Q_SIGNALS:
     void currentCellChanged(int currentRow, int currentColumn, int previousRow, int previousColumn);
 
 protected:
-    bool event(QEvent *e) Q_DECL_OVERRIDE;
+    bool event(QEvent *e) override;
     virtual QStringList mimeTypes() const;
 #if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
     virtual QMimeData *mimeData(const QList<QTableWidgetItem *> &items) const;
@@ -325,15 +328,26 @@ protected:
 #endif
     virtual bool dropMimeData(int row, int column, const QMimeData *data, Qt::DropAction action);
     virtual Qt::DropActions supportedDropActions() const;
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+public:
+#else
+protected:
+#endif
     QList<QTableWidgetItem*> items(const QMimeData *data) const;
 
-    QModelIndex indexFromItem(QTableWidgetItem *item) const;
+    QModelIndex indexFromItem(const QTableWidgetItem *item) const;
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QModelIndex indexFromItem(QTableWidgetItem *item) const; // ### Qt 6: remove
+#endif
     QTableWidgetItem *itemFromIndex(const QModelIndex &index) const;
+
+protected:
 #if QT_CONFIG(draganddrop)
-    void dropEvent(QDropEvent *event) Q_DECL_OVERRIDE;
+    void dropEvent(QDropEvent *event) override;
 #endif
 private:
-    void setModel(QAbstractItemModel *model) Q_DECL_OVERRIDE;
+    void setModel(QAbstractItemModel *model) override;
 
     Q_DECLARE_PRIVATE(QTableWidget)
     Q_DISABLE_COPY(QTableWidget)
@@ -350,7 +364,7 @@ private:
 };
 
 inline void QTableWidget::removeCellWidget(int arow, int acolumn)
-{ setCellWidget(arow, acolumn, Q_NULLPTR); }
+{ setCellWidget(arow, acolumn, nullptr); }
 
 inline QTableWidgetItem *QTableWidget::itemAt(int ax, int ay) const
 { return itemAt(QPoint(ax, ay)); }

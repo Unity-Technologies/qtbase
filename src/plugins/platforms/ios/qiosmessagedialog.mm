@@ -39,17 +39,18 @@
 
 #import <UIKit/UIKit.h>
 
-#include <QtCore/qoperatingsystemversion.h>
 #include <QtGui/qwindow.h>
 #include <QtGui/private/qguiapplication_p.h>
 #include <qpa/qplatformtheme.h>
+
+#include <QtCore/private/qcore_mac_p.h>
 
 #include "qiosglobal.h"
 #include "quiview.h"
 #include "qiosmessagedialog.h"
 
 QIOSMessageDialog::QIOSMessageDialog()
-    : m_alertController(Q_NULLPTR)
+    : m_alertController(nullptr)
 {
 }
 
@@ -76,6 +77,18 @@ inline QString QIOSMessageDialog::messageTextPlain()
     text.remove(QRegularExpression(QStringLiteral("<[^>]*>")));
 
     return text;
+}
+
+inline UIAlertAction *QIOSMessageDialog::createAction(
+        const QMessageDialogOptions::CustomButton &customButton)
+{
+    const QString label = QPlatformTheme::removeMnemonics(customButton.label);
+    const UIAlertActionStyle style = UIAlertActionStyleDefault;
+
+    return [UIAlertAction actionWithTitle:label.toNSString() style:style handler:^(UIAlertAction *) {
+        hide();
+        emit clicked(static_cast<QPlatformDialogHelper::StandardButton>(customButton.id), customButton.role);
+    }];
 }
 
 inline UIAlertAction *QIOSMessageDialog::createAction(StandardButton button)
@@ -109,8 +122,7 @@ bool QIOSMessageDialog::show(Qt::WindowFlags windowFlags, Qt::WindowModality win
     Q_UNUSED(windowFlags);
     if (m_alertController // Ensure that the dialog is not showing already
             || !options() // Some message dialogs don't have options (QErrorMessage)
-            || windowModality == Qt::NonModal // We can only do modal dialogs
-            || QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::IOS, 8)) // API limitation
+            || windowModality == Qt::NonModal) // We can only do modal dialogs
         return false;
 
     m_alertController = [[UIAlertController
@@ -118,17 +130,23 @@ bool QIOSMessageDialog::show(Qt::WindowFlags windowFlags, Qt::WindowModality win
         message:messageTextPlain().toNSString()
         preferredStyle:UIAlertControllerStyleAlert] retain];
 
+    const QVector<QMessageDialogOptions::CustomButton> customButtons = options()->customButtons();
+    for (const QMessageDialogOptions::CustomButton &button : customButtons) {
+        UIAlertAction *act = createAction(button);
+        [m_alertController addAction:act];
+    }
+
     if (StandardButtons buttons = options()->standardButtons()) {
         for (int i = FirstButton; i < LastButton; i<<=1) {
             if (i & buttons)
                 [m_alertController addAction:createAction(StandardButton(i))];
         }
-    } else {
+    } else if (customButtons.isEmpty()) {
         // We need at least one button to allow the user close the dialog
         [m_alertController addAction:createAction(NoButton)];
     }
 
-    UIWindow *window = parent ? reinterpret_cast<UIView *>(parent->winId()).window : [UIApplication sharedApplication].keyWindow;
+    UIWindow *window = parent ? reinterpret_cast<UIView *>(parent->winId()).window : qt_apple_sharedApplication().keyWindow;
     [window.rootViewController presentViewController:m_alertController animated:YES completion:nil];
     return true;
 }
@@ -138,5 +156,5 @@ void QIOSMessageDialog::hide()
     m_eventLoop.exit();
     [m_alertController dismissViewControllerAnimated:YES completion:nil];
     [m_alertController release];
-    m_alertController = Q_NULLPTR;
+    m_alertController = nullptr;
 }

@@ -43,6 +43,7 @@ HEADERS += \
         kernel/qsystemerror_p.h \
         kernel/qmetatype_p.h \
         kernel/qmetatypeswitcher_p.h \
+        kernel/qtestsupport_core.h
 
 SOURCES += \
         kernel/qabstracteventdispatcher.cpp \
@@ -69,7 +70,8 @@ SOURCES += \
         kernel/qsystemsemaphore.cpp \
         kernel/qpointer.cpp \
         kernel/qmath.cpp \
-        kernel/qsystemerror.cpp
+        kernel/qsystemerror.cpp \
+        kernel/qtestsupport_core.cpp
 
 win32 {
         SOURCES += \
@@ -79,7 +81,8 @@ win32 {
                 kernel/qsharedmemory_win.cpp \
                 kernel/qsystemsemaphore_win.cpp
         HEADERS += \
-                kernel/qwineventnotifier.h
+                kernel/qwineventnotifier.h \
+                kernel/qwineventnotifier_p.h
 
         winrt {
             SOURCES += kernel/qeventdispatcher_winrt.cpp
@@ -119,7 +122,7 @@ mac {
 
     LIBS_PRIVATE += -framework Foundation
 
-    osx: LIBS_PRIVATE += -framework CoreServices -framework AppKit
+    osx: LIBS_PRIVATE += -framework CoreServices -framework AppKit -framework Security
 
     ios|tvos {
         # We need UIKit for UIApplication in qeventdispatcher_cf.mm

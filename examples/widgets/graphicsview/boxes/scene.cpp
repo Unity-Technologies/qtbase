@@ -50,9 +50,10 @@
 
 #include <QDebug>
 #include "scene.h"
+#include <QtCore/QRandomGenerator>
 #include <QtGui/qmatrix4x4.h>
 #include <QtGui/qvector3d.h>
-#include <cmath>
+#include <qmath.h>
 
 #include "3rdparty/fbm.h"
 
@@ -868,11 +869,12 @@ void Scene::renderCubemaps()
 
     QVector3D center;
 
+    const float eachAngle = 2 * M_PI / m_cubemaps.size();
     for (int i = m_frame % N; i < m_cubemaps.size(); i += N) {
         if (0 == m_cubemaps[i])
             continue;
 
-        float angle = 2.0f * PI * i / m_cubemaps.size();
+        float angle = i * eachAngle;
 
         center = m_trackBalls[1].rotation().rotatedVector(QVector3D(std::cos(angle), std::sin(angle), 0.0f));
 
@@ -950,17 +952,17 @@ void Scene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
         return;
 
     if (event->buttons() & Qt::LeftButton) {
-        m_trackBalls[0].move(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[0].move(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
         event->accept();
     } else {
-        m_trackBalls[0].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[0].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
     }
 
     if (event->buttons() & Qt::RightButton) {
-        m_trackBalls[1].move(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[1].move(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
         event->accept();
     } else {
-        m_trackBalls[1].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[1].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
     }
 
     if (event->buttons() & Qt::MidButton) {
@@ -978,12 +980,12 @@ void Scene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         return;
 
     if (event->buttons() & Qt::LeftButton) {
-        m_trackBalls[0].push(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[0].push(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
         event->accept();
     }
 
     if (event->buttons() & Qt::RightButton) {
-        m_trackBalls[1].push(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[1].push(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
         event->accept();
     }
 
@@ -1000,12 +1002,12 @@ void Scene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
         return;
 
     if (event->button() == Qt::LeftButton) {
-        m_trackBalls[0].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[0].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
         event->accept();
     }
 
     if (event->button() == Qt::RightButton) {
-        m_trackBalls[1].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugate());
+        m_trackBalls[1].release(pixelPosToViewPos(event->scenePos()), m_trackBalls[2].rotation().conjugated());
         event->accept();
     }
 
@@ -1071,13 +1073,16 @@ void Scene::newItem(ItemDialog::ItemType type)
     QSize size = sceneRect().size().toSize();
     switch (type) {
     case ItemDialog::QtBoxItem:
-        addItem(new QtBox(64, rand() % (size.width() - 64) + 32, rand() % (size.height() - 64) + 32));
+        addItem(new QtBox(64, QRandomGenerator::global()->bounded(size.width() - 64) + 32,
+                          QRandomGenerator::global()->bounded(size.height() - 64) + 32));
         break;
     case ItemDialog::CircleItem:
-        addItem(new CircleItem(64, rand() % (size.width() - 64) + 32, rand() % (size.height() - 64) + 32));
+        addItem(new CircleItem(64, QRandomGenerator::global()->bounded(size.width() - 64) + 32,
+                               QRandomGenerator::global()->bounded(size.height() - 64) + 32));
         break;
     case ItemDialog::SquareItem:
-        addItem(new SquareItem(64, rand() % (size.width() - 64) + 32, rand() % (size.height() - 64) + 32));
+        addItem(new SquareItem(64, QRandomGenerator::global()->bounded(size.width() - 64) + 32,
+                               QRandomGenerator::global()->bounded(size.height() - 64) + 32));
         break;
     default:
         break;

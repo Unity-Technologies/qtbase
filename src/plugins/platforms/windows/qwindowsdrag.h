@@ -40,10 +40,12 @@
 #ifndef QWINDOWSDRAG_H
 #define QWINDOWSDRAG_H
 
+#include "qwindowscombase.h"
 #include "qwindowsinternalmimedata.h"
 
 #include <qpa/qplatformdrag.h>
-#include <QtGui/QPixmap>
+#include <QtGui/qpixmap.h>
+#include <QtGui/qdrag.h>
 
 struct IDropTargetHelper;
 
@@ -53,20 +55,15 @@ class QPlatformScreen;
 
 class QWindowsDropMimeData : public QWindowsInternalMimeData {
 public:
-    QWindowsDropMimeData() {}
+    QWindowsDropMimeData() = default;
     IDataObject *retrieveDataObject() const override;
 };
 
-class QWindowsOleDropTarget : public IDropTarget
+class QWindowsOleDropTarget : public QWindowsComBase<IDropTarget>
 {
 public:
     explicit QWindowsOleDropTarget(QWindow *w);
-    virtual ~QWindowsOleDropTarget();
-
-    // IUnknown methods
-    STDMETHOD(QueryInterface)(REFIID riid, void FAR* FAR* ppvObj);
-    STDMETHOD_(ULONG, AddRef)(void);
-    STDMETHOD_(ULONG, Release)(void);
+    ~QWindowsOleDropTarget() override;
 
     // IDropTarget methods
     STDMETHOD(DragEnter)(LPDATAOBJECT pDataObj, DWORD grfKeyState, POINTL pt, LPDWORD pdwEffect);
@@ -77,7 +74,6 @@ public:
 private:
     void handleDrag(QWindow *window, DWORD grfKeyState, const QPoint &, LPDWORD pdwEffect);
 
-    ULONG m_refs = 1;
     QWindow *const m_window;
     QRect m_answerRect;
     QPoint m_lastPoint;
@@ -91,13 +87,12 @@ public:
     QWindowsDrag();
     virtual ~QWindowsDrag();
 
-    QMimeData *platformDropData() override { return &m_dropData; }
-
     Qt::DropAction drag(QDrag *drag) override;
 
     static QWindowsDrag *instance();
     void cancelDrag() override { QWindowsDrag::m_canceled = true; }
     static bool isCanceled() { return QWindowsDrag::m_canceled; }
+    static bool isDragging() { return QWindowsDrag::m_dragging; }
 
     IDataObject *dropDataObject() const             { return m_dropDataObject; }
     void setDropDataObject(IDataObject *dataObject) { m_dropDataObject = dataObject; }
@@ -108,6 +103,7 @@ public:
 
 private:
     static bool m_canceled;
+    static bool m_dragging;
 
     QWindowsDropMimeData m_dropData;
     IDataObject *m_dropDataObject = nullptr;

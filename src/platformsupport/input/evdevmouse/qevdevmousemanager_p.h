@@ -56,6 +56,7 @@
 #include <QObject>
 #include <QHash>
 #include <QSocketNotifier>
+#include <QPoint>
 
 QT_BEGIN_NAMESPACE
 
@@ -63,19 +64,16 @@ class QDeviceDiscovery;
 
 class QEvdevMouseManager : public QObject
 {
-    Q_OBJECT
 public:
     QEvdevMouseManager(const QString &key, const QString &specification, QObject *parent = 0);
     ~QEvdevMouseManager();
 
-public slots:
-    void handleMouseEvent(int x, int y, bool abs, Qt::MouseButtons buttons);
-    void handleWheelEvent(int delta, Qt::Orientation orientation);
+    void handleMouseEvent(int x, int y, bool abs, Qt::MouseButtons buttons,
+                          Qt::MouseButton button, QEvent::Type type);
+    void handleWheelEvent(QPoint delta);
 
-private slots:
     void addMouse(const QString &deviceNode = QString());
     void removeMouse(const QString &deviceNode);
-    void handleCursorPositionChange(const QPoint &pos);
 
 private:
     void clampPosition();

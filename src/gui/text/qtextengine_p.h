@@ -74,6 +74,7 @@
 #include <private/qunicodetools_p.h>
 
 #include <stdlib.h>
+#include <vector>
 
 QT_BEGIN_NAMESPACE
 
@@ -142,13 +143,22 @@ struct Q_AUTOTEST_EXPORT QScriptAnalysis
         LineOrParagraphSeparator = 4,
         Space = 5,
         SpaceTabOrObject = Space,
-        Tab = 6,
+        Nbsp = 6,
+        Tab = 7,
         TabOrObject = Tab,
-        Object = 7
+        Object = 8
     };
-    unsigned short script    : 7;
-    unsigned short bidiLevel : 6;  // Unicode Bidi algorithm embedding level (0-61)
-    unsigned short flags     : 3;
+    enum BidiFlags {
+        BidiBN = 1,
+        BidiMaybeResetToParagraphLevel = 2,
+        BidiResetToParagraphLevel = 4,
+        BidiMirrored = 8
+    };
+    unsigned short script    : 8;
+    unsigned short flags     : 4;
+    unsigned short bidiFlags : 4;
+    unsigned short bidiLevel : 8;  // Unicode Bidi algorithm embedding level (0-125)
+    QChar::Direction bidiDirection : 8; // used when running the bidi algorithm
     inline bool operator == (const QScriptAnalysis &other) const {
         return script == other.script && bidiLevel == other.bidiLevel && flags == other.flags;
     }
@@ -323,13 +333,9 @@ public:
     QFontEngine *fontEngine;
 };
 
-struct Q_AUTOTEST_EXPORT QScriptItem
+struct QScriptItem
 {
-    inline QScriptItem()
-        : position(0),
-          num_glyphs(0), descent(-1), ascent(-1), leading(-1), width(-1),
-          glyph_data_offset(0) {}
-    inline QScriptItem(int p, const QScriptAnalysis &a)
+    Q_DECL_CONSTEXPR QScriptItem(int p, QScriptAnalysis a) Q_DECL_NOTHROW
         : position(p), analysis(a),
           num_glyphs(0), descent(-1), ascent(-1), leading(-1), width(-1),
           glyph_data_offset(0) {}
@@ -342,11 +348,12 @@ struct Q_AUTOTEST_EXPORT QScriptItem
     QFixed leading;
     QFixed width;
     int glyph_data_offset;
-    QFixed height() const { return ascent + descent; }
+    Q_DECL_CONSTEXPR QFixed height() const Q_DECL_NOTHROW { return ascent + descent; }
+private:
+    friend class QVector<QScriptItem>;
+    QScriptItem() {}; // for QVector, don't use
 };
-
-
-Q_DECLARE_TYPEINFO(QScriptItem, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QScriptItem, Q_PRIMITIVE_TYPE);
 
 typedef QVector<QScriptItem> QScriptItemArray;
 
@@ -627,7 +634,7 @@ public:
     int nextLogicalPosition(int oldPos) const;
     int lineNumberForTextPosition(int pos);
     int positionAfterVisualMovement(int oldPos, QTextCursor::MoveOperation op);
-    void insertionPointsForLine(int lineNum, QVector<int> &insertionPoints);
+    std::vector<int> insertionPointsForLine(int lineNum);
     void resetFontEngineCache();
 
     void enableDelayDecorations(bool enable = true) { delayDecorations = enable; }

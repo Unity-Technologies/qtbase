@@ -75,14 +75,13 @@ class QEvdevTouchScreenHandler : public QObject
     Q_OBJECT
 
 public:
-    explicit QEvdevTouchScreenHandler(const QString &device, const QString &spec = QString(), QObject *parent = Q_NULLPTR);
+    explicit QEvdevTouchScreenHandler(const QString &device, const QString &spec = QString(), QObject *parent = nullptr);
     ~QEvdevTouchScreenHandler();
 
     QTouchDevice *touchDevice() const;
 
     bool isFiltered() const;
 
-private slots:
     void readData();
 
 signals:
@@ -108,15 +107,14 @@ class QEvdevTouchScreenHandlerThread : public QDaemonThread
 {
     Q_OBJECT
 public:
-    explicit QEvdevTouchScreenHandlerThread(const QString &device, const QString &spec, QObject *parent = Q_NULLPTR);
+    explicit QEvdevTouchScreenHandlerThread(const QString &device, const QString &spec, QObject *parent = nullptr);
     ~QEvdevTouchScreenHandlerThread();
-    void run() Q_DECL_OVERRIDE;
+    void run() override;
 
     bool isTouchDeviceRegistered() const;
 
-    bool eventFilter(QObject *object, QEvent *event) Q_DECL_OVERRIDE;
+    bool eventFilter(QObject *object, QEvent *event) override;
 
-public slots:
     void scheduleTouchPointUpdate();
 
 signals:

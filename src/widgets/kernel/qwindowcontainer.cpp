@@ -48,6 +48,7 @@
 #include <QMdiSubWindow>
 #endif
 #include <QAbstractScrollArea>
+#include <QPainter>
 
 QT_BEGIN_NAMESPACE
 
@@ -226,6 +227,12 @@ QWindowContainer::QWindowContainer(QWindow *embeddedWindow, QWidget *parent, Qt:
         embeddedWindow->setSurfaceType(QSurface::RasterGLSurface);
 
     d->window = embeddedWindow;
+
+    QString windowName = d->window->objectName();
+    if (windowName.isEmpty())
+        windowName = QString::fromUtf8(d->window->metaObject()->className());
+    d->fakeParent.setObjectName(windowName + QLatin1String("ContainerFakeParent"));
+
     d->window->setParent(&d->fakeParent);
     setAcceptDrops(true);
 
@@ -308,6 +315,7 @@ bool QWindowContainer::event(QEvent *e)
             d->window->setParent(d->usesNativeWidgets
                                  ? windowHandle()
                                  : window()->windowHandle());
+            d->fakeParent.destroy();
         }
         if (d->window->parent()) {
             d->markParentChain();
@@ -328,7 +336,7 @@ bool QWindowContainer::event(QEvent *e)
             }
         }
         break;
-#ifndef QT_NO_DRAGANDDROP
+#if QT_CONFIG(draganddrop)
     case QEvent::Drop:
     case QEvent::DragMove:
     case QEvent::DragLeave:
@@ -341,6 +349,19 @@ bool QWindowContainer::event(QEvent *e)
         e->accept();
         return true;
 #endif
+
+    case QEvent::Paint:
+    {
+        static bool needsPunch = !QGuiApplicationPrivate::platformIntegration()->hasCapability(
+            QPlatformIntegration::TopStackedNativeChildWindows);
+        if (needsPunch) {
+            QPainter p(this);
+            p.setCompositionMode(QPainter::CompositionMode_Source);
+            p.fillRect(rect(), Qt::transparent);
+        }
+        break;
+    }
+
     default:
         break;
     }
@@ -384,6 +405,7 @@ void QWindowContainer::parentWasChanged(QWidget *parent)
                 Q_ASSERT(toplevel->windowHandle());
             }
             d->window->setParent(toplevel->windowHandle());
+            d->fakeParent.destroy();
             d->updateGeometry();
         }
     }

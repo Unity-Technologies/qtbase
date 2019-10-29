@@ -73,6 +73,7 @@ public:
         , major(2)
         , minor(0)
         , swapInterval(1) // default to vsync
+        , colorSpace(QSurfaceFormat::DefaultColorSpace)
     {
     }
 
@@ -91,7 +92,8 @@ public:
           profile(other->profile),
           major(other->major),
           minor(other->minor),
-          swapInterval(other->swapInterval)
+          swapInterval(other->swapInterval),
+          colorSpace(other->colorSpace)
     {
     }
 
@@ -110,6 +112,7 @@ public:
     int major;
     int minor;
     int swapInterval;
+    QSurfaceFormat::ColorSpace colorSpace;
 };
 
 /*!
@@ -124,6 +127,12 @@ public:
     contains surface configuration parameters such as OpenGL profile and
     version for rendering, whether or not to enable stereo buffers, and swap
     behaviour.
+
+    \note When troubleshooting context or window format issues, it can be
+    helpful to enable the logging category \c{qt.qpa.gl}. Depending on the
+    platform, this may print useful debug information when it comes to OpenGL
+    initialization and the native visual or framebuffer configurations which
+    QSurfaceFormat gets mapped to.
 */
 
 /*!
@@ -197,6 +206,22 @@ public:
     \value CoreProfile          Functionality deprecated in OpenGL version 3.0 is not available.
     \value CompatibilityProfile Functionality from earlier OpenGL versions is available.
 */
+
+/*!
+    \enum QSurfaceFormat::ColorSpace
+
+    This enum is used to specify the preferred color space, controlling if the
+    window's associated default framebuffer is able to do updates and blending
+    in a given encoding instead of the standard linear operations.
+
+    \value DefaultColorSpace The default, unspecified color space.
+
+    \value sRGBColorSpace When \c{GL_ARB_framebuffer_sRGB} or
+    \c{GL_EXT_framebuffer_sRGB} is supported by the platform and this value is
+    set, the window will be created with an sRGB-capable default
+    framebuffer. Note that some platforms may return windows with a sRGB-capable
+    default framebuffer even when not requested explicitly.
+ */
 
 /*!
     Constructs a default initialized QSurfaceFormat.
@@ -294,7 +319,8 @@ void QSurfaceFormat::setStereo(bool enable)
 
 /*!
     Returns the number of samples per pixel when multisampling is
-    enabled. By default, multisampling is disabled.
+    enabled, or \c -1 when multisampling is disabled. The default
+    return value is \c -1.
 
     \sa setSamples()
 */
@@ -528,10 +554,6 @@ int QSurfaceFormat::alphaBufferSize() const
 
 /*!
     Set the desired \a size in bits of the red channel of the color buffer.
-
-    \note On Mac OSX, be sure to set the buffer size of all color channels,
-    otherwise this setting will have no effect. If one of the buffer sizes is not set,
-    the current bit-depth of the screen is used.
 */
 void QSurfaceFormat::setRedBufferSize(int size)
 {
@@ -543,10 +565,6 @@ void QSurfaceFormat::setRedBufferSize(int size)
 
 /*!
     Set the desired \a size in bits of the green channel of the color buffer.
-
-    \note On Mac OSX, be sure to set the buffer size of all color channels,
-    otherwise this setting will have no effect. If one of the buffer sizes is not set,
-    the current bit-depth of the screen is used.
 */
 void QSurfaceFormat::setGreenBufferSize(int size)
 {
@@ -558,10 +576,6 @@ void QSurfaceFormat::setGreenBufferSize(int size)
 
 /*!
     Set the desired \a size in bits of the blue channel of the color buffer.
-
-    \note On Mac OSX, be sure to set the buffer size of all color channels,
-    otherwise this setting will have no effect. If one of the buffer sizes is not set,
-    the current bit-depth of the screen is used.
 */
 void QSurfaceFormat::setBlueBufferSize(int size)
 {
@@ -736,6 +750,47 @@ int QSurfaceFormat::swapInterval() const
     return d->swapInterval;
 }
 
+/*!
+    Sets the preferred \a colorSpace.
+
+    For example, this allows requesting windows with default framebuffers that
+    are sRGB-capable on platforms that support it.
+
+    \note When the requested color space is not supported by the platform, the
+    request is ignored. Query the QSurfaceFormat after window creation to verify
+    if the color space request could be honored or not.
+
+    \note This setting controls if the default framebuffer of the window is
+    capable of updates and blending in a given color space. It does not change
+    applications' output by itself. The applications' rendering code will still
+    have to opt in via the appropriate OpenGL calls to enable updates and
+    blending to be performed in the given color space instead of using the
+    standard linear operations.
+
+    \since 5.10
+
+    \sa colorSpace()
+ */
+void QSurfaceFormat::setColorSpace(ColorSpace colorSpace)
+{
+    if (d->colorSpace != colorSpace) {
+        detach();
+        d->colorSpace = colorSpace;
+    }
+}
+
+/*!
+    \return the color space.
+
+    \since 5.10
+
+    \sa setColorSpace()
+*/
+QSurfaceFormat::ColorSpace QSurfaceFormat::colorSpace() const
+{
+    return d->colorSpace;
+}
+
 Q_GLOBAL_STATIC(QSurfaceFormat, qt_default_surface_format)
 
 /*!
@@ -841,6 +896,7 @@ QDebug operator<<(QDebug dbg, const QSurfaceFormat &f)
                   << ", samples " << d->numSamples
                   << ", swapBehavior " << d->swapBehavior
                   << ", swapInterval " << d->swapInterval
+                  << ", colorSpace " << d->colorSpace
                   << ", profile  " << d->profile
                   << ')';
 

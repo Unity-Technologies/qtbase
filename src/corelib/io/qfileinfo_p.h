@@ -56,7 +56,6 @@
 #include "qatomic.h"
 #include "qshareddata.h"
 #include "qfilesystemengine_p.h"
-#include "qvector.h"
 
 #include <QtCore/private/qabstractfileengine_p.h>
 #include <QtCore/private/qfilesystementry_p.h>
@@ -67,9 +66,18 @@ QT_BEGIN_NAMESPACE
 class QFileInfoPrivate : public QSharedData
 {
 public:
-    enum { CachedFileFlags=0x01, CachedLinkTypeFlag=0x02, CachedBundleTypeFlag=0x04,
-           CachedMTime=0x10, CachedCTime=0x20, CachedATime=0x40,
-           CachedSize =0x08, CachedPerms=0x80 };
+    enum {
+        // note: cachedFlags is only 30-bits wide
+        CachedFileFlags         = 0x01,
+        CachedLinkTypeFlag      = 0x02,
+        CachedBundleTypeFlag    = 0x04,
+        CachedSize              = 0x08,
+        CachedATime             = 0x10,
+        CachedBTime             = 0x20,
+        CachedMCTime            = 0x40,
+        CachedMTime             = 0x80,
+        CachedPerms             = 0x100
+    };
 
     inline QFileInfoPrivate()
         : QSharedData(), fileEngine(0),
@@ -95,7 +103,7 @@ public:
         fileEngine(QFileSystemEngine::resolveEntryAndCreateLegacyEngine(fileEntry, metaData)),
         cachedFlags(0),
 #ifndef QT_NO_FSFILEENGINE
-        isDefaultConstructed(false),
+        isDefaultConstructed(file.isEmpty()),
 #else
         isDefaultConstructed(!fileEngine),
 #endif
@@ -158,24 +166,40 @@ public:
     QScopedPointer<QAbstractFileEngine> const fileEngine;
 
     mutable QString fileNames[QAbstractFileEngine::NFileNames];
-    mutable QString fileOwners[2];
+    mutable QString fileOwners[2];  // QAbstractFileEngine::FileOwner: OwnerUser and OwnerGroup
+    mutable QDateTime fileTimes[4]; // QAbstractFileEngine::FileTime: BirthTime, MetadataChangeTime, ModificationTime, AccessTime
 
     mutable uint cachedFlags : 30;
     bool const isDefaultConstructed : 1; // QFileInfo is a default constructed instance
     bool cache_enabled : 1;
     mutable uint fileFlags;
     mutable qint64 fileSize;
-    // ### Qt6: FIXME: This vector is essentially a plain array
-    // mutable QDateTime fileTimes[3], but the array is slower
-    // to initialize than the QVector as QDateTime has a pimpl.
-    // In Qt 6, QDateTime should inline its data members,
-    // and this here can be an array again.
-    mutable QVector<QDateTime> fileTimes;
     inline bool getCachedFlag(uint c) const
     { return cache_enabled ? (cachedFlags & c) : 0; }
     inline void setCachedFlag(uint c) const
     { if (cache_enabled) cachedFlags |= c; }
 
+    template <typename Ret, typename FSLambda, typename EngineLambda>
+    Ret checkAttribute(Ret defaultValue, QFileSystemMetaData::MetaDataFlags fsFlags, const FSLambda &fsLambda,
+                       const EngineLambda &engineLambda) const
+    {
+        if (isDefaultConstructed)
+            return defaultValue;
+        if (fileEngine)
+            return engineLambda();
+        if (!cache_enabled || !metaData.hasFlags(fsFlags)) {
+            QFileSystemEngine::fillMetaData(fileEntry, metaData, fsFlags);
+            // ignore errors, fillMetaData will have cleared the flags
+        }
+        return fsLambda();
+    }
+
+    template <typename Ret, typename FSLambda, typename EngineLambda>
+    Ret checkAttribute(QFileSystemMetaData::MetaDataFlags fsFlags, const FSLambda &fsLambda,
+                       const EngineLambda &engineLambda) const
+    {
+        return checkAttribute(Ret(), fsFlags, fsLambda, engineLambda);
+    }
 };
 
 QT_END_NAMESPACE

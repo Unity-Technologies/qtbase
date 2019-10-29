@@ -355,16 +355,19 @@ Option::init(int argc, char **argv)
                 }
             }
         }
-        if (!globals->qmake_abslocation.isNull())
-            globals->qmake_abslocation = QDir::cleanPath(globals->qmake_abslocation);
-        else // This is rather unlikely to ever happen on a modern system ...
-            globals->qmake_abslocation = QLibraryInfo::rawLocation(QLibraryInfo::HostBinariesPath,
-                                                                   QLibraryInfo::EffectivePaths) +
+        if (Q_UNLIKELY(globals->qmake_abslocation.isNull())) {
+            // This is rather unlikely to ever happen on a modern system ...
+            globals->qmake_abslocation = QLibraryInfo::rawLocation(
+                                                QLibraryInfo::HostBinariesPath,
+                                                QLibraryInfo::EffectivePaths)
 #ifdef Q_OS_WIN
-                    "/qmake.exe";
+                                         + "/qmake.exe";
 #else
-                    "/qmake";
+                                         + "/qmake";
 #endif
+        } else {
+            globals->qmake_abslocation = QDir::cleanPath(globals->qmake_abslocation);
+        }
     } else {
         Option::qmake_mode = Option::QMAKE_GENERATE_MAKEFILE;
     }
@@ -504,7 +507,7 @@ QString
 Option::fixString(QString string, uchar flags)
 {
     //const QString orig_string = string;
-    static QHash<FixStringCacheKey, QString> *cache = 0;
+    static QHash<FixStringCacheKey, QString> *cache = nullptr;
     if(!cache) {
         cache = new QHash<FixStringCacheKey, QString>;
         qmakeAddCacheClear(qmakeDeleteCacheClear<QHash<FixStringCacheKey, QString> >, (void**)&cache);
@@ -632,7 +635,7 @@ public:
     QMakeCacheClearItem(qmakeCacheClearFunc f, void **d) : func(f), data(d) { }
     ~QMakeCacheClearItem() {
         (*func)(*data);
-        *data = 0;
+        *data = nullptr;
     }
 };
 static QList<QMakeCacheClearItem*> cache_items;

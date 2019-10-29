@@ -55,7 +55,8 @@ static DotNET vsVersionFromString(const char *versionString)
         { "11.0", NET2012 },
         { "12.0", NET2013 },
         { "14.0", NET2015 },
-        { "15.0", NET2017 }
+        { "15.0", NET2017 },
+        { "16.0", NET2019 }
     };
     DotNET result = NETUnknown;
     for (const auto entry : mapping) {
@@ -112,7 +113,6 @@ const char _Culture[]                           = "Culture";
 const char _DLLDataFileName[]                   = "DLLDataFileName";
 const char _DataExecutionPrevention[]           = "DataExecutionPrevention";
 const char _DebugInformationFormat[]            = "DebugInformationFormat";
-const char _DefaultCharIsUnsigned[]             = "DefaultCharIsUnsigned";
 const char _DefaultCharType[]                   = "DefaultCharType";
 const char _DelayLoadDLLs[]                     = "DelayLoadDLLs";
 const char _DeleteExtensionsOnClean[]           = "DeleteExtensionsOnClean";
@@ -320,7 +320,7 @@ triState operator!(const triState &rhs)
 QStringList VCToolBase::fixCommandLine(const QString &input)
 {
     // The splitting regexp is a bit bizarre for backwards compat reasons (why else ...).
-    return input.split(QRegExp(QLatin1String("\n\t|\r\\\\h|\r\n")));
+    return input.split(QRegExp(QLatin1String("(\n\t|\r\\\\h|\r\n)\\s*")));
 }
 
 static QString vcCommandSeparator()
@@ -358,7 +358,6 @@ VCCLCompilerTool::VCCLCompilerTool()
         CompileAsWinRT(unset),
         CompileOnly(unset),
         DebugInformationFormat(debugDisabled),
-        DefaultCharIsUnsigned(unset),
         Detect64BitPortabilityProblems(unset),
         DisableLanguageExtensions(unset),
         EnableEnhancedInstructionSet(archNotSet),
@@ -668,7 +667,7 @@ bool VCCLCompilerTool::parseOption(const char* option)
         AdditionalIncludeDirectories += option+2;
         break;
     case 'J':
-        DefaultCharIsUnsigned = _True;
+        AdditionalOptions += option;
         break;
     case 'L':
         if(second == 'D') {
@@ -1146,6 +1145,14 @@ bool VCCLCompilerTool::parseOption(const char* option)
         if(second == 'h' && third == 'o' && fourth == 'w') {
             ShowIncludes = _True;
             break;
+        }
+        if (strlen(option) > 8 && second == 't' && third == 'd') {
+            const QString version = option + 8;
+            static const QStringList knownVersions = { "14", "17", "latest" };
+            if (knownVersions.contains(version)) {
+                LanguageStandard = "stdcpp" + version;
+                break;
+            }
         }
         found = false; break;
     case 'u':
@@ -1983,6 +1990,7 @@ bool VCMIDLTool::parseOption(const char* option)
         break;
     case 0x5eb7af2: // /header filename
         offset = 5;
+        Q_FALLTHROUGH();
     case 0x0000358: // /h filename
         HeaderFileName = option + offset + 3;
         break;
@@ -2185,7 +2193,7 @@ VCConfiguration::VCConfiguration()
 // VCFilter ---------------------------------------------------------
 VCFilter::VCFilter()
     :   ParseFiles(unset),
-        Config(0)
+        Config(nullptr)
 {
     useCustomBuildTool = false;
     useCompilerTool = false;
@@ -2646,7 +2654,6 @@ void VCProjectWriter::write(XmlOutput &xml, const VCCLCompilerTool &tool)
         << attrE(_CompileAsManaged, tool.CompileAsManaged, /*ifNot*/ managedDefault)
         << attrT(_CompileOnly, tool.CompileOnly)
         << attrE(_DebugInformationFormat, tool.DebugInformationFormat, /*ifNot*/ debugUnknown)
-        << attrT(_DefaultCharIsUnsigned, tool.DefaultCharIsUnsigned)
         << attrT(_Detect64BitPortabilityProblems, tool.Detect64BitPortabilityProblems)
         << attrT(_DisableLanguageExtensions, tool.DisableLanguageExtensions)
         << attrX(_DisableSpecificWarnings, tool.DisableSpecificWarnings)

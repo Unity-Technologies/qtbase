@@ -47,38 +47,36 @@
 
 QT_BEGIN_NAMESPACE
 
-//####todo remove the noops (looks like their where there in the initial commit)
 class QXcbEglContext : public QEGLPlatformContext
 {
 public:
     QXcbEglContext(const QSurfaceFormat &glFormat, QPlatformOpenGLContext *share,
-                           EGLDisplay display, QXcbConnection *c, const QVariant &nativeHandle)
+                           EGLDisplay display, const QVariant &nativeHandle)
         : QEGLPlatformContext(glFormat, share, display, 0, nativeHandle)
-        , m_connection(c)
     {
-        Q_XCB_NOOP(m_connection);
     }
 
     void swapBuffers(QPlatformSurface *surface)
     {
-        Q_XCB_NOOP(m_connection);
         QEGLPlatformContext::swapBuffers(surface);
-        Q_XCB_NOOP(m_connection);
+        if (surface->surface()->surfaceClass() == QSurface::Window) {
+            QXcbWindow *platformWindow = static_cast<QXcbWindow *>(surface);
+            // OpenGL context might be bound to a non-gui thread use QueuedConnection to sync
+            // the window from the platformWindow's thread as QXcbWindow is no QObject, an
+            // event is sent to QXcbConnection. (this is faster than a metacall)
+            if (platformWindow->needsSync())
+                platformWindow->postSyncWindowRequest();
+        }
     }
 
     bool makeCurrent(QPlatformSurface *surface)
     {
-        Q_XCB_NOOP(m_connection);
-        bool ret = QEGLPlatformContext::makeCurrent(surface);
-        Q_XCB_NOOP(m_connection);
-        return ret;
+        return QEGLPlatformContext::makeCurrent(surface);
     }
 
     void doneCurrent()
     {
-        Q_XCB_NOOP(m_connection);
         QEGLPlatformContext::doneCurrent();
-        Q_XCB_NOOP(m_connection);
     }
 
     EGLSurface eglSurfaceForPlatformSurface(QPlatformSurface *surface)
@@ -92,9 +90,6 @@ public:
     QVariant nativeHandle() const {
         return QVariant::fromValue<QEGLNativeContext>(QEGLNativeContext(eglContext(), eglDisplay()));
     }
-
-private:
-    QXcbConnection *m_connection;
 };
 
 QT_END_NAMESPACE

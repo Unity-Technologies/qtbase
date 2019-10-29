@@ -48,6 +48,7 @@ private Q_SLOTS:
     void midLeftRight();
     void nullString();
     void emptyString();
+    void iterators();
     void relationalOperators_data();
     void relationalOperators();
 };
@@ -85,7 +86,7 @@ void tst_QLatin1String::nullString()
     // default ctor
     {
         QLatin1String l1;
-        QCOMPARE(static_cast<const void*>(l1.data()), static_cast<const void*>(Q_NULLPTR));
+        QCOMPARE(static_cast<const void*>(l1.data()), static_cast<const void*>(nullptr));
         QCOMPARE(l1.size(), 0);
 
         QString s = l1;
@@ -94,9 +95,9 @@ void tst_QLatin1String::nullString()
 
     // from nullptr
     {
-        const char *null = Q_NULLPTR;
+        const char *null = nullptr;
         QLatin1String l1(null);
-        QCOMPARE(static_cast<const void*>(l1.data()), static_cast<const void*>(Q_NULLPTR));
+        QCOMPARE(static_cast<const void*>(l1.data()), static_cast<const void*>(nullptr));
         QCOMPARE(l1.size(), 0);
 
         QString s = l1;
@@ -110,7 +111,7 @@ void tst_QLatin1String::nullString()
 
         QLatin1String l1(null);
         QEXPECT_FAIL("", "null QByteArrays become non-null QLatin1Strings...", Continue);
-        QCOMPARE(static_cast<const void*>(l1.data()), static_cast<const void*>(Q_NULLPTR));
+        QCOMPARE(static_cast<const void*>(l1.data()), static_cast<const void*>(nullptr));
         QCOMPARE(l1.size(), 0);
 
         QString s = l1;
@@ -153,6 +154,22 @@ void tst_QLatin1String::emptyString()
         QVERIFY(s.isEmpty());
         QVERIFY(!s.isNull());
     }
+}
+
+void tst_QLatin1String::iterators()
+{
+    QLatin1String hello("hello");
+    QLatin1String olleh("olleh");
+
+    QVERIFY(std::equal(hello.begin(), hello.end(),
+                       olleh.rbegin()));
+    QVERIFY(std::equal(hello.rbegin(), hello.rend(),
+                       QT_MAKE_CHECKED_ARRAY_ITERATOR(olleh.begin(), olleh.size())));
+
+    QVERIFY(std::equal(hello.cbegin(), hello.cend(),
+                       olleh.rbegin()));
+    QVERIFY(std::equal(hello.crbegin(), hello.crend(),
+                       QT_MAKE_CHECKED_ARRAY_ITERATOR(olleh.begin(), olleh.size())));
 }
 
 void tst_QLatin1String::relationalOperators_data()

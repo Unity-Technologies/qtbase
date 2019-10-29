@@ -54,7 +54,6 @@
 #include <QtGui/qscreen.h>
 
 #include <QtPlatformHeaders/qxcbwindowfunctions.h>
-#include <QtPlatformHeaders/qxcbintegrationfunctions.h>
 #include <QtPlatformHeaders/qxcbscreenfunctions.h>
 
 #include <stdio.h>
@@ -62,6 +61,10 @@
 #include <algorithm>
 
 #include "qxcbnativeinterfacehandler.h"
+
+#if QT_CONFIG(vulkan)
+#include "qxcbvulkanwindow.h"
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -78,77 +81,27 @@ static int resourceType(const QByteArray &key)
         QByteArrayLiteral("rootwindow"),
         QByteArrayLiteral("subpixeltype"), QByteArrayLiteral("antialiasingenabled"),
         QByteArrayLiteral("atspibus"),
-        QByteArrayLiteral("compositingenabled")
+        QByteArrayLiteral("compositingenabled"),
+        QByteArrayLiteral("vksurface"),
+        QByteArrayLiteral("generatepeekerid"),
+        QByteArrayLiteral("removepeekerid"),
+        QByteArrayLiteral("peekeventqueue")
     };
     const QByteArray *end = names + sizeof(names) / sizeof(names[0]);
     const QByteArray *result = std::find(names, end, key);
     return int(result - names);
 }
 
-QXcbNativeInterface::QXcbNativeInterface() :
-    m_genericEventFilterType(QByteArrayLiteral("xcb_generic_event_t"))
+QXcbNativeInterface::QXcbNativeInterface()
 {
 }
 
 static inline QXcbSystemTrayTracker *systemTrayTracker(const QScreen *s)
 {
     if (!s)
-        return Q_NULLPTR;
+        return nullptr;
 
     return static_cast<const QXcbScreen *>(s->handle())->connection()->systemTrayTracker();
-}
-
-bool QXcbNativeInterface::systemTrayAvailable(const QScreen *screen) const
-{
-    return systemTrayTracker(screen);
-}
-
-bool QXcbNativeInterface::requestSystemTrayWindowDock(const QWindow *window)
-{
-    return QXcbWindow::requestSystemTrayWindowDockStatic(window);
-}
-
-QRect QXcbNativeInterface::systemTrayWindowGlobalGeometry(const QWindow *window)
-{
-    return QXcbWindow::systemTrayWindowGlobalGeometryStatic(window);
-}
-
-xcb_window_t QXcbNativeInterface::locateSystemTray(xcb_connection_t *conn, const QXcbScreen *screen)
-{
-    if (m_sysTraySelectionAtom == XCB_ATOM_NONE) {
-        const QByteArray net_sys_tray = QString::fromLatin1("_NET_SYSTEM_TRAY_S%1").arg(screen->screenNumber()).toLatin1();
-        xcb_intern_atom_cookie_t intern_c =
-            xcb_intern_atom_unchecked(conn, true, net_sys_tray.length(), net_sys_tray);
-
-        xcb_intern_atom_reply_t *intern_r = xcb_intern_atom_reply(conn, intern_c, 0);
-
-        if (!intern_r)
-            return XCB_WINDOW_NONE;
-
-        m_sysTraySelectionAtom = intern_r->atom;
-        free(intern_r);
-    }
-
-    xcb_get_selection_owner_cookie_t sel_owner_c = xcb_get_selection_owner_unchecked(conn, m_sysTraySelectionAtom);
-    xcb_get_selection_owner_reply_t *sel_owner_r = xcb_get_selection_owner_reply(conn, sel_owner_c, 0);
-
-    if (!sel_owner_r)
-        return XCB_WINDOW_NONE;
-
-    xcb_window_t selection_window = sel_owner_r->owner;
-    free(sel_owner_r);
-
-    return selection_window;
-}
-
-bool QXcbNativeInterface::systrayVisualHasAlphaChannel()
-{
-    return QXcbConnection::xEmbedSystemTrayVisualHasAlphaChannel();
-}
-
-void QXcbNativeInterface::setParentRelativeBackPixmap(QWindow *window)
-{
-    QXcbWindow::setParentRelativeBackPixmapStatic(window);
 }
 
 void *QXcbNativeInterface::nativeResourceForIntegration(const QByteArray &resourceString)
@@ -195,7 +148,7 @@ void *QXcbNativeInterface::nativeResourceForScreen(const QByteArray &resourceStr
 {
     if (!screen) {
         qWarning("nativeResourceForScreen: null screen");
-        return Q_NULLPTR;
+        return nullptr;
     }
 
     QByteArray lowerCaseResource = resourceString.toLower();
@@ -237,7 +190,7 @@ void *QXcbNativeInterface::nativeResourceForScreen(const QByteArray &resourceStr
         break;
     case CompositingEnabled:
         if (QXcbVirtualDesktop *vd = xcbScreen->virtualDesktop())
-            result = vd->compositingActive() ? this : Q_NULLPTR;
+            result = vd->compositingActive() ? this : nullptr;
         break;
     default:
         break;
@@ -262,6 +215,14 @@ void *QXcbNativeInterface::nativeResourceForWindow(const QByteArray &resourceStr
     case Screen:
         result = screenForWindow(window);
         break;
+#if QT_CONFIG(vulkan)
+    case VkSurface:
+        if (window->surfaceType() == QSurface::VulkanSurface && window->handle()) {
+            // return a pointer to the VkSurfaceKHR value, not the value itself
+            result = static_cast<QXcbVulkanWindow *>(window->handle())->surface();
+        }
+        break;
+#endif
     default:
         break;
     }
@@ -287,7 +248,7 @@ void *QXcbNativeInterface::nativeResourceForCursor(const QByteArray &resource, c
             }
         }
     }
-    return Q_NULLPTR;
+    return nullptr;
 }
 #endif // !QT_NO_CURSOR
 
@@ -299,7 +260,14 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QXcbNativeInterfa
         return func;
 
     if (lowerCaseResource == "setstartupid")
-        return NativeResourceForIntegrationFunction(setStartupId);
+        return NativeResourceForIntegrationFunction(reinterpret_cast<void *>(setStartupId));
+    if (lowerCaseResource == "generatepeekerid")
+        return NativeResourceForIntegrationFunction(reinterpret_cast<void *>(generatePeekerId));
+    if (lowerCaseResource == "removepeekerid")
+        return NativeResourceForIntegrationFunction(reinterpret_cast<void *>(removePeekerId));
+    if (lowerCaseResource == "peekeventqueue")
+        return NativeResourceForIntegrationFunction(reinterpret_cast<void *>(peekEventQueue));
+
     return 0;
 }
 
@@ -309,7 +277,7 @@ QPlatformNativeInterface::NativeResourceForContextFunction QXcbNativeInterface::
     QPlatformNativeInterface::NativeResourceForContextFunction func = handlerNativeResourceFunctionForContext(lowerCaseResource);
     if (func)
         return func;
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QPlatformNativeInterface::NativeResourceForScreenFunction QXcbNativeInterface::nativeResourceFunctionForScreen(const QByteArray &resource)
@@ -320,9 +288,9 @@ QPlatformNativeInterface::NativeResourceForScreenFunction QXcbNativeInterface::n
         return func;
 
     if (lowerCaseResource == "setapptime")
-        return NativeResourceForScreenFunction(setAppTime);
+        return NativeResourceForScreenFunction(reinterpret_cast<void *>(setAppTime));
     else if (lowerCaseResource == "setappusertime")
-        return NativeResourceForScreenFunction(setAppUserTime);
+        return NativeResourceForScreenFunction(reinterpret_cast<void *>(setAppUserTime));
     return 0;
 }
 
@@ -357,32 +325,20 @@ QFunctionPointer QXcbNativeInterface::platformFunction(const QByteArray &functio
     if (function == QXcbWindowFunctions::setWmWindowIconTextIdentifier())
         return QFunctionPointer(QXcbWindowFunctions::SetWmWindowIconText(QXcbWindow::setWindowIconTextStatic));
 
-    if (function == QXcbWindowFunctions::setParentRelativeBackPixmapIdentifier())
-        return QFunctionPointer(QXcbWindowFunctions::SetParentRelativeBackPixmap(QXcbWindow::setParentRelativeBackPixmapStatic));
-
-    if (function == QXcbWindowFunctions::requestSystemTrayWindowDockIdentifier())
-        return QFunctionPointer(QXcbWindowFunctions::RequestSystemTrayWindowDock(QXcbWindow::requestSystemTrayWindowDockStatic));
-
-    if (function == QXcbWindowFunctions::systemTrayWindowGlobalGeometryIdentifier())
-        return QFunctionPointer(QXcbWindowFunctions::SystemTrayWindowGlobalGeometry(QXcbWindow::systemTrayWindowGlobalGeometryStatic));
-
-    if (function == QXcbIntegrationFunctions::xEmbedSystemTrayVisualHasAlphaChannelIdentifier())
-        return QFunctionPointer(QXcbIntegrationFunctions::XEmbedSystemTrayVisualHasAlphaChannel(QXcbConnection::xEmbedSystemTrayVisualHasAlphaChannel));
-
     if (function == QXcbWindowFunctions::visualIdIdentifier()) {
         return QFunctionPointer(QXcbWindowFunctions::VisualId(QXcbWindow::visualIdStatic));
     }
 
     if (function == QXcbScreenFunctions::virtualDesktopNumberIdentifier())
-        return QFunctionPointer(QXcbScreenFunctions::VirtualDesktopNumber(QXcbScreen::virtualDesktopNumberStatic));
+        return QFunctionPointer(QXcbScreenFunctions::VirtualDesktopNumber(reinterpret_cast<void *>(QXcbScreen::virtualDesktopNumberStatic)));
 
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 void *QXcbNativeInterface::appTime(const QXcbScreen *screen)
 {
     if (!screen)
-        return Q_NULLPTR;
+        return nullptr;
 
     return reinterpret_cast<void *>(quintptr(screen->connection()->time()));
 }
@@ -390,7 +346,7 @@ void *QXcbNativeInterface::appTime(const QXcbScreen *screen)
 void *QXcbNativeInterface::appUserTime(const QXcbScreen *screen)
 {
     if (!screen)
-        return Q_NULLPTR;
+        return nullptr;
 
     return reinterpret_cast<void *>(quintptr(screen->connection()->netWmUserTime()));
 }
@@ -398,7 +354,7 @@ void *QXcbNativeInterface::appUserTime(const QXcbScreen *screen)
 void *QXcbNativeInterface::getTimestamp(const QXcbScreen *screen)
 {
     if (!screen)
-        return Q_NULLPTR;
+        return nullptr;
 
     return reinterpret_cast<void *>(quintptr(screen->connection()->getTimestamp()));
 }
@@ -438,7 +394,7 @@ void *QXcbNativeInterface::display()
     if (defaultConnection)
         return defaultConnection->xlib_display();
 #endif
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 void *QXcbNativeInterface::connection()
@@ -452,24 +408,19 @@ void *QXcbNativeInterface::atspiBus()
     QXcbIntegration *integration = static_cast<QXcbIntegration *>(QGuiApplicationPrivate::platformIntegration());
     QXcbConnection *defaultConnection = integration->defaultConnection();
     if (defaultConnection) {
-        xcb_atom_t atspiBusAtom = defaultConnection->internAtom("AT_SPI_BUS");
-        xcb_get_property_cookie_t cookie = Q_XCB_CALL2(xcb_get_property(
-                                                           defaultConnection->xcb_connection(),
-                                                           false, defaultConnection->rootWindow(),
-                                                           atspiBusAtom, XCB_ATOM_STRING, 0, 128),
-                                                       defaultConnection);
-        xcb_get_property_reply_t *reply = Q_XCB_CALL2(xcb_get_property_reply(
-                                                          defaultConnection->xcb_connection(),
-                                                          cookie, 0),
-                                                      defaultConnection);
-        Q_ASSERT(!reply->bytes_after);
-        char *data = (char *)xcb_get_property_value(reply);
-        int length = xcb_get_property_value_length(reply);
-        QByteArray *busAddress = new QByteArray(data, length);
-        free(reply);
-        return busAddress;
+        auto atspiBusAtom = defaultConnection->atom(QXcbAtom::AT_SPI_BUS);
+        auto reply = Q_XCB_REPLY(xcb_get_property, defaultConnection->xcb_connection(),
+                                     false, defaultConnection->rootWindow(),
+                                     atspiBusAtom, XCB_ATOM_STRING, 0, 128);
+        if (!reply)
+            return nullptr;
+
+        char *data = (char *)xcb_get_property_value(reply.get());
+        int length = xcb_get_property_value_length(reply.get());
+        return new QByteArray(data, length);
     }
-    return 0;
+
+    return nullptr;
 }
 
 void QXcbNativeInterface::setAppTime(QScreen* screen, xcb_timestamp_t time)
@@ -486,6 +437,25 @@ void QXcbNativeInterface::setAppUserTime(QScreen* screen, xcb_timestamp_t time)
     }
 }
 
+qint32 QXcbNativeInterface::generatePeekerId()
+{
+    QXcbIntegration *integration = QXcbIntegration::instance();
+    return integration->defaultConnection()->eventQueue()->generatePeekerId();
+}
+
+bool QXcbNativeInterface::removePeekerId(qint32 peekerId)
+{
+    QXcbIntegration *integration = QXcbIntegration::instance();
+    return integration->defaultConnection()->eventQueue()->removePeekerId(peekerId);
+}
+
+bool QXcbNativeInterface::peekEventQueue(QXcbEventQueue::PeekerCallback peeker, void *peekerData,
+                                         QXcbEventQueue::PeekOptions option, qint32 peekerId)
+{
+    QXcbIntegration *integration = QXcbIntegration::instance();
+    return integration->defaultConnection()->eventQueue()->peekEventQueue(peeker, peekerData, option, peekerId);
+}
+
 void QXcbNativeInterface::setStartupId(const char *data)
 {
     QByteArray startupId(data);
@@ -500,10 +470,10 @@ QXcbScreen *QXcbNativeInterface::qPlatformScreenForWindow(QWindow *window)
     QXcbScreen *screen;
     if (window) {
         QScreen *qs = window->screen();
-        screen = static_cast<QXcbScreen *>(qs ? qs->handle() : Q_NULLPTR);
+        screen = static_cast<QXcbScreen *>(qs ? qs->handle() : nullptr);
     } else {
         QScreen *qs = QGuiApplication::primaryScreen();
-        screen = static_cast<QXcbScreen *>(qs ? qs->handle() : Q_NULLPTR);
+        screen = static_cast<QXcbScreen *>(qs ? qs->handle() : nullptr);
     }
     return screen;
 }
@@ -512,23 +482,23 @@ void *QXcbNativeInterface::displayForWindow(QWindow *window)
 {
 #if QT_CONFIG(xcb_xlib)
     QXcbScreen *screen = qPlatformScreenForWindow(window);
-    return screen ? screen->connection()->xlib_display() : Q_NULLPTR;
+    return screen ? screen->connection()->xlib_display() : nullptr;
 #else
     Q_UNUSED(window);
-    return Q_NULLPTR;
+    return nullptr;
 #endif
 }
 
 void *QXcbNativeInterface::connectionForWindow(QWindow *window)
 {
     QXcbScreen *screen = qPlatformScreenForWindow(window);
-    return screen ? screen->xcb_connection() : Q_NULLPTR;
+    return screen ? screen->xcb_connection() : nullptr;
 }
 
 void *QXcbNativeInterface::screenForWindow(QWindow *window)
 {
     QXcbScreen *screen = qPlatformScreenForWindow(window);
-    return screen ? screen->screen() : Q_NULLPTR;
+    return screen ? screen->screen() : nullptr;
 }
 
 void QXcbNativeInterface::addHandler(QXcbNativeInterfaceHandler *handler)
@@ -550,7 +520,7 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QXcbNativeInterfa
         if (result)
             return result;
     }
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QPlatformNativeInterface::NativeResourceForContextFunction QXcbNativeInterface::handlerNativeResourceFunctionForContext(const QByteArray &resource) const
@@ -561,7 +531,7 @@ QPlatformNativeInterface::NativeResourceForContextFunction QXcbNativeInterface::
         if (result)
             return result;
     }
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QPlatformNativeInterface::NativeResourceForScreenFunction QXcbNativeInterface::handlerNativeResourceFunctionForScreen(const QByteArray &resource) const
@@ -572,7 +542,7 @@ QPlatformNativeInterface::NativeResourceForScreenFunction QXcbNativeInterface::h
         if (result)
             return result;
     }
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QPlatformNativeInterface::NativeResourceForWindowFunction QXcbNativeInterface::handlerNativeResourceFunctionForWindow(const QByteArray &resource) const
@@ -583,7 +553,7 @@ QPlatformNativeInterface::NativeResourceForWindowFunction QXcbNativeInterface::h
         if (result)
             return result;
     }
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QPlatformNativeInterface::NativeResourceForBackingStoreFunction QXcbNativeInterface::handlerNativeResourceFunctionForBackingStore(const QByteArray &resource) const
@@ -594,7 +564,7 @@ QPlatformNativeInterface::NativeResourceForBackingStoreFunction QXcbNativeInterf
         if (result)
             return result;
     }
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 QFunctionPointer QXcbNativeInterface::handlerPlatformFunction(const QByteArray &function) const
@@ -605,7 +575,7 @@ QFunctionPointer QXcbNativeInterface::handlerPlatformFunction(const QByteArray &
         if (func)
             return func;
     }
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 void *QXcbNativeInterface::handlerNativeResourceForIntegration(const QByteArray &resource) const
@@ -613,7 +583,7 @@ void *QXcbNativeInterface::handlerNativeResourceForIntegration(const QByteArray 
     NativeResourceForIntegrationFunction func = handlerNativeResourceFunctionForIntegration(resource);
     if (func)
         return func();
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 void *QXcbNativeInterface::handlerNativeResourceForContext(const QByteArray &resource, QOpenGLContext *context) const
@@ -621,7 +591,7 @@ void *QXcbNativeInterface::handlerNativeResourceForContext(const QByteArray &res
     NativeResourceForContextFunction func = handlerNativeResourceFunctionForContext(resource);
     if (func)
         return func(context);
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 void *QXcbNativeInterface::handlerNativeResourceForScreen(const QByteArray &resource, QScreen *screen) const
@@ -629,7 +599,7 @@ void *QXcbNativeInterface::handlerNativeResourceForScreen(const QByteArray &reso
     NativeResourceForScreenFunction func = handlerNativeResourceFunctionForScreen(resource);
     if (func)
         return func(screen);
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 void *QXcbNativeInterface::handlerNativeResourceForWindow(const QByteArray &resource, QWindow *window) const
@@ -637,7 +607,7 @@ void *QXcbNativeInterface::handlerNativeResourceForWindow(const QByteArray &reso
     NativeResourceForWindowFunction func = handlerNativeResourceFunctionForWindow(resource);
     if (func)
         return func(window);
-    return Q_NULLPTR;
+    return nullptr;
 }
 
 void *QXcbNativeInterface::handlerNativeResourceForBackingStore(const QByteArray &resource, QBackingStore *backingStore) const
@@ -645,7 +615,63 @@ void *QXcbNativeInterface::handlerNativeResourceForBackingStore(const QByteArray
     NativeResourceForBackingStoreFunction func = handlerNativeResourceFunctionForBackingStore(resource);
     if (func)
         return func(backingStore);
-    return Q_NULLPTR;
+    return nullptr;
+}
+
+static void dumpNativeWindowsRecursion(const QXcbConnection *connection, xcb_window_t window,
+                                       int level, QTextStream &str)
+{
+    if (level)
+        str << QByteArray(2 * level, ' ');
+
+    xcb_connection_t *conn = connection->xcb_connection();
+    auto geomReply = Q_XCB_REPLY(xcb_get_geometry, conn, window);
+    if (!geomReply)
+        return;
+    const QRect geom(geomReply->x, geomReply->y, geomReply->width, geomReply->height);
+    if (!geom.isValid() || (geom.width() <= 3 && geom.height() <= 3))
+        return; // Skip helper/dummy windows.
+    str << "0x";
+    const int oldFieldWidth = str.fieldWidth();
+    const QChar oldPadChar =str.padChar();
+    str.setFieldWidth(8);
+    str.setPadChar(QLatin1Char('0'));
+    str << hex << window;
+    str.setFieldWidth(oldFieldWidth);
+    str.setPadChar(oldPadChar);
+    str << dec << " \""
+        << QXcbWindow::windowTitle(connection, window) << "\" "
+        << geom.width() << 'x' << geom.height() << forcesign << geom.x() << geom.y()
+        << noforcesign << '\n';
+
+    auto reply = Q_XCB_REPLY(xcb_query_tree, conn, window);
+    if (reply) {
+        const int count = xcb_query_tree_children_length(reply.get());
+        const xcb_window_t *children = xcb_query_tree_children(reply.get());
+        for (int i = 0; i < count; ++i)
+            dumpNativeWindowsRecursion(connection, children[i], level + 1, str);
+    }
+}
+
+QString QXcbNativeInterface::dumpConnectionNativeWindows(const QXcbConnection *connection, WId root) const
+{
+    QString result;
+    QTextStream str(&result);
+    if (root) {
+        dumpNativeWindowsRecursion(connection, xcb_window_t(root), 0, str);
+    } else {
+        for (const QXcbScreen *screen : connection->screens()) {
+            str << "Screen: \"" << screen->name() << "\"\n";
+            dumpNativeWindowsRecursion(connection, screen->root(), 0, str);
+            str << '\n';
+        }
+    }
+    return result;
+}
+
+QString QXcbNativeInterface::dumpNativeWindows(WId root) const
+{
+    return dumpConnectionNativeWindows(QXcbIntegration::instance()->defaultConnection(), root);
 }
 
 QT_END_NAMESPACE

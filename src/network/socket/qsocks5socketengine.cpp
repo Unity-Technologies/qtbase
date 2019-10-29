@@ -320,7 +320,7 @@ public:
     QSocks5BindData *retrieve(qintptr socketDescriptor);
 
 protected:
-    void timerEvent(QTimerEvent * event) Q_DECL_OVERRIDE;
+    void timerEvent(QTimerEvent * event) override;
 
     QMutex mutex;
     int sweepTimerId;
@@ -1188,6 +1188,8 @@ void QSocks5SocketEnginePrivate::_q_controlSocketReadNotification()
             break;
         case RequestMethodSent:
             parseRequestMethodReply();
+            if (socks5State == Connected && data->controlSocket->bytesAvailable())
+                _q_controlSocketReadNotification();
             break;
         case Connected: {
             QByteArray buf;
@@ -1383,23 +1385,6 @@ bool QSocks5SocketEngine::bind(const QHostAddress &addr, quint16 port)
         d->localAddress = QHostAddress();
         d->udpData->associatePort = d->localPort;
         d->localPort = 0;
-        QUdpSocket dummy;
-#ifndef QT_NO_BEARERMANAGEMENT
-        dummy.setProperty("_q_networksession", property("_q_networksession"));
-#endif
-        dummy.setProxy(QNetworkProxy::NoProxy);
-        if (!dummy.bind()
-            || writeDatagram(0,0, QIpPacketHeader(d->data->controlSocket->localAddress(), dummy.localPort())) != 0
-            || !dummy.waitForReadyRead(qt_subtract_from_timeout(msecs, stopWatch.elapsed()))
-            || dummy.readDatagram(0,0, &d->localAddress, &d->localPort) != 0) {
-            QSOCKS5_DEBUG << "udp actual address and port lookup failed";
-            setState(QAbstractSocket::UnconnectedState);
-            setError(dummy.error(), dummy.errorString());
-            d->data->controlSocket->close();
-            //### reset and error
-            return false;
-        }
-        QSOCKS5_DEBUG << "udp actual address and port" << d->localAddress << ':' << d->localPort;
         return true;
 #endif // QT_NO_UDPSOCKET
     }
@@ -1628,8 +1613,10 @@ qint64 QSocks5SocketEngine::readDatagram(char *data, qint64 maxlen, QIpPacketHea
     QSocks5RevivedDatagram datagram = d->udpData->pendingDatagrams.dequeue();
     int copyLen = qMin<int>(maxlen, datagram.data.size());
     memcpy(data, datagram.data.constData(), copyLen);
-    header->senderAddress = datagram.address;
-    header->senderPort = datagram.port;
+    if (header) {
+        header->senderAddress = datagram.address;
+        header->senderPort = datagram.port;
+    }
     return copyLen;
 #else
     Q_UNUSED(data)
@@ -1766,6 +1753,11 @@ bool QSocks5SocketEngine::waitForRead(int msecs, bool *timedOut)
         return false;
     if (d->data->controlSocket->state() == QAbstractSocket::UnconnectedState)
         return true;
+    if (bytesAvailable() && d->readNotificationPending) {
+        // We've got some data incoming, but the queued call hasn't been performed yet.
+        // The data is where we expect it to be already, so just return true.
+        return true;
+    }
 
     // we're connected
     if (d->mode == QSocks5SocketEnginePrivate::ConnectMode ||

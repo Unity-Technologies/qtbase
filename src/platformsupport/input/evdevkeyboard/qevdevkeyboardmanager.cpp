@@ -88,8 +88,10 @@ QEvdevKeyboardManager::QEvdevKeyboardManager(const QString &key, const QString &
             for (const QString &device : devices)
                 addKeyboard(device);
 
-            connect(m_deviceDiscovery, SIGNAL(deviceDetected(QString)), this, SLOT(addKeyboard(QString)));
-            connect(m_deviceDiscovery, SIGNAL(deviceRemoved(QString)), this, SLOT(removeKeyboard(QString)));
+            connect(m_deviceDiscovery, &QDeviceDiscovery::deviceDetected,
+                    this, &QEvdevKeyboardManager::addKeyboard);
+            connect(m_deviceDiscovery, &QDeviceDiscovery::deviceRemoved,
+                    this, &QEvdevKeyboardManager::removeKeyboard);
         }
     }
 }
@@ -149,6 +151,12 @@ void QEvdevKeyboardManager::loadKeymap(const QString &file)
         foreach (QEvdevKeyboardHandler *handler, m_keyboards)
             handler->loadKeymap(file);
     }
+}
+
+void QEvdevKeyboardManager::switchLang()
+{
+    foreach (QEvdevKeyboardHandler *handler, m_keyboards)
+        handler->switchLang();
 }
 
 QT_END_NAMESPACE

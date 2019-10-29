@@ -74,6 +74,7 @@ class Q_WIDGETS_EXPORT QInputDialog : public QDialog
     QDOC_PROPERTY(int doubleDecimals READ doubleDecimals WRITE setDoubleDecimals)
     QDOC_PROPERTY(QString okButtonText READ okButtonText WRITE setOkButtonText)
     QDOC_PROPERTY(QString cancelButtonText READ cancelButtonText WRITE setCancelButtonText)
+    QDOC_PROPERTY(double doubleStep READ doubleStep WRITE setDoubleStep)
 
 public:
     enum InputDialogOption {
@@ -90,7 +91,7 @@ public:
         DoubleInput
     };
 
-    QInputDialog(QWidget *parent = Q_NULLPTR, Qt::WindowFlags flags = Qt::WindowFlags());
+    QInputDialog(QWidget *parent = nullptr, Qt::WindowFlags flags = Qt::WindowFlags());
     ~QInputDialog();
 
     void setInputMode(InputMode mode);
@@ -153,40 +154,47 @@ public:
     using QDialog::open;
     void open(QObject *receiver, const char *member);
 
-    QSize minimumSizeHint() const Q_DECL_OVERRIDE;
-    QSize sizeHint() const Q_DECL_OVERRIDE;
+    QSize minimumSizeHint() const override;
+    QSize sizeHint() const override;
 
-    void setVisible(bool visible) Q_DECL_OVERRIDE;
+    void setVisible(bool visible) override;
 
     static QString getText(QWidget *parent, const QString &title, const QString &label,
                            QLineEdit::EchoMode echo = QLineEdit::Normal,
-                           const QString &text = QString(), bool *ok = Q_NULLPTR,
+                           const QString &text = QString(), bool *ok = nullptr,
                            Qt::WindowFlags flags = Qt::WindowFlags(),
                            Qt::InputMethodHints inputMethodHints = Qt::ImhNone);
     static QString getMultiLineText(QWidget *parent, const QString &title, const QString &label,
-                                    const QString &text = QString(), bool *ok = Q_NULLPTR,
+                                    const QString &text = QString(), bool *ok = nullptr,
                                     Qt::WindowFlags flags = Qt::WindowFlags(),
                                     Qt::InputMethodHints inputMethodHints = Qt::ImhNone);
     static QString getItem(QWidget *parent, const QString &title, const QString &label,
                            const QStringList &items, int current = 0, bool editable = true,
-                           bool *ok = Q_NULLPTR, Qt::WindowFlags flags = Qt::WindowFlags(),
+                           bool *ok = nullptr, Qt::WindowFlags flags = Qt::WindowFlags(),
                            Qt::InputMethodHints inputMethodHints = Qt::ImhNone);
 
     static int getInt(QWidget *parent, const QString &title, const QString &label, int value = 0,
                       int minValue = -2147483647, int maxValue = 2147483647,
-                      int step = 1, bool *ok = Q_NULLPTR, Qt::WindowFlags flags = Qt::WindowFlags());
+                      int step = 1, bool *ok = nullptr, Qt::WindowFlags flags = Qt::WindowFlags());
     static double getDouble(QWidget *parent, const QString &title, const QString &label, double value = 0,
                             double minValue = -2147483647, double maxValue = 2147483647,
-                            int decimals = 1, bool *ok = Q_NULLPTR, Qt::WindowFlags flags = Qt::WindowFlags());
+                            int decimals = 1, bool *ok = nullptr, Qt::WindowFlags flags = Qt::WindowFlags());
+    // ### Qt 6: merge overloads
+    static double getDouble(QWidget *parent, const QString &title, const QString &label, double value,
+                            double minValue, double maxValue, int decimals, bool *ok, Qt::WindowFlags flags,
+                            double step);
 
 #if QT_DEPRECATED_SINCE(5, 0)
     QT_DEPRECATED static inline int getInteger(QWidget *parent, const QString &title, const QString &label, int value = 0,
                           int minValue = -2147483647, int maxValue = 2147483647,
-                          int step = 1, bool *ok = Q_NULLPTR, Qt::WindowFlags flags = Qt::WindowFlags())
+                          int step = 1, bool *ok = nullptr, Qt::WindowFlags flags = Qt::WindowFlags())
     {
         return getInt(parent, title, label, value, minValue, maxValue, step, ok, flags);
     }
 #endif
+
+    void setDoubleStep(double step);
+    double doubleStep() const;
 
 Q_SIGNALS:
     // ### emit signals!
@@ -198,7 +206,7 @@ Q_SIGNALS:
     void doubleValueSelected(double value);
 
 public:
-    void done(int result) Q_DECL_OVERRIDE;
+    void done(int result) override;
 
 private:
     Q_DISABLE_COPY(QInputDialog)

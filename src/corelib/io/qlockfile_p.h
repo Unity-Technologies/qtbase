@@ -55,7 +55,10 @@
 #include <QtCore/qlockfile.h>
 #include <QtCore/qfile.h>
 
+#include <qplatformdefs.h>
+
 #ifdef Q_OS_WIN
+#include <io.h>
 #include <qt_windows.h>
 #endif
 
@@ -78,16 +81,14 @@ public:
     }
     QLockFile::LockError tryLock_sys();
     bool removeStaleLock();
-    bool getLockInfo(qint64 *pid, QString *hostname, QString *appname) const;
+    QByteArray lockFileContents() const;
     // Returns \c true if the lock belongs to dead PID, or is old.
     // The attempt to delete it will tell us if it was really stale or not, though.
     bool isApparentlyStale() const;
+
     // used in dbusmenu
     Q_CORE_EXPORT static QString processNameByPid(qint64 pid);
-
-#ifdef Q_OS_UNIX
-    static int checkFcntlWorksAfterFlock(const QString &fn);
-#endif
+    static bool isProcessRunning(qint64 pid, const QString &appname);
 
     QString fileName;
 #ifdef Q_OS_WIN
@@ -98,6 +99,19 @@ public:
     int staleLockTime; // "int milliseconds" is big enough for 24 days
     QLockFile::LockError lockError;
     bool isLocked;
+
+    static int getLockFileHandle(QLockFile *f)
+    {
+        int fd;
+#ifdef Q_OS_WIN
+        // Use of this function on Windows WILL leak a file descriptor.
+        fd = _open_osfhandle(intptr_t(f->d_func()->fileHandle), 0);
+#else
+        fd = f->d_func()->fileHandle;
+#endif
+        QT_LSEEK(fd, 0, SEEK_SET);
+        return fd;
+    }
 };
 
 QT_END_NAMESPACE

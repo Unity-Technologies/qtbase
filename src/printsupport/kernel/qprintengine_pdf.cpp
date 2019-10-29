@@ -58,10 +58,12 @@
 
 QT_BEGIN_NAMESPACE
 
-QPdfPrintEngine::QPdfPrintEngine(QPrinter::PrinterMode m)
+QPdfPrintEngine::QPdfPrintEngine(QPrinter::PrinterMode m, QPdfEngine::PdfVersion version)
     : QPdfEngine(*new QPdfPrintEnginePrivate(m))
 {
     state = QPrinter::Idle;
+
+    setPdfVersion(version);
 }
 
 QPdfPrintEngine::QPdfPrintEngine(QPdfPrintEnginePrivate &p)
@@ -129,6 +131,8 @@ void QPdfPrintEngine::setProperty(PrintEnginePropertyKey key, const QVariant &va
 
     // The following keys are settings that are unsupported by the PDF PrintEngine
     case PPK_CustomBase:
+        break;
+    case PPK_Duplex:
         break;
 
     // The following keys are properties and settings that are supported by the PDF PrintEngine
@@ -201,9 +205,6 @@ void QPdfPrintEngine::setProperty(PrintEnginePropertyKey key, const QVariant &va
     case PPK_FontEmbedding:
         d->embedFonts = value.toBool();
         break;
-    case PPK_Duplex:
-        d->duplex = static_cast<QPrint::DuplexMode>(value.toInt());
-        break;
     case PPK_CustomPaperSize:
         d->m_pageLayout.setPageSize(QPageSize(value.toSizeF(), QPageSize::Point));
         break;
@@ -247,6 +248,7 @@ QVariant QPdfPrintEngine::property(PrintEnginePropertyKey key) const
     // The following keys are settings that are unsupported by the PDF PrintEngine
     // Return sensible default values to ensure consistent behavior across platforms
     case PPK_CustomBase:
+    case PPK_Duplex:
         // Special case, leave null
         break;
 
@@ -320,9 +322,6 @@ QVariant QPdfPrintEngine::property(PrintEnginePropertyKey key) const
     case PPK_FontEmbedding:
         ret = d->embedFonts;
         break;
-    case PPK_Duplex:
-        ret = d->duplex;
-        break;
     case PPK_CustomPaperSize:
         ret = d->m_pageLayout.fullRectPoints().size();
         break;
@@ -372,14 +371,14 @@ void QPdfPrintEnginePrivate::closePrintDevice()
     if (outDevice) {
         outDevice->close();
         if (fd >= 0)
-    #if defined(Q_OS_WIN) && defined(_MSC_VER) && _MSC_VER >= 1400
+    #if defined(Q_OS_WIN) && defined(Q_CC_MSVC)
             ::_close(fd);
     #else
             ::close(fd);
     #endif
         fd = -1;
         delete outDevice;
-        outDevice = 0;
+        outDevice = nullptr;
     }
 }
 
@@ -387,7 +386,6 @@ void QPdfPrintEnginePrivate::closePrintDevice()
 
 QPdfPrintEnginePrivate::QPdfPrintEnginePrivate(QPrinter::PrinterMode m)
     : QPdfEnginePrivate(),
-      duplex(QPrint::DuplexNone),
       collate(true),
       copies(1),
       pageOrder(QPrinter::FirstPageFirst),

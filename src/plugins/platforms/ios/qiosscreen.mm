@@ -45,10 +45,12 @@
 #include "qiosapplicationdelegate.h"
 #include "qiosviewcontroller.h"
 #include "quiview.h"
-#include <QtCore/qoperatingsystemversion.h>
+
+#include <QtCore/private/qcore_mac_p.h>
 
 #include <QtGui/private/qwindow_p.h>
 #include <private/qcoregraphics_p.h>
+#include <qpa/qwindowsysteminterface.h>
 
 #include <sys/sysctl.h>
 
@@ -104,10 +106,10 @@ static QIOSScreen* qtPlatformScreenFor(UIScreen *uiScreen)
 
 + (void)screenConnected:(NSNotification*)notification
 {
-    QIOSIntegration *integration = QIOSIntegration::instance();
-    Q_ASSERT_X(integration, Q_FUNC_INFO, "Screen connected before QIOSIntegration creation");
+    Q_ASSERT_X(QIOSIntegration::instance(), Q_FUNC_INFO,
+        "Screen connected before QIOSIntegration creation");
 
-    integration->addScreen(new QIOSScreen([notification object]));
+    QWindowSystemInterface::handleScreenAdded(new QIOSScreen([notification object]));
 }
 
 + (void)screenDisconnected:(NSNotification*)notification
@@ -115,8 +117,7 @@ static QIOSScreen* qtPlatformScreenFor(UIScreen *uiScreen)
     QIOSScreen *screen = qtPlatformScreenFor([notification object]);
     Q_ASSERT_X(screen, Q_FUNC_INFO, "Screen disconnected that we didn't know about");
 
-    QIOSIntegration *integration = QIOSIntegration::instance();
-    integration->destroyScreen(screen);
+    QWindowSystemInterface::handleScreenRemoved(screen);
 }
 
 + (void)screenModeChanged:(NSNotification*)notification
@@ -131,16 +132,14 @@ static QIOSScreen* qtPlatformScreenFor(UIScreen *uiScreen)
 
 // -------------------------------------------------------------------------
 
-@interface QIOSOrientationListener : NSObject {
-    @public
-    QIOSScreen *m_screen;
-}
-- (id)initWithQIOSScreen:(QIOSScreen *)screen;
+@interface QIOSOrientationListener : NSObject
 @end
 
-@implementation QIOSOrientationListener
+@implementation QIOSOrientationListener {
+    QIOSScreen *m_screen;
+}
 
-- (id)initWithQIOSScreen:(QIOSScreen *)screen
+- (instancetype)initWithQIOSScreen:(QIOSScreen *)screen
 {
     self = [super init];
     if (self) {
@@ -194,7 +193,7 @@ static QIOSScreen* qtPlatformScreenFor(UIScreen *uiScreen)
 
 @implementation QUIWindow
 
-- (id)initWithFrame:(CGRect)frame
+- (instancetype)initWithFrame:(CGRect)frame
 {
     if ((self = [super initWithFrame:frame]))
         self->_sendingEvent = NO;
@@ -272,17 +271,19 @@ QIOSScreen::QIOSScreen(UIScreen *screen)
         m_physicalDpi = 96;
     }
 
-    for (UIWindow *existingWindow in [[UIApplication sharedApplication] windows]) {
-        if (existingWindow.screen == m_uiScreen) {
-            m_uiWindow = [m_uiWindow retain];
-            break;
+    if (!qt_apple_isApplicationExtension()) {
+        for (UIWindow *existingWindow in qt_apple_sharedApplication().windows) {
+            if (existingWindow.screen == m_uiScreen) {
+                m_uiWindow = [m_uiWindow retain];
+                break;
+            }
         }
-    }
 
-    if (!m_uiWindow) {
-        // Create a window and associated view-controller that we can use
-        m_uiWindow = [[QUIWindow alloc] initWithFrame:[m_uiScreen bounds]];
-        m_uiWindow.rootViewController = [[[QIOSViewController alloc] initWithQIOSScreen:this] autorelease];
+        if (!m_uiWindow) {
+            // Create a window and associated view-controller that we can use
+            m_uiWindow = [[QUIWindow alloc] initWithFrame:[m_uiScreen bounds]];
+            m_uiWindow.rootViewController = [[[QIOSViewController alloc] initWithQIOSScreen:this] autorelease];
+        }
     }
 
     updateProperties();
@@ -328,24 +329,19 @@ void QIOSScreen::updateProperties()
 
 #ifndef Q_OS_TVOS
     if (m_uiScreen == [UIScreen mainScreen]) {
-        Qt::ScreenOrientation statusBarOrientation = toQtScreenOrientation(UIDeviceOrientation([UIApplication sharedApplication].statusBarOrientation));
-
-        if (QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::IOS, 8)) {
-            // On iOS < 8.0 the UIScreen geometry is always in portait, and the system applies
-            // the screen rotation to the root view-controller's view instead of directly to the
-            // screen, like iOS 8 and above does.
-            m_geometry = mapBetween(Qt::PortraitOrientation, statusBarOrientation, m_geometry);
-            m_availableGeometry = transformBetween(Qt::PortraitOrientation, statusBarOrientation, m_geometry).mapRect(m_availableGeometry);
-        }
-
         QIOSViewController *qtViewController = [m_uiWindow.rootViewController isKindOfClass:[QIOSViewController class]] ?
             static_cast<QIOSViewController *>(m_uiWindow.rootViewController) : nil;
 
         if (qtViewController.lockedOrientation) {
+            Q_ASSERT(!qt_apple_isApplicationExtension());
+
             // Setting the statusbar orientation (content orientation) on will affect the screen geometry,
             // which is not what we want. We want to reflect the screen geometry based on the locked orientation,
             // and adjust the available geometry based on the repositioned status bar for the current status
             // bar orientation.
+
+            Qt::ScreenOrientation statusBarOrientation = toQtScreenOrientation(
+                UIDeviceOrientation(qt_apple_sharedApplication().statusBarOrientation));
 
             Qt::ScreenOrientation lockedOrientation = toQtScreenOrientation(UIDeviceOrientation(qtViewController.lockedOrientation));
             QTransform transform = transformBetween(lockedOrientation, statusBarOrientation, m_geometry).inverted();
@@ -357,20 +353,15 @@ void QIOSScreen::updateProperties()
 #endif
 
     if (m_geometry != previousGeometry) {
-        QRectF physicalGeometry;
-        if (QOperatingSystemVersion::current() >= QOperatingSystemVersion(QOperatingSystemVersion::IOS, 8)) {
-             // We can't use the primaryOrientation of screen(), as we haven't reported the new geometry yet
-            Qt::ScreenOrientation primaryOrientation = m_geometry.width() >= m_geometry.height() ?
-                Qt::LandscapeOrientation : Qt::PortraitOrientation;
+        // We can't use the primaryOrientation of screen(), as we haven't reported the new geometry yet
+        Qt::ScreenOrientation primaryOrientation = m_geometry.width() >= m_geometry.height() ?
+            Qt::LandscapeOrientation : Qt::PortraitOrientation;
 
-            // On iPhone 6+ devices, or when display zoom is enabled, the render buffer is scaled
-            // before being output on the physical display. We have to take this into account when
-            // computing the physical size. Note that unlike the native bounds, the physical size
-            // follows the primary orientation of the screen.
-            physicalGeometry = mapBetween(nativeOrientation(), primaryOrientation, QRectF::fromCGRect(m_uiScreen.nativeBounds).toRect());
-        } else {
-            physicalGeometry = QRectF(0, 0, m_geometry.width() * devicePixelRatio(), m_geometry.height() * devicePixelRatio());
-        }
+        // On iPhone 6+ devices, or when display zoom is enabled, the render buffer is scaled
+        // before being output on the physical display. We have to take this into account when
+        // computing the physical size. Note that unlike the native bounds, the physical size
+        // follows the primary orientation of the screen.
+        const QRectF physicalGeometry = mapBetween(nativeOrientation(), primaryOrientation, QRectF::fromCGRect(m_uiScreen.nativeBounds).toRect());
 
         static const qreal millimetersPerInch = 25.4;
         m_physicalSize = physicalGeometry.size() / m_physicalDpi * millimetersPerInch;
@@ -406,17 +397,21 @@ void QIOSScreen::deliverUpdateRequests() const
 
     QList<QWindow*> windows = QGuiApplication::allWindows();
     for (int i = 0; i < windows.size(); ++i) {
-        if (platformScreenForWindow(windows.at(i)) != this)
+        QWindow *window = windows.at(i);
+        if (platformScreenForWindow(window) != this)
             continue;
 
-        QWindowPrivate *wp = static_cast<QWindowPrivate *>(QObjectPrivate::get(windows.at(i)));
-        if (!wp->updateRequestPending)
+        QPlatformWindow *platformWindow = window->handle();
+        if (!platformWindow)
             continue;
 
-        wp->deliverUpdateRequest();
+        if (!platformWindow->hasPendingUpdateRequest())
+            continue;
+
+        platformWindow->deliverUpdateRequest();
 
         // Another update request was triggered, keep the display link running
-        if (wp->updateRequestPending)
+        if (platformWindow->hasPendingUpdateRequest())
             pauseUpdates = false;
     }
 
@@ -461,12 +456,7 @@ qreal QIOSScreen::devicePixelRatio() const
 
 qreal QIOSScreen::refreshRate() const
 {
-#if QT_DARWIN_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_NA, 100300, 110000, __WATCHOS_NA)
-    if (__builtin_available(iOS 10.3, tvOS 11, *))
-        return m_uiScreen.maximumFramesPerSecond;
-#endif
-
-    return 60.0;
+    return m_uiScreen.maximumFramesPerSecond;
 }
 
 Qt::ScreenOrientation QIOSScreen::nativeOrientation() const
@@ -501,8 +491,8 @@ Qt::ScreenOrientation QIOSScreen::orientation() const
     // the orientation the application was started up in (which may not match
     // the physical orientation of the device, but typically does unless the
     // application has been locked to a subset of the available orientations).
-    if (deviceOrientation == UIDeviceOrientationUnknown)
-        deviceOrientation = UIDeviceOrientation([UIApplication sharedApplication].statusBarOrientation);
+    if (deviceOrientation == UIDeviceOrientationUnknown && !qt_apple_isApplicationExtension())
+        deviceOrientation = UIDeviceOrientation(qt_apple_sharedApplication().statusBarOrientation);
 
     // If the device reports face up or face down orientations, we can't map
     // them to Qt orientations, so we pretend we're in the same orientation

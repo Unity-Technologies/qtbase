@@ -37,7 +37,7 @@
 **
 ****************************************************************************/
 
-#include "qwineventnotifier.h"
+#include "qwineventnotifier_p.h"
 
 #ifdef Q_OS_WINRT
 #include "qeventdispatcher_winrt_p.h"
@@ -49,19 +49,6 @@
 #include <private/qthread_p.h>
 
 QT_BEGIN_NAMESPACE
-
-class QWinEventNotifierPrivate : public QObjectPrivate
-{
-    Q_DECLARE_PUBLIC(QWinEventNotifier)
-public:
-    QWinEventNotifierPrivate()
-    : handleToEvent(0), enabled(false) {}
-    QWinEventNotifierPrivate(HANDLE h, bool e)
-    : handleToEvent(h), enabled(e) {}
-
-    HANDLE handleToEvent;
-    bool enabled;
-};
 
 /*!
     \class QWinEventNotifier
@@ -211,17 +198,22 @@ void QWinEventNotifier::setEnabled(bool enable)
     d->enabled = enable;
 
     QAbstractEventDispatcher *eventDispatcher = d->threadData->eventDispatcher.load();
-    if (!eventDispatcher) // perhaps application is shutting down
+    if (!eventDispatcher) { // perhaps application is shutting down
+        if (!enable && d->waitHandle != nullptr)
+            d->unregisterWaitObject();
         return;
+    }
     if (Q_UNLIKELY(thread() != QThread::currentThread())) {
         qWarning("QWinEventNotifier: Event notifiers cannot be enabled or disabled from another thread");
         return;
     }
 
-    if (enable)
+    if (enable) {
+        d->signaledCount = 0;
         eventDispatcher->registerEventNotifier(this);
-    else
+    } else {
         eventDispatcher->unregisterEventNotifier(this);
+    }
 }
 
 /*!
@@ -245,5 +237,59 @@ bool QWinEventNotifier::event(QEvent * e)
     }
     return false;
 }
+
+#if defined(Q_OS_WINRT)
+
+bool QWinEventNotifierPrivate::registerWaitObject()
+{
+    Q_UNIMPLEMENTED();
+    return false;
+}
+
+void QWinEventNotifierPrivate::unregisterWaitObject()
+{
+    Q_UNIMPLEMENTED();
+}
+
+#else // defined(Q_OS_WINRT)
+
+static void CALLBACK wfsoCallback(void *context, BOOLEAN /*ignore*/)
+{
+    QWinEventNotifierPrivate *nd = reinterpret_cast<QWinEventNotifierPrivate *>(context);
+    QAbstractEventDispatcher *eventDispatcher = nd->threadData->eventDispatcher.load();
+
+    // Happens when Q(Core)Application is destroyed before QWinEventNotifier.
+    // https://bugreports.qt.io/browse/QTBUG-70214
+    if (!eventDispatcher) { // perhaps application is shutting down
+        qWarning("QWinEventNotifier: no event dispatcher, application shutting down? Cannot deliver event.");
+        return;
+    }
+
+    QEventDispatcherWin32Private *edp = QEventDispatcherWin32Private::get(
+                static_cast<QEventDispatcherWin32 *>(eventDispatcher));
+    ++nd->signaledCount;
+    SetEvent(edp->winEventNotifierActivatedEvent);
+}
+
+bool QWinEventNotifierPrivate::registerWaitObject()
+{
+    if (RegisterWaitForSingleObject(&waitHandle, handleToEvent, wfsoCallback, this,
+                                    INFINITE, WT_EXECUTEONLYONCE) == 0) {
+        qErrnoWarning("QWinEventNotifier: RegisterWaitForSingleObject failed.");
+        return false;
+    }
+    return true;
+}
+
+void QWinEventNotifierPrivate::unregisterWaitObject()
+{
+    // Unregister the wait handle and wait for pending callbacks to finish.
+    if (UnregisterWaitEx(waitHandle, INVALID_HANDLE_VALUE))
+        waitHandle = NULL;
+    else
+        qErrnoWarning("QWinEventNotifier: UnregisterWaitEx failed.");
+}
+
+#endif // !defined(Q_OS_WINRT)
 
 QT_END_NAMESPACE

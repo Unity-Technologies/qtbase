@@ -1,6 +1,6 @@
 TARGET = qeglfs-kms-egldevice-integration
 
-QT += core-private gui-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private
+QT += core-private gui-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private edid_support-private
 
 INCLUDEPATH += $$PWD/../../api $$PWD/../eglfs_kms_support
 
@@ -9,7 +9,6 @@ DEFINES += QT_EGL_NO_X11
 
 QMAKE_USE += drm
 CONFIG += egl
-QMAKE_LFLAGS += $$QMAKE_LFLAGS_NOUNDEF
 
 SOURCES += $$PWD/qeglfskmsegldevicemain.cpp \
            $$PWD/qeglfskmsegldeviceintegration.cpp \

@@ -76,6 +76,8 @@
 #   include <QtNetwork/qtcpsocket.h>
 #endif
 
+#include <QtCore/qscopedpointer.h>
+
 QT_REQUIRE_CONFIG(http);
 
 QT_BEGIN_NAMESPACE
@@ -125,10 +127,11 @@ public:
     // HTTP/2 can be cleartext also, that's why it's
     // outside of QT_NO_SSL section. Sorted by priority:
     QMultiMap<int, HttpMessagePair> spdyRequestsToSend;
+    bool switchedToHttp2 = false;
 #ifndef QT_NO_SSL
     bool ignoreAllSslErrors;
     QList<QSslError> ignoreSslErrorsList;
-    QSslConfiguration sslConfiguration;
+    QScopedPointer<QSslConfiguration> sslConfiguration;
     void ignoreSslErrors();
     void ignoreSslErrors(const QList<QSslError> &errors);
     void setSslConfiguration(const QSslConfiguration &config);
@@ -171,6 +174,7 @@ public:
     void abort();
 
     bool sendRequest();
+    void sendRequestDelayed();
 
     bool ensureConnection();
 

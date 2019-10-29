@@ -60,7 +60,8 @@ public:
     enum ImageWriterError {
         UnknownError,
         DeviceError,
-        UnsupportedFormatError
+        UnsupportedFormatError,
+        InvalidImageError
     };
 
     QImageWriter();
@@ -115,6 +116,7 @@ public:
 
     static QList<QByteArray> supportedImageFormats();
     static QList<QByteArray> supportedMimeTypes();
+    static QList<QByteArray> imageFormatsForMimeType(const QByteArray &mimeType);
 
 private:
     Q_DISABLE_COPY(QImageWriter)

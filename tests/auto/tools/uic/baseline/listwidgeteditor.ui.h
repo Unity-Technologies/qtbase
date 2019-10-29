@@ -40,15 +40,12 @@
 #define LISTWIDGETEDITOR_H
 
 #include <QtCore/QVariant>
-#include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QHBoxLayout>
-#include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QListWidget>
 #include <QtWidgets/QSpacerItem>
@@ -82,7 +79,7 @@ public:
     void setupUi(QDialog *qdesigner_internal__ListWidgetEditor)
     {
         if (qdesigner_internal__ListWidgetEditor->objectName().isEmpty())
-            qdesigner_internal__ListWidgetEditor->setObjectName(QStringLiteral("qdesigner_internal__ListWidgetEditor"));
+            qdesigner_internal__ListWidgetEditor->setObjectName(QString::fromUtf8("qdesigner_internal__ListWidgetEditor"));
         qdesigner_internal__ListWidgetEditor->resize(223, 245);
         vboxLayout = new QVBoxLayout(qdesigner_internal__ListWidgetEditor);
 #ifndef Q_OS_MAC
@@ -91,25 +88,25 @@ public:
 #ifndef Q_OS_MAC
         vboxLayout->setContentsMargins(9, 9, 9, 9);
 #endif
-        vboxLayout->setObjectName(QStringLiteral("vboxLayout"));
+        vboxLayout->setObjectName(QString::fromUtf8("vboxLayout"));
         groupBox = new QGroupBox(qdesigner_internal__ListWidgetEditor);
-        groupBox->setObjectName(QStringLiteral("groupBox"));
+        groupBox->setObjectName(QString::fromUtf8("groupBox"));
         gridLayout = new QGridLayout(groupBox);
-        gridLayout->setObjectName(QStringLiteral("gridLayout"));
+        gridLayout->setObjectName(QString::fromUtf8("gridLayout"));
         listWidget = new QListWidget(groupBox);
-        listWidget->setObjectName(QStringLiteral("listWidget"));
+        listWidget->setObjectName(QString::fromUtf8("listWidget"));
 
         gridLayout->addWidget(listWidget, 0, 0, 1, 1);
 
         horizontalLayout_2 = new QHBoxLayout();
-        horizontalLayout_2->setObjectName(QStringLiteral("horizontalLayout_2"));
+        horizontalLayout_2->setObjectName(QString::fromUtf8("horizontalLayout_2"));
         newItemButton = new QToolButton(groupBox);
-        newItemButton->setObjectName(QStringLiteral("newItemButton"));
+        newItemButton->setObjectName(QString::fromUtf8("newItemButton"));
 
         horizontalLayout_2->addWidget(newItemButton);
 
         deleteItemButton = new QToolButton(groupBox);
-        deleteItemButton->setObjectName(QStringLiteral("deleteItemButton"));
+        deleteItemButton->setObjectName(QString::fromUtf8("deleteItemButton"));
 
         horizontalLayout_2->addWidget(deleteItemButton);
 
@@ -118,12 +115,12 @@ public:
         horizontalLayout_2->addItem(spacerItem);
 
         moveItemUpButton = new QToolButton(groupBox);
-        moveItemUpButton->setObjectName(QStringLiteral("moveItemUpButton"));
+        moveItemUpButton->setObjectName(QString::fromUtf8("moveItemUpButton"));
 
         horizontalLayout_2->addWidget(moveItemUpButton);
 
         moveItemDownButton = new QToolButton(groupBox);
-        moveItemDownButton->setObjectName(QStringLiteral("moveItemDownButton"));
+        moveItemDownButton->setObjectName(QString::fromUtf8("moveItemDownButton"));
 
         horizontalLayout_2->addWidget(moveItemDownButton);
 
@@ -131,14 +128,14 @@ public:
         gridLayout->addLayout(horizontalLayout_2, 1, 0, 1, 1);
 
         horizontalLayout = new QHBoxLayout();
-        horizontalLayout->setObjectName(QStringLiteral("horizontalLayout"));
+        horizontalLayout->setObjectName(QString::fromUtf8("horizontalLayout"));
         label = new QLabel(groupBox);
-        label->setObjectName(QStringLiteral("label"));
+        label->setObjectName(QString::fromUtf8("label"));
 
         horizontalLayout->addWidget(label);
 
         itemIconSelector = new qdesigner_internal::IconSelector(groupBox);
-        itemIconSelector->setObjectName(QStringLiteral("itemIconSelector"));
+        itemIconSelector->setObjectName(QString::fromUtf8("itemIconSelector"));
 
         horizontalLayout->addWidget(itemIconSelector);
 
@@ -153,7 +150,7 @@ public:
         vboxLayout->addWidget(groupBox);
 
         buttonBox = new QDialogButtonBox(qdesigner_internal__ListWidgetEditor);
-        buttonBox->setObjectName(QStringLiteral("buttonBox"));
+        buttonBox->setObjectName(QString::fromUtf8("buttonBox"));
         buttonBox->setOrientation(Qt::Horizontal);
         buttonBox->setStandardButtons(QDialogButtonBox::Cancel|QDialogButtonBox::Ok);
 
@@ -175,28 +172,28 @@ public:
 
     void retranslateUi(QDialog *qdesigner_internal__ListWidgetEditor)
     {
-        qdesigner_internal__ListWidgetEditor->setWindowTitle(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Dialog", Q_NULLPTR));
-        groupBox->setTitle(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Items List", Q_NULLPTR));
+        qdesigner_internal__ListWidgetEditor->setWindowTitle(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Dialog", nullptr));
+        groupBox->setTitle(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Items List", nullptr));
 #ifndef QT_NO_TOOLTIP
-        listWidget->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Items List", Q_NULLPTR));
+        listWidget->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Items List", nullptr));
 #endif // QT_NO_TOOLTIP
 #ifndef QT_NO_TOOLTIP
-        newItemButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "New Item", Q_NULLPTR));
+        newItemButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "New Item", nullptr));
 #endif // QT_NO_TOOLTIP
-        newItemButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "&New", Q_NULLPTR));
+        newItemButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "&New", nullptr));
 #ifndef QT_NO_TOOLTIP
-        deleteItemButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Delete Item", Q_NULLPTR));
+        deleteItemButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Delete Item", nullptr));
 #endif // QT_NO_TOOLTIP
-        deleteItemButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "&Delete", Q_NULLPTR));
+        deleteItemButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "&Delete", nullptr));
 #ifndef QT_NO_TOOLTIP
-        moveItemUpButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Move Item Up", Q_NULLPTR));
+        moveItemUpButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Move Item Up", nullptr));
 #endif // QT_NO_TOOLTIP
-        moveItemUpButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "U", Q_NULLPTR));
+        moveItemUpButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "U", nullptr));
 #ifndef QT_NO_TOOLTIP
-        moveItemDownButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Move Item Down", Q_NULLPTR));
+        moveItemDownButton->setToolTip(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Move Item Down", nullptr));
 #endif // QT_NO_TOOLTIP
-        moveItemDownButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "D", Q_NULLPTR));
-        label->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Icon", Q_NULLPTR));
+        moveItemDownButton->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "D", nullptr));
+        label->setText(QApplication::translate("qdesigner_internal::ListWidgetEditor", "Icon", nullptr));
     } // retranslateUi
 
 };

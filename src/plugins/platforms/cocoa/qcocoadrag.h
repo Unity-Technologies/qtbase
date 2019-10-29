@@ -46,6 +46,7 @@
 #include <private/qsimpledrag_p.h>
 
 #include <QtGui/private/qdnd_p.h>
+#include <QtGui/private/qinternalmimedata_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -55,11 +56,11 @@ public:
     QCocoaDrag();
     ~QCocoaDrag();
 
-    QMimeData *platformDropData() Q_DECL_OVERRIDE;
-    Qt::DropAction drag(QDrag *m_drag) Q_DECL_OVERRIDE;
+    QMimeData *dragMimeData();
+    Qt::DropAction drag(QDrag *m_drag) override;
 
     Qt::DropAction defaultAction(Qt::DropActions possibleActions,
-                                 Qt::KeyboardModifiers modifiers) const Q_DECL_OVERRIDE;
+                                 Qt::KeyboardModifiers modifiers) const override;
 
     /**
     * to meet NSView dragImage:at guarantees, we need to record the original

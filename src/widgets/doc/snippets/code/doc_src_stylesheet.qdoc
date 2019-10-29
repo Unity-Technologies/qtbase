@@ -954,6 +954,7 @@ QLineEdit[echoMode="2"] {
 //! [119]
 QLineEdit:read-only {
     background: lightblue;
+}
 //! [119]
 
 
@@ -1888,4 +1889,8 @@ QTableView::indicator:unchecked {
     background-color: #d7d6d5
 }
 //! [161]
+
+//! [162]
+* { widget-animation-duration: 100 }
+//! [162]
 

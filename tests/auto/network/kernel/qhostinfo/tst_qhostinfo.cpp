@@ -64,14 +64,10 @@
 #include <qhostinfo.h>
 #include "private/qhostinfo_p.h"
 
-#if !defined(QT_NO_GETADDRINFO)
-#  include <sys/types.h>
-# if defined(Q_OS_UNIX)
+#include <sys/types.h>
+#if defined(Q_OS_UNIX)
 #  include <sys/socket.h>
-# endif
-# if !defined(Q_OS_WIN)
 #  include <netdb.h>
-# endif
 #endif
 
 #include "../../../network-settings.h"
@@ -86,6 +82,8 @@ class tst_QHostInfo : public QObject
 private slots:
     void init();
     void initTestCase();
+    void swapFunction();
+    void moveOperator();
     void getSetCheck();
     void staticInformation();
     void lookupIPv4_data();
@@ -94,6 +92,7 @@ private slots:
     void lookupIPv6();
     void lookupConnectToFunctionPointer_data();
     void lookupConnectToFunctionPointer();
+    void lookupConnectToFunctionPointerDeleted();
     void lookupConnectToLambda_data();
     void lookupConnectToLambda();
     void reverseLookup_data();
@@ -128,6 +127,29 @@ private:
     QScopedPointer<QNetworkSession> networkSession;
 #endif
 };
+
+void tst_QHostInfo::swapFunction()
+{
+    QHostInfo obj1, obj2;
+    obj1.setError(QHostInfo::HostInfoError(0));
+    obj2.setError(QHostInfo::HostInfoError(1));
+    obj1.swap(obj2);
+    QCOMPARE(QHostInfo::HostInfoError(0), obj2.error());
+    QCOMPARE(QHostInfo::HostInfoError(1), obj1.error());
+}
+
+void tst_QHostInfo::moveOperator()
+{
+    QHostInfo obj1, obj2, obj3(1);
+    obj1.setError(QHostInfo::HostInfoError(0));
+    obj2.setError(QHostInfo::HostInfoError(1));
+    obj1 = std::move(obj2);
+    obj2 = obj3;
+    QCOMPARE(QHostInfo::HostInfoError(1), obj1.error());
+    QCOMPARE(obj3.lookupId(), obj2.lookupId());
+}
+
+
 
 // Testing get/set functions
 void tst_QHostInfo::getSetCheck()
@@ -166,7 +188,7 @@ void tst_QHostInfo::initTestCase()
     networkSession.reset(new QNetworkSession(networkConfiguration));
     if (!networkSession->isOpen()) {
         networkSession->open();
-        QVERIFY(networkSession->waitForOpened(30000));
+        networkSession->waitForOpened(30000);
     }
 #endif
 
@@ -179,15 +201,13 @@ void tst_QHostInfo::initTestCase()
         ipv6Available = true;
     }
 
-// HP-UX 11i does not support IPv6 reverse lookups.
-#if !defined(QT_NO_GETADDRINFO) && !(defined(Q_OS_HPUX) && defined(__ia64))
     // check if the system getaddrinfo can do IPv6 lookups
     struct addrinfo hint, *result = 0;
     memset(&hint, 0, sizeof hint);
     hint.ai_family = AF_UNSPEC;
-# ifdef AI_ADDRCONFIG
+#ifdef AI_ADDRCONFIG
     hint.ai_flags = AI_ADDRCONFIG;
-# endif
+#endif
 
     int res = getaddrinfo("::1", "80", &hint, &result);
     if (res == 0) {
@@ -199,7 +219,6 @@ void tst_QHostInfo::initTestCase()
             ipv6LookupsAvailable = true;
         }
     }
-#endif
 
     // run each testcase with and without test enabled
     QTest::addColumn<bool>("cache");
@@ -343,6 +362,17 @@ void tst_QHostInfo::lookupConnectToFunctionPointer()
     QCOMPARE(tmp.join(' '), expected.join(' '));
 }
 
+void tst_QHostInfo::lookupConnectToFunctionPointerDeleted()
+{
+    {
+        QObject contextObject;
+        QHostInfo::lookupHost("localhost", &contextObject, [](const QHostInfo){
+            QFAIL("This should never be called!");
+        });
+    }
+    QTestEventLoop::instance().enterLoop(3);
+}
+
 void tst_QHostInfo::lookupConnectToLambda_data()
 {
     lookupIPv4_data();
@@ -378,6 +408,68 @@ void tst_QHostInfo::lookupConnectToLambda()
     QCOMPARE(tmp.join(' '), expected.join(' '));
 }
 
+static QStringList reverseLookupHelper(const QString &ip)
+{
+    QStringList results;
+
+    const QString pythonCode =
+        "import socket;"
+        "import sys;"
+        "print (socket.getnameinfo((sys.argv[1], 0), 0)[0]);";
+
+    QList<QByteArray> lines;
+    QProcess python;
+    python.setProcessChannelMode(QProcess::ForwardedErrorChannel);
+    python.start("python", QStringList() << QString("-c") << pythonCode << ip);
+    if (python.waitForFinished()) {
+        if (python.exitStatus() == QProcess::NormalExit && python.exitCode() == 0)
+            lines = python.readAllStandardOutput().split('\n');
+        for (QByteArray line : lines) {
+            if (!line.isEmpty())
+                results << line.trimmed();
+        }
+        if (!results.isEmpty())
+            return results;
+    }
+
+    qDebug() << "Python failed, falling back to nslookup";
+    QProcess lookup;
+    lookup.setProcessChannelMode(QProcess::ForwardedErrorChannel);
+    lookup.start("nslookup", QStringList(ip));
+    if (!lookup.waitForFinished()) {
+        results << "nslookup failure";
+        qDebug() << "nslookup failure";
+        return results;
+    }
+    lines = lookup.readAllStandardOutput().split('\n');
+
+    QByteArray name;
+
+    const QByteArray nameMarkerNix("name =");
+    const QByteArray nameMarkerWin("Name:");
+    const QByteArray addressMarkerWin("Address:");
+
+    for (QByteArray line : lines) {
+        int index = -1;
+        if ((index = line.indexOf(nameMarkerNix)) != -1) { // Linux and macOS
+            name = line.mid(index + nameMarkerNix.length()).chopped(1).trimmed();
+            results << name;
+        } else if (line.startsWith(nameMarkerWin)) { // Windows formatting
+            name = line.mid(line.lastIndexOf(" ")).trimmed();
+        } else if (line.startsWith(addressMarkerWin)) {
+            QByteArray address = line.mid(addressMarkerWin.length()).trimmed();
+            if (address == ip) {
+                results << name;
+            }
+        }
+    }
+
+    if (results.isEmpty()) {
+        qDebug() << "Failure to parse nslookup output: " << lines;
+    }
+    return results;
+}
+
 void tst_QHostInfo::reverseLookup_data()
 {
     QTest::addColumn<QString>("address");
@@ -385,8 +477,8 @@ void tst_QHostInfo::reverseLookup_data()
     QTest::addColumn<int>("err");
     QTest::addColumn<bool>("ipv6");
 
-    QTest::newRow("google-public-dns-a.google.com") << QString("8.8.8.8") << QStringList(QString("google-public-dns-a.google.com")) << 0 << false;
-    QTest::newRow("gitorious.org") << QString("87.238.52.168") << QStringList(QString("gitorious.org")) << 0 << false;
+    QTest::newRow("dns.google") << QString("8.8.8.8") << reverseLookupHelper("8.8.8.8") << 0 << false;
+    QTest::newRow("one.one.one.one") << QString("1.1.1.1") << reverseLookupHelper("1.1.1.1") << 0 << false;
     QTest::newRow("bogus-name") << QString("1::2::3::4") << QStringList() << 1 << true;
 }
 
@@ -404,6 +496,8 @@ void tst_QHostInfo::reverseLookup()
     QHostInfo info = QHostInfo::fromName(address);
 
     if (err == 0) {
+        if (!hostNames.contains(info.hostName()))
+            qDebug() << "Failure: expecting" << hostNames << ",got " << info.hostName();
         QVERIFY(hostNames.contains(info.hostName()));
         QCOMPARE(info.addresses().first(), QHostAddress(address));
     } else {
@@ -626,6 +720,7 @@ void tst_QHostInfo::cache()
 
 void tst_QHostInfo::resultsReady(const QHostInfo &hi)
 {
+    QVERIFY(QThread::currentThread() == thread());
     lookupDone = true;
     lookupResults = hi;
     lookupsDoneCounter++;

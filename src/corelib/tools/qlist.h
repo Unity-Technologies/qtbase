@@ -231,7 +231,7 @@ public:
         typedef T *pointer;
         typedef T &reference;
 
-        inline iterator() Q_DECL_NOTHROW : i(Q_NULLPTR) {}
+        inline iterator() Q_DECL_NOTHROW : i(nullptr) {}
         inline iterator(Node *n) Q_DECL_NOTHROW : i(n) {}
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
         // can't remove it in Qt 5, since doing so would make the type trivial,
@@ -269,6 +269,7 @@ public:
         inline iterator &operator-=(difference_type j) { i-=j; return *this; }
         inline iterator operator+(difference_type j) const { return iterator(i+j); }
         inline iterator operator-(difference_type j) const { return iterator(i-j); }
+        friend inline iterator operator+(difference_type j, iterator k) { return k + j; }
         inline int operator-(iterator j) const { return int(i - j.i); }
     };
     friend class iterator;
@@ -283,7 +284,7 @@ public:
         typedef const T *pointer;
         typedef const T &reference;
 
-        inline const_iterator() Q_DECL_NOTHROW : i(Q_NULLPTR) {}
+        inline const_iterator() Q_DECL_NOTHROW : i(nullptr) {}
         inline const_iterator(Node *n) Q_DECL_NOTHROW : i(n) {}
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
         // can't remove it in Qt 5, since doing so would make the type trivial,
@@ -312,6 +313,7 @@ public:
         inline const_iterator &operator-=(difference_type j) { i-=j; return *this; }
         inline const_iterator operator+(difference_type j) const { return const_iterator(i+j); }
         inline const_iterator operator-(difference_type j) const { return const_iterator(i-j); }
+        friend inline const_iterator operator+(difference_type j, const_iterator k) { return k + j; }
         inline int operator-(const_iterator j) const { return int(i - j.i); }
     };
     friend class const_iterator;
@@ -411,7 +413,8 @@ private:
 
     bool isValidIterator(const iterator &i) const Q_DECL_NOTHROW
     {
-        return (constBegin().i <= i.i) && (i.i <= constEnd().i);
+        const std::less<const Node *> less = {};
+        return !less(i.i, cbegin().i) && !less(cend().i, i.i);
     }
 
 private:
@@ -555,14 +558,14 @@ inline void QList<T>::removeAt(int i)
 template <typename T>
 inline T QList<T>::takeAt(int i)
 { Q_ASSERT_X(i >= 0 && i < p.size(), "QList<T>::take", "index out of range");
- detach(); Node *n = reinterpret_cast<Node *>(p.at(i)); T t = n->t(); node_destruct(n);
+ detach(); Node *n = reinterpret_cast<Node *>(p.at(i)); T t = std::move(n->t()); node_destruct(n);
  p.remove(i); return t; }
 template <typename T>
 inline T QList<T>::takeFirst()
-{ T t = first(); removeFirst(); return t; }
+{ T t = std::move(first()); removeFirst(); return t; }
 template <typename T>
 inline T QList<T>::takeLast()
-{ T t = last(); removeLast(); return t; }
+{ T t = std::move(last()); removeLast(); return t; }
 
 template <typename T>
 Q_OUTOFLINE_TEMPLATE void QList<T>::reserve(int alloc)

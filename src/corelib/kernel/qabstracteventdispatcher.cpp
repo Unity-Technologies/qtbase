@@ -162,7 +162,7 @@ QAbstractEventDispatcher::~QAbstractEventDispatcher()
     Returns a pointer to the event dispatcher object for the specified
     \a thread. If \a thread is zero, the current thread is used. If no
     event dispatcher exists for the specified thread, this function
-    returns 0.
+    returns \nullptr.
 
     \b{Note:} If Qt is built without thread support, the \a thread
     argument is ignored.
@@ -205,6 +205,15 @@ QAbstractEventDispatcher *QAbstractEventDispatcher::instance(QThread *thread)
     returns after all available events are processed.
 
     \sa hasPendingEvents()
+*/
+
+/*!
+    \internal
+
+    \note processEvents() only processes events queued before the function
+    is called. Events that are posted while the function runs will be queued
+    until a later round of event processing. This only applies to posted Qt
+    events. For timers and system level events, the situation is unknown.
 */
 
 /*! \fn bool QAbstractEventDispatcher::hasPendingEvents()
@@ -309,6 +318,15 @@ int QAbstractEventDispatcher::registerTimer(int interval, Qt::TimerType timerTyp
 
     Wakes up the event loop.
 
+    \omit
+    ### FIXME - QTBUG-70229
+    On Unix and Glib event dispatchers, if the dispatcher is already awake when
+    this function is called, it is ensured that the current iteration won't block
+    waiting for more events, but will instead do another event loop iteration.
+
+    ### TODO - does other event dispatchers behave the same?
+    \endomit
+
     \sa awake()
 */
 
@@ -375,8 +393,7 @@ void QAbstractEventDispatcher::closingDown()
 */
 
 /*!
-    Installs an event filter \a filterObj for all native event filters
-    received by the application.
+    Installs an event filter \a filterObj for all native events received by the application.
 
     The event filter \a filterObj receives events via its \l {QAbstractNativeEventFilter::}{nativeEventFilter()}
     function, which is called for all events received by all threads.
@@ -480,12 +497,12 @@ bool QAbstractEventDispatcher::filterNativeEvent(const QByteArray &eventType, vo
     the processing of the event should continue.
 */
 
-/*! \fn bool QAbstractEventDispatcher::registerEventNotifier(QWinEventNotifier *notifier);
+/*! \fn bool QAbstractEventDispatcher::registerEventNotifier(QWinEventNotifier *notifier)
 
   This pure virtual method exists on windows only and has to be reimplemented by a Windows specific
   event dispatcher implementation. \a notifier is the QWinEventNotifier instance to be registered.
 
-  The method should return true if the registration of \a notifier was sucessful, otherwise false.
+  The method should return true if the registration of \a notifier was successful, otherwise false.
 
   QWinEventNotifier calls this method in it's constructor and there should never be a need to call this
   method directly.
@@ -493,7 +510,7 @@ bool QAbstractEventDispatcher::filterNativeEvent(const QByteArray &eventType, vo
   \sa QWinEventNotifier, unregisterEventNotifier()
 */
 
-/*! \fn bool QAbstractEventDispatcher::unregisterEventNotifier(QWinEventNotifier *notifier);
+/*! \fn bool QAbstractEventDispatcher::unregisterEventNotifier(QWinEventNotifier *notifier)
 
   This pure virtual method exists on windows only and has to be reimplemented by a Windows specific
   event dispatcher implementation. \a notifier is the QWinEventNotifier instance to be unregistered.

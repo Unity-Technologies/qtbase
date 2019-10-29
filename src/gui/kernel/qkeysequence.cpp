@@ -42,7 +42,7 @@
 #include <qpa/qplatformtheme.h>
 #include "private/qguiapplication_p.h"
 
-#ifndef QT_NO_SHORTCUT
+#if !defined(QT_NO_SHORTCUT) || defined(Q_CLANG_QDOC)
 
 #include "qdebug.h"
 #include <QtCore/qhashfunctions.h>
@@ -56,19 +56,25 @@
 
 #if defined(Q_OS_MACX)
 #include <QtCore/private/qcore_mac_p.h>
-#include <Carbon/Carbon.h>
 #endif
 
 #include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
-#if defined(Q_OS_MACX)
+#if defined(Q_OS_MACOS) || defined(Q_CLANG_QDOC)
 static bool qt_sequence_no_mnemonics = true;
 struct MacSpecialKey {
     int key;
     ushort macSymbol;
 };
+
+// Unicode code points for the glyphs associated with these keys
+// Defined by Carbon headers but not anywhere in Cocoa
+static const int kShiftUnicode = 0x21E7;
+static const int kControlUnicode = 0x2303;
+static const int kOptionUnicode = 0x2325;
+static const int kCommandUnicode = 0x2318;
 
 static const int NumEntries = 21;
 static const MacSpecialKey entries[NumEntries] = {
@@ -244,7 +250,7 @@ void Q_GUI_EXPORT qt_set_sequence_auto_mnemonic(bool b) { qt_sequence_no_mnemoni
     corresponds to the \uicontrol Control keys.
 
     \table
-    \header \li StandardKey      \li Windows                              \li \macos                 \li KDE          \li GNOME
+    \header \li StandardKey      \li Windows                              \li \macos                   \li KDE Plasma   \li GNOME
     \row    \li HelpContents     \li F1                                   \li Ctrl+?                   \li F1           \li F1
     \row    \li WhatsThis        \li Shift+F1                             \li Shift+F1                 \li Shift+F1     \li Shift+F1
     \row    \li Open             \li Ctrl+O                               \li Ctrl+O                   \li Ctrl+O       \li Ctrl+O
@@ -1002,7 +1008,6 @@ int QKeySequence::assign(const QString &ks)
 int QKeySequence::assign(const QString &ks, QKeySequence::SequenceFormat format)
 {
     QString keyseq = ks;
-    QString part;
     int n = 0;
     int p = 0, diff = 0;
 
@@ -1027,9 +1032,9 @@ int QKeySequence::assign(const QString &ks, QKeySequence::SequenceFormat format)
                 }
             }
         }
-        part = keyseq.left(-1 == p ? keyseq.length() : p - diff);
+        QString part = keyseq.left(-1 == p ? keyseq.length() : p - diff);
         keyseq = keyseq.right(-1 == p ? 0 : keyseq.length() - (p + 1));
-        d->key[n] = QKeySequencePrivate::decodeString(part, format);
+        d->key[n] = QKeySequencePrivate::decodeString(std::move(part), format);
         ++n;
     }
     return n;
@@ -1055,10 +1060,12 @@ int QKeySequence::decodeString(const QString &str)
     return QKeySequencePrivate::decodeString(str, NativeText);
 }
 
-int QKeySequencePrivate::decodeString(const QString &str, QKeySequence::SequenceFormat format)
+int QKeySequencePrivate::decodeString(QString accel, QKeySequence::SequenceFormat format)
 {
+    Q_ASSERT(!accel.isEmpty());
+
     int ret = 0;
-    QString accel = str.toLower();
+    accel = std::move(accel).toLower();
     bool nativeText = (format == QKeySequence::NativeText);
 
     QVector<QModifKeyName> *gmodifs;
@@ -1094,7 +1101,6 @@ int QKeySequencePrivate::decodeString(const QString &str, QKeySequence::Sequence
                      << QModifKeyName(Qt::KeypadModifier, QLatin1String("num+"));
         }
     }
-    if (!gmodifs) return ret;
 
 
     QVector<QModifKeyName> modifs;
@@ -1117,7 +1123,10 @@ int QKeySequencePrivate::decodeString(const QString &str, QKeySequence::Sequence
             sl = accel;
         }
     }
+    if (accel.isEmpty()) // Incomplete, like for "Meta+Shift+"
+        return Qt::Key_unknown;
 #endif
+
     int i = 0;
     int lastI = 0;
     while ((i = sl.indexOf(QLatin1Char('+'), i + 1)) != -1) {

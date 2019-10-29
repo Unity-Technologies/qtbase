@@ -39,13 +39,14 @@ class Generator
     ClassDef *cdef;
     QVector<uint> meta_data;
 public:
-    Generator(ClassDef *classDef, const QList<QByteArray> &metaTypes, const QHash<QByteArray, QByteArray> &knownQObjectClasses, const QHash<QByteArray, QByteArray> &knownGadgets, FILE *outfile = 0);
+    Generator(ClassDef *classDef, const QVector<QByteArray> &metaTypes, const QHash<QByteArray, QByteArray> &knownQObjectClasses, const QHash<QByteArray, QByteArray> &knownGadgets, FILE *outfile = 0);
     void generateCode();
 private:
     bool registerableMetaType(const QByteArray &propertyType);
     void registerClassInfoStrings();
     void generateClassInfos();
     void registerFunctionStrings(const QVector<FunctionDef> &list);
+    void registerByteArrayVector(const QVector<QByteArray> &list);
     void generateFunctions(const QVector<FunctionDef> &list, const char *functype, int type, int &paramsIndex);
     void generateFunctionRevisions(const QVector<FunctionDef> &list, const char *functype);
     void generateFunctionParameters(const QVector<FunctionDef> &list, const char *functype);
@@ -63,9 +64,9 @@ private:
 
     void strreg(const QByteArray &); // registers a string
     int stridx(const QByteArray &); // returns a string's id
-    QList<QByteArray> strings;
+    QVector<QByteArray> strings;
     QByteArray purestSuperClass;
-    QList<QByteArray> metaTypes;
+    QVector<QByteArray> metaTypes;
     QHash<QByteArray, QByteArray> knownQObjectClasses;
     QHash<QByteArray, QByteArray> knownGadgets;
 };

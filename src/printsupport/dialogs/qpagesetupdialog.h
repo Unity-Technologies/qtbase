@@ -57,19 +57,19 @@ class Q_PRINTSUPPORT_EXPORT QPageSetupDialog : public QDialog
     Q_DECLARE_PRIVATE(QPageSetupDialog)
 
 public:
-    explicit QPageSetupDialog(QPrinter *printer, QWidget *parent = Q_NULLPTR);
-    explicit QPageSetupDialog(QWidget *parent = Q_NULLPTR);
+    explicit QPageSetupDialog(QPrinter *printer, QWidget *parent = nullptr);
+    explicit QPageSetupDialog(QWidget *parent = nullptr);
     ~QPageSetupDialog();
 
 #if defined(Q_OS_MAC) || defined(Q_OS_WIN)
-    void setVisible(bool visible) Q_DECL_OVERRIDE;
+    void setVisible(bool visible) override;
 #endif
-    int exec() Q_DECL_OVERRIDE;
+    int exec() override;
 
     using QDialog::open;
     void open(QObject *receiver, const char *member);
 
-    void done(int result) Q_DECL_OVERRIDE;
+    void done(int result) override;
 
     QPrinter *printer();
 };

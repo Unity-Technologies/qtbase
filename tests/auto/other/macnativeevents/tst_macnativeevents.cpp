@@ -35,9 +35,13 @@
 #include "qnativeevents.h"
 #include "nativeeventlist.h"
 #include "expectedeventlist.h"
-#include <Carbon/Carbon.h>
 
 QT_USE_NAMESPACE
+
+// Unicode code points for the glyphs associated with these keys
+// Defined by Carbon headers but not anywhere in Cocoa
+static const int kControlUnicode = 0x2303;
+static const int kCommandUnicode = 0x2318;
 
 class tst_MacNativeEvents : public QObject
 {
@@ -497,10 +501,10 @@ void tst_MacNativeEvents::testModifierCtrlWithDontSwapCtrlAndMeta()
     native.append(new QNativeModifierEvent(Qt::NoModifier));
 
     ExpectedEventList expected(&w);
-    expected.append(new QKeyEvent(QEvent::KeyPress, Qt::Key_Meta, Qt::NoModifier));
+    expected.append(new QKeyEvent(QEvent::KeyPress, Qt::Key_Control, Qt::NoModifier));
     expected.append(new QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier));
     expected.append(new QKeyEvent(QEvent::KeyRelease, Qt::Key_A, Qt::ControlModifier));
-    expected.append(new QKeyEvent(QEvent::KeyRelease, Qt::Key_Meta, Qt::ControlModifier));
+    expected.append(new QKeyEvent(QEvent::KeyRelease, Qt::Key_Control, Qt::ControlModifier));
 
     native.play();
     QVERIFY2(expected.waitForAllEvents(), "the test did not receive all expected events!");

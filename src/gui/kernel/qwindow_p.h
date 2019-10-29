@@ -90,6 +90,7 @@ public:
         , receivedExpose(false)
         , positionPolicy(WindowFrameExclusive)
         , positionAutomatic(true)
+        , resizeAutomatic(true)
         , contentOrientation(Qt::PrimaryOrientation)
         , opacity(qreal(1.0))
         , minimumSize(0, 0)
@@ -97,7 +98,6 @@ public:
         , modality(Qt::NonModal)
         , blockedByModalWindow(false)
         , updateRequestPending(false)
-        , updateTimer(0)
         , transientParent(0)
         , topLevelScreen(0)
 #ifndef QT_NO_CURSOR
@@ -105,6 +105,9 @@ public:
         , hasCursor(false)
 #endif
         , compositing(false)
+#if QT_CONFIG(vulkan)
+        , vulkanInstance(nullptr)
+#endif
     {
         isWindow = true;
     }
@@ -121,14 +124,17 @@ public:
     bool applyCursor();
 #endif
 
-    void deliverUpdateRequest();
-
     QPoint globalPosition() const;
 
-    QWindow *topLevelWindow() const;
+    QWindow *topLevelWindow(QWindow::AncestorMode mode = QWindow::IncludeTransients) const;
+
+#if QT_CONFIG(opengl)
+    virtual QOpenGLContext *shareContext() const;
+#endif
 
     virtual QWindow *eventReceiver() { Q_Q(QWindow); return q; }
 
+    virtual void setVisible(bool visible);
     void updateVisibility();
     void _q_clearAlert();
 
@@ -142,7 +148,7 @@ public:
     void connectToScreen(QScreen *topLevelScreen);
     void disconnectFromScreen();
     void emitScreenChangedRecursion(QScreen *newScreen);
-    QScreen *screenForGeometry(const QRect &rect);
+    QScreen *screenForGeometry(const QRect &rect) const;
 
     virtual void clearFocusObject();
     virtual QRectF closestAcceptableGeometry(const QRectF &rect) const;
@@ -150,8 +156,12 @@ public:
     virtual void processSafeAreaMarginsChanged() {};
 
     bool isPopup() const { return (windowFlags & Qt::WindowType_Mask) == Qt::Popup; }
+    void setAutomaticPositionAndResizeEnabled(bool a)
+    { positionAutomatic = resizeAutomatic = a; }
 
     static QWindowPrivate *get(QWindow *window) { return window->d_func(); }
+
+    static Qt::WindowState effectiveState(Qt::WindowStates);
 
     QWindow::SurfaceType surfaceType;
     Qt::WindowFlags windowFlags;
@@ -165,12 +175,17 @@ public:
     QString windowFilePath;
     QIcon windowIcon;
     QRect geometry;
-    Qt::WindowState windowState;
+    Qt::WindowStates windowState;
     QWindow::Visibility visibility;
     bool resizeEventPending;
     bool receivedExpose;
     PositionPolicy positionPolicy;
     bool positionAutomatic;
+    // resizeAutomatic suppresses resizing by QPlatformWindow::initialGeometry().
+    // It also indicates that width/height=0 is acceptable (for example, for
+    // the QRollEffect widget) and is thus not cleared in setGeometry().
+    // An alternative approach might be using -1,-1 as a default size.
+    bool resizeAutomatic;
     Qt::ScreenOrientation contentOrientation;
     qreal opacity;
     QRegion mask;
@@ -184,7 +199,6 @@ public:
     bool blockedByModalWindow;
 
     bool updateRequestPending;
-    int updateTimer;
 
     QPointer<QWindow> transientParent;
     QPointer<QScreen> topLevelScreen;
@@ -196,6 +210,10 @@ public:
 
     bool compositing;
     QElapsedTimer lastComposeTime;
+
+#if QT_CONFIG(vulkan)
+    QVulkanInstance *vulkanInstance;
+#endif
 };
 
 

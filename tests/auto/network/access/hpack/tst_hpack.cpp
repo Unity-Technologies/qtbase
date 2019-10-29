@@ -57,7 +57,6 @@ private Q_SLOTS:
 
     void lookupTableConstructor();
 
-    void lookupTableStatic_data();
     void lookupTableStatic();
     void lookupTableDynamic();
 
@@ -126,7 +125,7 @@ void tst_Hpack::bitstreamConstruction()
         // 'Read' some data back:
         for (int i = 0; i < size; ++i) {
             uchar bitPattern = 0;
-            const auto bitsRead = in.peekBits(i * 8, 8, &bitPattern);
+            const auto bitsRead = in.peekBits(quint64(i * 8), 8, &bitPattern);
             QVERIFY(bitsRead == 8);
             QVERIFY(bitPattern == bytes[i]);
         }
@@ -273,21 +272,21 @@ void tst_Hpack::bitstreamCompression()
     std::vector<uchar> buffer;
     BitOStream out(buffer);
     for (unsigned i = 0; i < nValues; ++i) {
-        const bool isString = std::rand() % 1000 > 500;
+        const bool isString = QRandomGenerator::global()->bounded(1000) > 500;
         isA.push_back(isString);
         if (!isString) {
-            integers.push_back(std::rand() % 1000);
+            integers.push_back(QRandomGenerator::global()->bounded(1000u));
             out.write(integers.back());
         } else {
-            const auto start = std::rand() % (bytes.length() / 2);
+            const auto start = QRandomGenerator::global()->bounded(uint(bytes.length()) / 2);
             auto end = start * 2;
             if (!end)
-                end = bytes.length() / 2;
+                end = unsigned(bytes.length() / 2);
             strings.push_back(bytes.substr(start, end - start));
             const auto &s = strings.back();
             totalStringBytes += s.size();
             QByteArray data(s.c_str(), int(s.size()));
-            const bool compressed(std::rand() % 1000 > 500);
+            const bool compressed(QRandomGenerator::global()->bounded(1000) > 500);
             out.write(data, compressed);
         }
     }
@@ -384,43 +383,21 @@ void tst_Hpack::lookupTableConstructor()
     }
 }
 
-void tst_Hpack::lookupTableStatic_data()
-{
-    QTest::addColumn<QByteArray>("expectedName");
-    QTest::addColumn<QByteArray>("expectedValue");
-
-    // Some predefined fields to find
-    // (they are always defined/required by HPACK).
-    QTest::newRow(":authority|") << QByteArray(":authority") << QByteArray("");
-    QTest::newRow(":method|GET") << QByteArray(":method") << QByteArray("GET");
-    QTest::newRow(":method|POST") << QByteArray(":method") << QByteArray("POST");
-    QTest::newRow(":path|/") << QByteArray(":path") << QByteArray("/");
-    QTest::newRow(":path|/index.html") << QByteArray(":path") << QByteArray("/index.html");
-    QTest::newRow(":scheme|http") << QByteArray(":scheme") << QByteArray("http");
-    QTest::newRow(":scheme|https") << QByteArray(":scheme") << QByteArray("https");
-    QTest::newRow(":status|200") << QByteArray(":status") << QByteArray("200");
-    QTest::newRow(":status|204") << QByteArray(":status") << QByteArray("204");
-    QTest::newRow(":status|206") << QByteArray(":status") << QByteArray("206");
-    QTest::newRow(":status|304") << QByteArray(":status") << QByteArray("304");
-    QTest::newRow(":status|400") << QByteArray(":status") << QByteArray("400");
-    QTest::newRow(":status|404") << QByteArray(":status") << QByteArray("404");
-    QTest::newRow(":status|500") << QByteArray(":status") << QByteArray("500");
-}
-
 void tst_Hpack::lookupTableStatic()
 {
     const FieldLookupTable table(0, false /*all static, no need in 'search index'*/);
-
-    QFETCH(QByteArray, expectedName);
-    QFETCH(QByteArray, expectedValue);
-
-    const quint32 index = table.indexOf(expectedName, expectedValue);
-    QVERIFY(index != 0);
-
+    const auto &staticTable = FieldLookupTable::staticPart();
     QByteArray name, value;
-    QVERIFY(table.field(index, &name, &value));
-    QCOMPARE(name, expectedName);
-    QCOMPARE(value, expectedValue);
+    quint32 currentIndex = 1; // HPACK is indexing starting from 1.
+    for (const HeaderField &field : staticTable) {
+        const quint32 index = table.indexOf(field.name, field.value);
+        QVERIFY(index != 0);
+        QCOMPARE(index, currentIndex);
+        QVERIFY(table.field(index, &name, &value));
+        QCOMPARE(name, field.name);
+        QCOMPARE(value, field.value);
+        ++currentIndex;
+    }
 }
 
 void tst_Hpack::lookupTableDynamic()
@@ -442,8 +419,8 @@ void tst_Hpack::lookupTableDynamic()
         // Strings are repeating way too often, I want to
         // have at least some items really evicted and not found,
         // therefore these weird dances with start/len.
-        const quint32 start = std::rand() % (dataSize - 10);
-        quint32 len = std::rand() % (dataSize - start);
+        const quint32 start = QRandomGenerator::global()->bounded(dataSize - 10);
+        quint32 len = QRandomGenerator::global()->bounded(dataSize - start);
         if (!len)
             len = 1;
 
