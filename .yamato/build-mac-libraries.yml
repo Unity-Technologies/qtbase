@@ -16,4 +16,4 @@ commands:
 triggers:
   pushes:
     only:
-      - qtbuild.5.9.7
+      - qtbuild.5.12.5
