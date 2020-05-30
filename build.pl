@@ -37,7 +37,7 @@ sub confugreLine
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		return ("./configure -platform $platform -prefix `pwd`/qtbase-$platform -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework -qt-pcre");
+		return ("./configure -platform $platform -prefix `pwd`/qtbase-$platform -opensource -confirm-license -no-icu -nomake examples -nomake tests -no-framework -qt-pcre -v");
 	}
 	elsif ($os_name eq 'linux')
 	{
