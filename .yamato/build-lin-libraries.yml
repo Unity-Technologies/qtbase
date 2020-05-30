@@ -17,6 +17,7 @@ commands:
   - sudo apt-get -y build-dep qt5-default
   - sudo apt-get install libxcb-xinerama0-dev
   - sudo apt-get install libx11-xcb-dev
+  - sudo apt-get install libxkbcommon-dev
   - git clone https://github.com/openssl/openssl
   - git -C /home/bokken/build/output/Unity-Technologies/qtbase/openssl checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
   - sudo mount --bind /dev /toolchains/linux/dev
