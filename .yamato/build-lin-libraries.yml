@@ -11,6 +11,9 @@ artifacts:
       - build/builds.7z
 
 commands:
+  - sudo cp /etc/apt/sources.list /etc/apt/sources.list~
+  - sudo sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
+  - sudo DEBIAN_FRONTEND=noninteractive apt-get -y update 
   - sudo apt-get -y build-dep qt5-default
   - git clone https://github.com/openssl/openssl
   - git -C /home/bokken/build/output/Unity-Technologies/qtbase/openssl checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
