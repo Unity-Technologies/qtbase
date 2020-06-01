@@ -9,7 +9,9 @@ artifacts:
   qtbase-windows.zip:
     paths:
       - build/builds.7z
-
+  logs:
+    paths:
+      - config.log
 commands:
   - perl build.pl --arch=64
 
