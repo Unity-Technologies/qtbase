@@ -42,7 +42,7 @@ sub confugreLine
 	elsif ($os_name eq 'linux')
 	{
 		$openSSL = "$root/openssl";
-		return ("OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix $root/qtbase-$platform -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked -I $openSSL/openssl-$platform/include -L $openSSL/openssl-$platform/lib");
+		return ("OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix $root/qtbase-$platform -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -I /usr/include/xcb/ -L /usr/lib/x86_64-linux-gnu/ -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked -I $openSSL/openssl-$platform/include -L $openSSL/openssl-$platform/lib --enable-shared -recheck-all");
 	}
 	die ("Unknown platform $os_name");
 }
