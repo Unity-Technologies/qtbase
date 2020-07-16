@@ -167,7 +167,7 @@ sub patch
 		        return;
 		}
 		my $origin = '$ORIGIN';
-		#doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
+		doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
 }
 
 sub main
@@ -177,7 +177,7 @@ sub main
 	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
-	#patch ($params{arch});
+	patch ($params{arch});
 	zip ($params{arch});
 }
 
