@@ -42,7 +42,7 @@ sub confugreLine
 	elsif ($os_name eq 'linux')
 	{
 		$openSSL = "$root/openssl";
-		return ("OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix $root/qtbase-$platform -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -I /usr/include/xcb/ -L /usr/lib/x86_64-linux-gnu/ -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked -I $openSSL/openssl-$platform/include -L $openSSL/openssl-$platform/lib --enable-shared -recheck-all");
+		return ("OPENSSL_LIBDIR='/qtbase/openssl/lib' OPENSSL_INCDIR='/qtbase/openssl/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix ./qtbase-amd64 -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -I /usr/include/xcb/ -L /usr/lib/x86_64-linux-gnu/ -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked -I /qtbase/openssl/openssl-amd64/include -L /qtbase/openssl/openssl-amd64/lib --enable-shared -recheck-all");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -167,7 +167,7 @@ sub patch
 		        return;
 		}
 		my $origin = '$ORIGIN';
-		doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
+		#doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
 }
 
 sub main
@@ -177,7 +177,7 @@ sub main
 	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
-	patch ($params{arch});
+	#patch ($params{arch});
 	zip ($params{arch});
 }
 
