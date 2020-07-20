@@ -27,6 +27,7 @@ commands:
   - mkdir /toolchains/linux/qtbase
   - sudo mount --bind /home/bokken/build/output/Unity-Technologies/qtbase /toolchains/linux/qtbase
   - perl build.pl --arch=64
+
 triggers:
   pushes:
     only:
