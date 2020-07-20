@@ -11,19 +11,25 @@ artifacts:
       - build/builds.7z
 
 commands:
-  - sudo cp /etc/apt/sources.list /etc/apt/sources.list~
-  - sudo sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
-  - sudo DEBIAN_FRONTEND=noninteractive apt-get -y update 
-  - sudo apt-get build-dep qt5-default
+  - sudo sed -i -- 's/#deb-src/deb-src/g' /etc/apt/sources.list && sudo sed -i -- 's/# deb-src/deb-src/g' /etc/apt/sources.list
+  - echo "Allowed source repositories"
+  - sudo apt-get update -y
+  - sudo apt-get upgrade -y
+  - sudo apt-get install chrpath -y
+  - sudo apt-get build-dep qt5-default -y
   - sudo apt-get install libxcb-xinerama0-dev
+  - sudo apt-get install libx11-xcb-dev
+  - sudo apt-get install libxkbcommon-dev
+  - cd /home/bokken/build/output/Unity-Technologies/qtbase
   - git clone https://github.com/openssl/openssl
   - git -C /home/bokken/build/output/Unity-Technologies/qtbase/openssl checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
   - sudo mount --bind /dev /toolchains/linux/dev
   - mkdir /toolchains/linux/qtbase
   - sudo mount --bind /home/bokken/build/output/Unity-Technologies/qtbase /toolchains/linux/qtbase
-  - sudo chroot --userspec=bokken:bokken /toolchains/linux sh -c "cd /qtbase ; perl build.pl --arch=64"
+  - perl build.pl --arch=64
 
 triggers:
   pushes:
     only:
       - qtbuild.5.13.2
+      - qtbuild.5.13.2-linux
