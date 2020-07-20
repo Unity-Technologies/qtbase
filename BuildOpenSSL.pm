@@ -33,7 +33,7 @@ sub clone
 	doSystemCommand ("git clone https://github.com/openssl/openssl.git $path");
 	chdir ("openssl");
 	doSystemCommand ("git fetch");
-	doSystemCommand ("git checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable");
+	doSystemCommand ("git checkout -b 1.1.1 origin/OpenSSL_1_1_1-stable");
 	chdir ("..");
 }
 
@@ -54,9 +54,9 @@ sub build
 	my $os_name = $^O;
 	if($os_name eq "MSWin32")
 	{
-		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=openssl-$platform");
-		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && $platform_dependent{'do_ms'}->{$arch}");
-		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake -f ms\\nt.mak install");
+		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && perl Configure $platform_dependent{'configure_arg'}->{$arch} no-asm no-shared --prefix=$path\\openssl-$platform");
+		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake");
+		doSystemCommand("$launchVisualStudioEnv $platform 10.0.16299.0 && nmake install");
 	}
 	elsif($os_name eq "linux")
 	{
