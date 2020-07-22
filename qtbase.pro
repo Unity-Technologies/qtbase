@@ -36,6 +36,8 @@ QMAKE_DISTCLEAN += \
 
 CONFIG -= qt
 
+CONFIG += debug
+
 ### installations ####
 
 #licheck
