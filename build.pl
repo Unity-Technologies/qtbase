@@ -7,6 +7,7 @@ use warnings;
 use strict;
 use Cwd qw[getcwd];
 use File::Spec::Functions qw[canonpath];
+use File::Copy;
 use Getopt::Long;
 use Params::Check qw[check];
 
@@ -170,6 +171,30 @@ sub patch
 		doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
 }
 
+sub addLicenseDocs
+{
+	# Produce a LICENSE.md file for Stevedore.
+
+	my ($arch) = @_;
+	my $os_name = $^O;
+	my $platform = $platforms{$os_name}->{$arch};
+
+	my $filename = "./qtbase-$platform/LICENSE.md";
+
+	open(my $fh, '>', $filename) or die "Could not open file '$filename' $!";
+	print $fh "This package was created from https://github.com/Unity-Technologies/qtbase\n";
+	print $fh "License terms are available in the various LICENSE.* files.\n";
+	close $fh;
+
+	my @files = glob('LICENSE*');
+	foreach my $file (@files)
+	{
+		copy($file, "./qtbase-$platform/$file") or die "Copy failed: $!";
+	}
+
+	copy("LGPL_EXCEPTION.txt", "./qtbase-$platform/LGPL_EXCEPTION.txt") or die "Copy failed: $!";
+}
+
 sub main
 {
 	my %params = getArgs ();
@@ -178,6 +203,7 @@ sub main
 	configure ($params{arch});
 	make ($params{arch});
 	patch ($params{arch});
+	addLicenseDocs ($params{arch});
 	zip ($params{arch});
 }
 
