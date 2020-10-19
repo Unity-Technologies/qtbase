@@ -1,0 +1,22 @@
+name: Build QTBase source archive
+
+agent:
+  type: Unity::VM
+  image: desktop/qt-linux-build-image:latest
+  flavor: b1.xlarge
+
+artifacts:
+  build/qtbase-source.7z:
+    paths:
+      - build/qtbase-source.7z
+
+commands:
+  - git archive --output=build/qtbase-source.tar HEAD
+  - 7z a build/qtbase-source.7z build/qtbase-source.tar
+  #- curl -sSo StevedoreUpload.exe "$STEVEDORE_UPLOAD_TOOL_URL"
+  #- mono StevedoreUpload.exe --version-len=12 --repo=testing --version="$GIT_REVISION" build/qtbase-source.7z
+
+triggers:
+  pushes:
+    only:
+      - qtbuild.5.9.7
