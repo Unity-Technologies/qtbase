@@ -16,7 +16,11 @@ commands:
   #- curl -sSo StevedoreUpload.exe "$STEVEDORE_UPLOAD_TOOL_URL"
   #- mono StevedoreUpload.exe --version-len=12 --repo=testing --version="$GIT_REVISION" build/qtbase-source.7z
 
+#triggers:
+#  pushes:
+#    only:
+#      - qtbuild.5.9.7
 triggers:
-  pushes:
+  branches:
     only:
-      - qtbuild.5.9.7
+    - "/.*/"
