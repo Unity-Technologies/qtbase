@@ -2,7 +2,7 @@ name: Build QTBase for macOS
   
 agent:
   type: Unity::VM::osx
-  image: buildfarm/mac:stable
+  image: slough-ops/macos-10.14-base
   flavor: m1.mac
 
 artifacts:
