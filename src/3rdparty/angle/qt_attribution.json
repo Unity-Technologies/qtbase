@@ -32,6 +32,7 @@
         "Path": "src/third_party/murmurhash",
         "License": "Public Domain",
         "LicenseId": "NONE",
+        "LicenseFile": "src/third_party/murmurhash/LICENSE",
         "Copyright": "MurmurHash3 was written by Austin Appleby, and is placed in the public domain. The author hereby disclaims copyright to this source code."
     },
     {
