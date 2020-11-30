@@ -6,8 +6,11 @@ use BuildOpenSSL;
 use warnings;
 use strict;
 use Cwd qw[getcwd];
+use Digest;
+use File::Copy;
 use File::Spec::Functions qw[canonpath];
 use Getopt::Long;
+use JSON;
 use Params::Check qw[check];
 
 my $launchVisualStudioEnv = '"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat"';
@@ -152,6 +155,11 @@ sub zip
 		die ("Unknown platform $os_name");
 	}
 	doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
+
+	my $hf = Digest->new("SHA-256");
+	$hf->addfile("build/builds.7z");
+	my $hash = $hf->hexdigest;
+	move("build/builds.7z", "build/5.9.7_$hash.7z");
 }
 
 sub patch
@@ -170,14 +178,110 @@ sub patch
 		doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
 }
 
+sub createLicenseMd
+{
+    my $arch = $_[0];
+    my $os_name = $^O;
+    my $platform = $platforms{$os_name}->{$arch};
+
+    my $sourceArtifact = $_[1];
+
+    my $qtattributionsscanner = "qtattributionsscanner";
+	if ($os_name eq 'MSWin32')
+    {
+        $qtattributionsscanner = "qtattributionsscanner.exe";
+    }
+
+    if (-e "/tmp/LICENSES.json.OVERRIDE")
+    {
+        copy("/tmp/LICENSES.json.OVERRIDE", "LICENSES.json") or die "Copy failed: $!";
+    }
+    else
+    {
+        system("$qtattributionsscanner --output-format json -o LICENSES.json .") == 0
+            or die("failed to run qtattributionsscanner: $?");
+    }
+
+    my $json_file = "LICENSES.json";
+    my $json_text = do {
+        open(my $json_fh, "<:encoding(UTF-8)", $json_file)
+            or die("Can't open \"$json_file\": $!\n");
+        local $/;
+        <$json_fh>
+    };
+
+    my $json = JSON->new;
+    my $data = $json->decode($json_text);
+
+    open(FH, '>', "./qtbase-$platform/LICENSE.md") or die $!;
+
+    if ($sourceArtifact ne "")
+    {
+        print FH "# Source code\n\n";
+        print FH "The corresponding source code can be found at:\n";
+        print FH "https://public.stevedore.unity3d.com/r/public/$sourceArtifact\n\n";
+    }
+
+    print FH "# Licenses\n\n";
+
+    for ( @{$data} ) {
+        print FH "## " . $_->{Name} . "\n";
+        print FH "\n";
+
+        my $relativePath = File::Spec->abs2rel($_->{Path}, getcwd());
+        print FH "Path: $relativePath\n\n";
+
+        print FH $_->{Copyright} . "\n\n";
+
+        if ($_->{LicenseId} ne "")
+        {
+            print FH "(" . $_->{LicenseId} . ")\n\n";
+        }
+
+        my $lt = do {
+            open(my $lt_fh, "<:encoding(UTF-8)", $_->{LicenseFile})
+                or die("Can't open \"$_->{LicenseFile}\": $!\n");
+            local $/;
+            <$lt_fh>
+        };
+
+        print FH $lt . "\n\n";
+    }
+
+    close(FH);
+}
+
+sub getSourceArtifact
+{
+    my $dir = "qtbase-src";
+    if ( ! -d $dir)
+    {
+        # Don't break local builds if the file is not available.
+        return "";
+    }
+
+    opendir (DIR, $dir) or die $!;
+
+    while (my $file = readdir(DIR)) {
+        if ($file =~ m/\.zip$/)
+        {
+            return "$dir/$file";
+        }
+    }
+
+    die "qtbase-src dir exists, but does not contain any zip files :(";
+}
+
 sub main
 {
 	my %params = getArgs ();
+	my $sourceArtifact = getSourceArtifact ();
 	clean ();
 	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
 	patch ($params{arch});
+	createLicenseMd ($params{arch}, $sourceArtifact);
 	zip ($params{arch});
 }
 
