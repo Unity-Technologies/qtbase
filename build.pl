@@ -58,11 +58,11 @@ sub makeInstallCommandLine
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		return ("make -j`nproc` && make install");
+		return ("make && make install");
 	}
 	elsif ($os_name eq 'linux')
 	{
-		return ("make -j`nproc` && make install");
+		return ("make && make install");
 	}
 	die ("Unknown platform $os_name");
 }
