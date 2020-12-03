@@ -6,6 +6,8 @@ use BuildOpenSSL;
 use warnings;
 use strict;
 use Cwd qw[getcwd];
+use File::Copy;
+use File::Path qw[make_path];
 use File::Spec::Functions qw[canonpath];
 use Getopt::Long;
 use Params::Check qw[check];
@@ -41,8 +43,8 @@ sub confugreLine
 	}
 	elsif ($os_name eq 'linux')
 	{
-		$openSSL = "$root/qtbase/openssl";
-		return ("OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix ./qtbase-$platform -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -I /usr/include/xcb/ -L /usr/lib/x86_64-linux-gnu/ -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked -I /qtbase/openssl/openssl-$platform/include -L /qtbase/openssl/openssl-$platform/lib --enable-shared -recheck-all");
+		$openSSL = "$root/openssl";
+		return ("./configure -prefix ./qtbase-$platform -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -I/usr/include/xcb -I$openSSL/openssl-$platform/include -L$openSSL/openssl-$platform/lib -L/usr/lib/x86_64-linux-gnu -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked --enable-shared -recheck-all");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -83,6 +85,8 @@ sub prepare
 	print ("Preparing\n");
 
 	my $os_name = $^O;
+	my $platform = $platforms{$os_name}->{$arch};
+
 	if ($os_name eq 'MSWin32')
 	{
 		#pretty awful hack, the vcvarsall.bat script doesn't set up paths correctly to make rc.exe available
@@ -94,6 +98,14 @@ sub prepare
 	{
 		my $openSSL =  "$root/openssl";
 		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
+		if ( ! -d "qtbase-${platform}/lib")
+		{
+			make_path "qtbase-${platform}/lib" or die "mkdir failed: $!";
+		}
+		copy("openssl/openssl-${platform}/lib/libssl.so.1.0.0", "qtbase-${platform}/lib/libssl.so.1.0.0") or die "Copy failed: $!";
+		symlink("libssl.so.1.0.0", "qtbase-${platform}/lib/libssl.so") or die "Symlink failed: $!\n";
+		copy("openssl/openssl-${platform}/lib/libcrypto.so.1.0.0", "qtbase-${platform}/lib/libcrypto.so.1.0.0") or die "Copy failed: $!";
+		symlink("libcrypto.so.1.0.0", "qtbase-${platform}/lib/libcrypto.so") or die "Symlink failed: $!\n";
 	}
 }
 

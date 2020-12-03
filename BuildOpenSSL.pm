@@ -60,7 +60,7 @@ sub build
 	}
 	elsif($os_name eq "linux")
 	{
-		doSystemCommand("./config no-asm no-shared no-dso -fPIC --prefix=$path/openssl-$platform");
+		doSystemCommand("./config no-asm shared -fPIC --prefix=$path/openssl-$platform");
 		doSystemCommand("make");
 		doSystemCommand("make install");
 	}
