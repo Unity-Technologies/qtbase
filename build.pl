@@ -42,7 +42,7 @@ sub confugreLine
 	elsif ($os_name eq 'linux')
 	{
 		$openSSL = "$root/openssl";
-		return ("OPENSSL_LIBDIR='$openSSL/lib' OPENSSL_INCDIR='$openSSL/include' OPENSSL_LIBS='-lssl -lcrypto' ./configure -prefix ./qtbase-$platform -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -I /usr/include/xcb/ -L /usr/lib/x86_64-linux-gnu/ -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked -I $openSSL/openssl-$platform/include -L $openSSL/openssl-$platform/lib --enable-shared -recheck-all");
+		return ("./configure -prefix ./qtbase-$platform -v -c++std c++11 -opensource -confirm-license -no-icu -qt-xcb -I/usr/include/xcb -L/usr/lib/x86_64-linux-gnu -nomake tests -nomake examples -no-harfbuzz -qt-pcre -qt-libpng -openssl-linked --enable-shared -recheck-all");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -58,11 +58,11 @@ sub makeInstallCommandLine
 	}
 	elsif ($os_name eq 'darwin')
 	{
-		return ("make && make install");
+		return ("make -j`nproc` && make install");
 	}
 	elsif ($os_name eq 'linux')
 	{
-		return ("make && make install");
+		return ("make -j`nproc` && make install");
 	}
 	die ("Unknown platform $os_name");
 }
@@ -88,11 +88,6 @@ sub prepare
 		#pretty awful hack, the vcvarsall.bat script doesn't set up paths correctly to make rc.exe available
 		#so we add this to the path so that Qt configure script can find it.
 		$ENV{PATH} = "$ENV{PATH};C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.16299.0\\x64";
-		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
-	}
-	elsif ($os_name eq 'linux')
-	{
-		my $openSSL =  "$root/openssl";
 		BuildOpenSSL::buildOpenSSL ($openSSL, $arch);
 	}
 }
