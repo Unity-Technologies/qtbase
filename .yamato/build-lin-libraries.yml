@@ -2,7 +2,7 @@ name: Build QTBase for Linux
   
 agent:
   type: Unity::VM
-  image: desktop/qt-linux-build-image:latest
+  image: slough-ops/centos-7-base:stable
   flavor: b1.xlarge
 
 artifacts:
@@ -11,22 +11,12 @@ artifacts:
       - build/builds.7z
 
 commands:
-  - sudo sed -i -- 's/#deb-src/deb-src/g' /etc/apt/sources.list && sudo sed -i -- 's/# deb-src/deb-src/g' /etc/apt/sources.list
-  - echo "Allowed source repositories"
-  - sudo apt-get update -y
-  - sudo apt-get upgrade -y
-  - sudo apt-get install chrpath -y
-  - sudo apt-get build-dep qt5-default -y
-  - sudo apt-get install libxcb-xinerama0-dev
-  - sudo apt-get install libx11-xcb-dev
-  - sudo apt-get install libxkbcommon-dev
-  - cd /home/bokken/build/output/Unity-Technologies/qtbase
-  - git clone https://github.com/openssl/openssl
-  - git -C /home/bokken/build/output/Unity-Technologies/qtbase/openssl checkout -b 1.0.2 origin/OpenSSL_1_0_2-stable
-  - sudo mount --bind /dev /toolchains/linux/dev
-  - mkdir /toolchains/linux/qtbase
-  - sudo mount --bind /home/bokken/build/output/Unity-Technologies/qtbase /toolchains/linux/qtbase
-  - perl build.pl --arch=64
+  - sudo yum install chrpath libxcb-devel libXinerama-devel libX11-devel libxkbcommon-devel gcc-c++ perl-Params-Check mesa-libGL-devel curl unzip -y
+  - curl -o ../7za.zip https://public-stevedore.unity3d.com/r/public/7za-linux-x64/d42d7377392b_40ea375ec449cbc9512fb39a4b30b9af8ead65a94fcc002595c0cff95bdb4b07.zip
+  - unzip ../7za.zip -d ..
+  - ln -s 7za ../7z
+  - git clone -b OpenSSL_1_0_2-stable https://github.com/openssl/openssl
+  - PATH=`pwd`/..:$PATH perl build.pl --arch=64
 
 triggers:
   pushes:
