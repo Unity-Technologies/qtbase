@@ -11,7 +11,13 @@ artifacts:
       - build/builds.7z
 
 commands:
-  - perl build.pl --arch=64
+  - |
+    pushd ..
+    wget https://public-stevedore.unity3d.com/r/public/7za-mac-x64/d42d7377392b_f3244e01c4f45f29f33d910dbaa747628d2f548bff6f436f83995739ac416620.zip
+    unzip d42d7377392b_f3244e01c4f45f29f33d910dbaa747628d2f548bff6f436f83995739ac416620.zip
+    popd
+    PATH=$PATH:..
+    perl build.pl --arch=64
 
 triggers:
   pushes:
