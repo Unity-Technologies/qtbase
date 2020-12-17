@@ -157,7 +157,7 @@ sub zip
 
 	if ($os_name eq 'darwin')
 	{
-		$zipCmd = '"./BuildTools/MacUtils/7za"';
+		$zipCmd = '"7za"';
 	}
 	elsif ($os_name ne 'linux' && $os_name ne 'MSWin32')
 	{
