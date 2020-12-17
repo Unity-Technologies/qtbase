@@ -1,0 +1,35 @@
+[
+   {
+      "Copyright" : "Copyright (C) 2016 The Qt Company Ltd.",
+      "Description" : "",
+      "Id" : "Qt_BSD_components",
+      "License" : "BSD 3-clause \"New\" or \"Revised\" License",
+      "LicenseFile" : "LICENSE.BSD",
+      "LicenseId" : "BSD-3-Clause",
+      "Name" : "Qt BSD components",
+      "QDocModule" : "unspecified",
+      "QtUsage" : "Used in Qt example code."
+   },
+   {
+      "Copyright" : "Copyright (C) 2016 The Qt Company Ltd.",
+      "Description" : "",
+      "Id" : "Qt_GPL-EXCEPT_components",
+      "License" : "GNU General Public License version 3 with The Qt Company GPL Exception 1.0",
+      "LicenseFile" : "LICENSE.GPL3-EXCEPT",
+      "LicenseId" : "GPL-3.0-only WITH Qt-GPL-exception-1.0",
+      "Name" : "GPL3-with-qt-exceptions",
+      "QDocModule" : "unspecified",
+      "QtUsage" : "Used in Qt executable tools."
+   },
+   {
+      "Copyright" : "Copyright (C) 2016 The Qt Company Ltd.",
+      "Description" : "",
+      "Id" : "Qt_LGPL_components",
+      "License" : "GNU Lesser General Public License version 3, or GPL 2.0 or GPL 3 or any later version approved by the KDE Free Qt Foundation",
+      "LicenseFile" : "LICENSE.LGPL-COMPONENTS",
+      "LicenseId" : "LGPL-3.0-only or GPL-2.0-only or GPL-3.0-or-later",
+      "Name" : "Qt LGPL components",
+      "QDocModule" : "unspecified",
+      "QtUsage" : "Used in Qt libraries."
+   }
+]
