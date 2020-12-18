@@ -6,18 +6,27 @@ agent:
   flavor: m1.mac
 
 artifacts:
-  qtbase-macos.zip:
+  qtbase-mac-amd64:
     paths:
-      - build/builds.7z
+      - qtbase-mac-amd64/*.7z
 
 commands:
   - |
+    rm -rf ~/.cpan
+    cpan config
+    sudo cpan install JSON
     pushd ..
     wget https://public-stevedore.unity3d.com/r/public/7za-mac-x64/d42d7377392b_f3244e01c4f45f29f33d910dbaa747628d2f548bff6f436f83995739ac416620.zip
     unzip d42d7377392b_f3244e01c4f45f29f33d910dbaa747628d2f548bff6f436f83995739ac416620.zip
+    wget https://artifactory.prd.it.unity3d.com/artifactory/stevedore-unity-internal/qtattrsscanner-mac-x64/5.15.2_b352b3970f63712d9221387b4ec1d6d2c1fb436877a507b92b64d6904caee90c.zip
+    unzip 5.15.2_b352b3970f63712d9221387b4ec1d6d2c1fb436877a507b92b64d6904caee90c.zip
     popd
-    PATH=$PATH:..
-    perl build.pl --arch=64
+    PATH=$PATH:..:../bin
+    src_artifact=https://artifactory.internal.unity3d.com/stevedore-testing/$(echo qtbase-src/*.zip)
+    perl build.pl --arch=64 --src_artifact=$src_artifact
+
+dependencies:
+  - .yamato/create-source-artifact.yml
 
 triggers:
   pushes:

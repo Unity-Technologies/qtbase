@@ -6,17 +6,23 @@ agent:
   flavor: b1.xlarge
 
 artifacts:
-  qtbase-linux.zip:
+  qtbase-linux-amd64:
     paths:
-      - build/builds.7z
+      - qtbase-linux-amd64/*.7z
 
 commands:
-  - sudo yum install chrpath freetype-devel fontconfig-devel libxcb-devel libXinerama-devel libX11-devel libxkbcommon-devel gcc-c++ perl-Params-Check mesa-libGL-devel curl unzip -y
-  - curl -o ../7za.zip https://public-stevedore.unity3d.com/r/public/7za-linux-x64/d42d7377392b_40ea375ec449cbc9512fb39a4b30b9af8ead65a94fcc002595c0cff95bdb4b07.zip
-  - unzip ../7za.zip -d ..
-  - ln -s 7za ../7z
-  - git clone -b OpenSSL_1_0_2-stable https://github.com/openssl/openssl
-  - PATH=`pwd`/..:$PATH perl build.pl --arch=64
+  - |
+    set -e
+    sudo yum install chrpath freetype-devel fontconfig-devel libxcb-devel libXinerama-devel libX11-devel libxkbcommon-devel gcc-c++ perl-Params-Check mesa-libGL-devel qt5-doctools curl unzip -y
+    curl -o ../7za.zip https://public-stevedore.unity3d.com/r/public/7za-linux-x64/d42d7377392b_40ea375ec449cbc9512fb39a4b30b9af8ead65a94fcc002595c0cff95bdb4b07.zip
+    unzip ../7za.zip -d ..
+    ln -s 7za ../7z
+    git clone -b OpenSSL_1_0_2-stable https://github.com/openssl/openssl
+    src_artifact=https://artifactory.internal.unity3d.com/stevedore-testing/$(echo qtbase-src/*.zip)
+    PATH=`pwd`/..:$PATH perl build.pl --arch=64 --src_artifact=$src_artifact
+
+dependencies:
+  - .yamato/create-source-artifact.yml
 
 triggers:
   pushes:

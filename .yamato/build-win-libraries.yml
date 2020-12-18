@@ -6,12 +6,19 @@ agent:
   flavor: b1.xlarge
 
 artifacts:
-  qtbase-windows.zip:
+  qtbase-win-amd64:
     paths:
-      - build/builds.7z
+      - qtbase-win-amd64/*.7z
 
 commands:
-  - perl build.pl --arch=64
+  - |
+    wget https://artifactory.prd.it.unity3d.com/artifactory/stevedore-unity-internal/qtattrsscanner-win-x64/5.15.2_efda8f1820c86ff69d86ef902fdfa901e11b6cc8e1d9037c4e38131a104a04f3.zip -O ..\5.15.2_efda8f1820c86ff69d86ef902fdfa901e11b6cc8e1d9037c4e38131a104a04f3.zip
+    7z.exe x ..\5.15.2_efda8f1820c86ff69d86ef902fdfa901e11b6cc8e1d9037c4e38131a104a04f3.zip -o"C:\bokken"
+    $src_artifact = Get-Childitem –Path qtbase-src -Include *.zip -File
+    perl build.pl --arch=64 --src_artifact=https://artifactory.internal.unity3d.com/stevedore-testing/$src_artifact
+
+dependencies:
+  - .yamato/create-source-artifact.yml
 
 triggers:
   pushes:
