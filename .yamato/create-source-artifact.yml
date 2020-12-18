@@ -1,0 +1,38 @@
+name: Create QTBase source artifact
+  
+agent:
+  type: Unity::VM
+  image: slough-ops/centos-7-base:stable
+  flavor: b1.small
+
+artifacts:
+  qtbase-src:
+    paths:
+      - qtbase-src/*.zip
+      - LICENSE.md
+
+commands:
+  - |
+    set -e
+    # The openssl version below must be kept in sync with the linux build:
+    git clone --branch OpenSSL_1_0_2-stable https://github.com/openssl/openssl tmpopenssl
+    git -C tmpopenssl archive --prefix=openssl/ --format=tar HEAD | tar xvf -
+    cp -f qt_attribution.json.openssl openssl/qt_attribution.json
+    sudo yum install zip unzip qt5-doctools perl-JSON perl-Params-Check -y
+    qtattributionsscanner --output-format json -o LICENSES.json .
+    perl .yamato/create-license-file.pl
+    mkdir -p qtbase-src
+    ref=$(git rev-parse HEAD)
+    tmpzip=qtbase-src/src.zip
+    git archive --format=zip --output=$tmpzip $ref
+    zip --delete $tmpzip ".yamato/*"
+    zip $tmpzip LICENSE.md
+    zip -r $tmpzip openssl
+    hash=$(sha256sum $tmpzip | cut -d' ' -f1)
+    finalzip=qtbase-src/5.13.2_${hash}.zip
+    mv $tmpzip $finalzip
+
+triggers:
+  pushes:
+    only:
+      - qtbuild.5.13.2

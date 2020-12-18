@@ -1,0 +1,11 @@
+{
+  "Copyright" : "Copyright (c) 1998-2018 The OpenSSL Project.  All rights reserved.\nCopyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)\nAll rights reserved.",
+  "Description" : "",
+  "Id" : "OpenSSL",
+  "License" : "OpenSSL",
+  "LicenseFile": "LICENSE",
+  "LicenseId" : "OpenSSL",
+  "Name" : "OpenSSL",
+  "QDocModule" : "unspecified",
+  "QtUsage" : "Used in Qt Network library"
+}

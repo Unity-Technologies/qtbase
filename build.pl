@@ -6,6 +6,7 @@ use BuildOpenSSL;
 use warnings;
 use strict;
 use Cwd qw[getcwd];
+use Digest;
 use File::Copy;
 use File::Path qw[make_path];
 use File::Spec::Functions qw[canonpath];
@@ -20,6 +21,18 @@ my %platforms = (
 	darwin => { 32 => 'macx-clang-32', 64 => 'macx-clang' },
 	linux => { 32 => 'x86', 64 => 'amd64' }
 );
+
+sub saveLicenseFile
+{
+	if (! -e "qtbase-src/LICENSE.md")
+	{
+		print "No license file from source artifact, skipping.";
+		return;
+	}
+
+	print "Saving license file from source artifact\n";
+	copy("qtbase-src/LICENSE.md", "../LICENSE.md") or die "Copy failed: $!";
+}
 
 sub clean
 {
@@ -134,9 +147,10 @@ sub printUsage
 sub getArgs
 {
 	my ($options) = {
-		qt_repo_dir => canonpath (getcwd ())
+		qt_repo_dir => canonpath (getcwd ()),
+		src_artifact => "",
 	};
-	GetOptions ($options, 'arch=s', 'qtversion=s') or printUsage ();
+	GetOptions ($options, 'arch=s', 'qtversion=s', 'src_artifact=s') or printUsage ();
 	my $arg_scheme = {
 		arch => { required => 1, allow => ['32', '64'] }
 	};
@@ -154,16 +168,30 @@ sub zip
 	my $os_name = $^O;
 	my $platform = $platforms{$os_name}->{$arch};
 	my $zipCmd = '"7z"';
+	my $osShortName = $os_name;
+	my $shortPlatform = $platform;
 
 	if ($os_name eq 'darwin')
 	{
 		$zipCmd = '"7za"';
+		$osShortName = "mac";
+		$shortPlatform = "amd64"; # TODO: cmdline should specify actual platform instead of 32/64.
 	}
-	elsif ($os_name ne 'linux' && $os_name ne 'MSWin32')
+	elsif ($os_name eq 'MSWin32')
+	{
+		$osShortName = "win";
+	}
+	elsif ($os_name ne 'linux')
 	{
 		die ("Unknown platform $os_name");
 	}
 	doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
+
+	my $hf = Digest->new("SHA-256");
+	$hf->addfile("build/builds.7z");
+	my $hash = $hf->hexdigest;
+	make_path "qtbase-${osShortName}-${shortPlatform}" or die "mkdir failed: $!";
+	move("build/builds.7z", "qtbase-${osShortName}-${shortPlatform}/5.13.2_$hash.7z") or die("something went wrong: $!");
 }
 
 sub patch
@@ -182,14 +210,48 @@ sub patch
 		doSystemCommand("chrpath --replace \'$origin/..\' ./qtbase-$platform/plugins/platforms/libqxcb.so");
 }
 
+sub createLicenseMd
+{
+	my $lf = "../LICENSE.md";
+	if (! -e $lf)
+	{
+		print "$lf does not exist, skipping\n\n";
+		return;
+	}
+
+	my $arch = $_[0];
+	my $src_artifact = $_[1];
+	my $os_name = $^O;
+	my $platform = $platforms{$os_name}->{$arch};
+
+	open(FH, '>', "./qtbase-$platform/LICENSE.md") or die $!;
+
+	if ($src_artifact ne "")
+	{
+		print FH "# Source code\n\n";
+		print FH "The corresponding source code can be found at:\n";
+		print FH "$src_artifact\n\n";
+	}
+
+	open(IN, $lf) or die("Could not open \"$lf\".");
+	foreach my $line (<IN>)
+	{
+		print FH $line;
+	}
+	close(IN);
+	close(FH);
+}
+
 sub main
 {
 	my %params = getArgs ();
+	saveLicenseFile ();
 	clean ();
 	prepare ($params{arch});
 	configure ($params{arch});
 	make ($params{arch});
 	patch ($params{arch});
+	createLicenseMd ($params{arch}, $params{src_artifact});
 	zip ($params{arch});
 }
 
