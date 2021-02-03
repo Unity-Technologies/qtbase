@@ -1,0 +1,65 @@
+name: Upload QTBase to stevedore
+  
+agent:
+  type: Unity::VM
+  image: desktop/ubuntu-18.04-desktop-workstation:latest
+  flavor: b1.small
+
+commands:
+  - |
+    set -ex
+
+    sudo apt-get install -y p7zip
+
+    # Verify sha256 hashes.
+    for pkg in qtbase-linux-amd64/*.7z qtbase-mac-amd64/*.7z qtbase-win-amd64/*.7z
+    do
+      expected_hash=$(echo $pkg | sed -e "s|.*_||" -e "s|\.7z$||")
+      actual_hash=$(sha256sum $pkg | cut -d' ' -f1)
+      if [ "$expected_hash" != "$actual_hash" ]
+      then
+        echo "Warning: $pkg hash mismatch: $actual_hash, renaming"
+        mv $pkg ${pkg/$expected_hash/$actual_hash}
+      fi
+    done
+
+    src_pkg=$(ls qtbase-src/*zip)
+    expected_hash=$(echo $src_pkg | sed -e "s|.*_||" -e "s|\.zip$||")
+    actual_hash=$(sha256sum $src_pkg | cut -d' ' -f1)
+    if [ "$expected_hash" != "$actual_hash" ]
+    then
+      echo "Error: source package $src_pkg hash mismatch: $actual_hash"
+      # Don't upload anything, since the source artifact link would be broken.
+      exit 1
+    fi
+
+    # Create and upload .filelist files.
+    for pkg in qtbase-linux-amd64/*.7z qtbase-mac-amd64/*.7z qtbase-win-amd64/*.7z
+    do
+      rm -rf tmp
+      mkdir tmp
+      7zr x -otmp $pkg
+      filelist=${pkg/%.7z/.filelist}
+      find tmp -type f,l | sed -e "s#tmp/##" | \
+        jq -nR '{files: (reduce inputs as $line ([]; . + [$line | split(":") | (.[0])]))}' > $filelist
+      
+      python .yamato/upload-filelist.py $filelist
+    done
+
+    mv qtbase-src/*.zip qtbase-src.zip
+    mv qtbase-linux-amd64/*.7z qtbase-linux-amd64.7z
+    mv qtbase-mac-amd64/*.7z qtbase-mac-amd64.7z
+    mv qtbase-win-amd64/*.7z qtbase-win-amd64.7z
+    curl -sSo StevedoreUpload.exe "$STEVEDORE_UPLOAD_TOOL_URL"
+    mono StevedoreUpload.exe --repo=testing --version=5.13.2 qtbase-src.zip qtbase-linux-amd64.7z qtbase-mac-amd64.7z qtbase-win-amd64.7z
+
+triggers:
+  pushes:
+    only:
+      - qtbuild.5.13.2
+
+dependencies:
+  - .yamato/build-lin-libraries.yml
+  - .yamato/build-mac-libraries.yml
+  - .yamato/build-win-libraries.yml
+  - .yamato/create-source-artifact.yml

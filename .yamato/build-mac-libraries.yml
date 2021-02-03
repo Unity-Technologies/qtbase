@@ -22,7 +22,8 @@ commands:
     unzip 5.15.2_b352b3970f63712d9221387b4ec1d6d2c1fb436877a507b92b64d6904caee90c.zip
     popd
     PATH=$PATH:..:../bin
-    src_artifact=https://artifactory.internal.unity3d.com/stevedore-testing/$(echo qtbase-src/*.zip)
+    # Note that we upload to testing, and require a manual promotion to public before this link is valid:
+    src_artifact=https://public-stevedore.unity3d.com/r/public/$(echo qtbase-src/*.zip)
     perl build.pl --arch=64 --src_artifact=$src_artifact
 
 dependencies:

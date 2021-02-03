@@ -2,7 +2,7 @@ name: Build QTBase for Linux
   
 agent:
   type: Unity::VM
-  image: slough-ops/centos-7-base:stable
+  image: build-system/centos-7-mono:v0.0.3-694849
   flavor: b1.xlarge
 
 artifacts:
@@ -18,7 +18,8 @@ commands:
     unzip ../7za.zip -d ..
     ln -s 7za ../7z
     git clone -b OpenSSL_1_0_2-stable https://github.com/openssl/openssl
-    src_artifact=https://artifactory.internal.unity3d.com/stevedore-testing/$(echo qtbase-src/*.zip)
+    # Note that we upload to testing, and require a manual promotion to public before this link is valid:
+    src_artifact=https://public-stevedore.unity3d.com/r/public/$(echo qtbase-src/*.zip)
     PATH=`pwd`/..:$PATH perl build.pl --arch=64 --src_artifact=$src_artifact
 
 dependencies:
