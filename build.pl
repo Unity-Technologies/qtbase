@@ -24,14 +24,14 @@ my %platforms = (
 
 sub saveLicenseFile
 {
-	if (! -e "qtbase-src/LICENSE.md")
+	if (! -e "LICENSE.md")
 	{
-		print "No license file from source artifact, skipping.";
+		print "No license file from source artifact, skipping\n";
 		return;
 	}
 
 	print "Saving license file from source artifact\n";
-	copy("qtbase-src/LICENSE.md", "../LICENSE.md") or die "Copy failed: $!";
+	copy("LICENSE.md", "../LICENSE.md") or die "Copy failed: $!";
 }
 
 sub clean
@@ -188,10 +188,10 @@ sub zip
 	doSystemCommand("$zipCmd a -r build/builds.7z ./qtbase-$platform/*");
 
 	my $hf = Digest->new("SHA-256");
-	$hf->addfile("build/builds.7z");
+	$hf->addfile("build/builds.7z", "b"); # Open in binary mode!
 	my $hash = $hf->hexdigest;
 	make_path "qtbase-${osShortName}-${shortPlatform}" or die "mkdir failed: $!";
-	move("build/builds.7z", "qtbase-${osShortName}-${shortPlatform}/5.13.2_$hash.7z") or die("something went wrong: $!");
+	move("build/builds.7z", "qtbase-${osShortName}-${shortPlatform}/5.13.2_${hash}.7z") or die("something went wrong: $!");
 }
 
 sub patch

@@ -2,7 +2,7 @@ name: Create QTBase source artifact
   
 agent:
   type: Unity::VM
-  image: slough-ops/centos-7-base:stable
+  image: build-system/centos-7-mono:v0.0.3-694849
   flavor: b1.small
 
 artifacts:
@@ -26,8 +26,10 @@ commands:
     tmpzip=qtbase-src/src.zip
     git archive --format=zip --output=$tmpzip $ref
     zip --delete $tmpzip ".yamato/*"
+    touch --date=@0 LICENSE.md
+    find openssl -exec touch --date=@0 '{}' ';'
     zip $tmpzip LICENSE.md
-    zip -r $tmpzip openssl
+    zip -X -r $tmpzip openssl
     hash=$(sha256sum $tmpzip | cut -d' ' -f1)
     finalzip=qtbase-src/5.13.2_${hash}.zip
     mv $tmpzip $finalzip
